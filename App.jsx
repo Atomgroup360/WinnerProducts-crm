@@ -1,9 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Plus, Trash2, Upload, Package, TrendingUp, CheckCircle2, 
-  Beaker, XCircle, Clock, Calculator, CreditCard, 
-  Cloud, Users, AlertCircle
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
@@ -20,17 +15,25 @@ const firebaseConfig = {
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
 };
 
-// Inicializamos SOLO la base de datos (Sin Auth)
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Inicialización Segura
+let db;
+let initError = null;
 
-// --- Constantes de UI ---
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+} catch (e) {
+  console.error("Error inicializando Firebase:", e);
+  initError = e.message;
+}
+
+// --- Constantes de UI (SIN ICONOS, SOLO TEXTO/COLOR) ---
 const STATUS_CONFIG = {
-  pending: { id: 'pending', label: 'Pendiente', color: 'bg-gray-50 border-gray-300 text-gray-500', icon: Clock },
-  prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-50 border-blue-500 text-blue-700', icon: Package },
-  testing: { id: 'testing', label: 'En Testeo', color: 'bg-yellow-50 border-yellow-500 text-yellow-700', icon: Beaker },
-  approved: { id: 'approved', label: 'Aprobado', color: 'bg-green-50 border-green-500 text-green-700', icon: CheckCircle2 },
-  rejected: { id: 'rejected', label: 'Rechazado', color: 'bg-red-50 border-red-500 text-red-700', icon: XCircle }
+  pending: { id: 'pending', label: 'Pendiente', color: 'bg-gray-100 text-gray-600', emoji: '🕒' },
+  prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-100 text-blue-700', emoji: '📦' },
+  testing: { id: 'testing', label: 'En Testeo', color: 'bg-yellow-100 text-yellow-700', emoji: '🧪' },
+  approved: { id: 'approved', label: 'Aprobado', color: 'bg-green-100 text-green-700', emoji: '✅' },
+  rejected: { id: 'rejected', label: 'Rechazado', color: 'bg-red-100 text-red-700', emoji: '❌' }
 };
 
 const INITIAL_PRODUCT_STATE = {
@@ -38,8 +41,10 @@ const INITIAL_PRODUCT_STATE = {
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0, origin: 'importacion', status: 'pending', rejectionReason: '', image: null,
   upsells: [
-    { id: 1, name: '', cost: 0, price: 0, image: null }, { id: 2, name: '', cost: 0, price: 0, image: null },
-    { id: 3, name: '', cost: 0, price: 0, image: null }, { id: 4, name: '', cost: 0, price: 0, image: null },
+    { id: 1, name: '', cost: 0, price: 0, image: null }, 
+    { id: 2, name: '', cost: 0, price: 0, image: null },
+    { id: 3, name: '', cost: 0, price: 0, image: null },
+    { id: 4, name: '', cost: 0, price: 0, image: null },
     { id: 5, name: '', cost: 0, price: 0, image: null },
   ]
 };
@@ -64,38 +69,40 @@ const calculateMetrics = (product) => {
   return { totalProductCost, productProfit, productMargin, bundleTotalCost, bundleTotalPrice, bundleProfit, bundleMargin, upsellsCount: upsellsList.filter(u => u.name && u.price > 0).length };
 };
 
-// --- Componente Principal (MODO PÚBLICO) ---
+// --- Componente Principal ---
 export default function App() {
-  // Generamos un ID de usuario falso para que el sistema funcione sin Auth
-  const [user] = useState({ uid: 'public_user_' + Math.floor(Math.random() * 1000) });
+  const [user] = useState({ uid: 'public_user' });
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null); 
+  const [errorMsg, setErrorMsg] = useState(initError); 
   const [showRejectModal, setShowRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  // 1. Conexión Directa a Base de Datos (Sin Auth)
+  // Conexión a Base de Datos
   useEffect(() => {
-    // Intentamos conectar directamente a la colección
-    const q = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products');
+    if (initError || !db) return;
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setProducts(loaded);
+    try {
+      const q = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products');
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        loaded.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setProducts(loaded);
+        setLoading(false);
+      }, (err) => {
+        console.error("Firestore Error:", err);
+        setLoading(false);
+        if (err.code === 'permission-denied') {
+          setErrorMsg("⚠️ ACCESO DENEGADO: Ve a Firestore > Reglas y escribe: allow read, write: if true;");
+        } else {
+          setErrorMsg(`Error Base de Datos: ${err.message}`);
+        }
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      setErrorMsg("Error crítico al conectar: " + err.message);
       setLoading(false);
-      setErrorMsg(null); // Si carga, limpiamos errores
-    }, (err) => {
-      console.error("Firestore Error:", err);
-      setLoading(false);
-      // Manejo de errores de base de datos
-      if (err.code === 'permission-denied') {
-        setErrorMsg("⚠️ ACCESO DENEGADO: La base de datos está bloqueada. Ve a Firestore > Reglas y asegúrate de tener: 'allow read, write: if true;'");
-      } else {
-        setErrorMsg(`Error de base de datos: ${err.message}`);
-      }
-    });
-    return () => unsubscribe();
+    }
   }, []);
 
   // --- Funciones de Datos ---
@@ -128,62 +135,63 @@ export default function App() {
     }
   };
 
-  // --- Renderizado de Error ---
+  // --- Pantalla de Error Segura ---
   if (errorMsg) {
     return (
-      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl text-center border-l-8 border-red-500">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-slate-800 mb-2">Error de Base de Datos</h2>
-          <p className="text-lg text-red-600 font-bold mb-4">{errorMsg}</p>
-          <div className="text-left bg-slate-100 p-4 rounded text-xs font-mono text-slate-600">
-            <p>ID Proyecto: {firebaseConfig.projectId}</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-red-50 text-red-800">
+        <div className="bg-white p-6 rounded shadow-lg border border-red-500 max-w-lg text-center">
+          <h1 className="text-2xl font-bold mb-4">⚠️ Algo salió mal</h1>
+          <p className="font-bold mb-4">{errorMsg}</p>
+          <p className="text-sm">Si el error menciona "Reglas" o "Permisos", revisa Firebase Console.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-800">
       <div className="max-w-[1600px] mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 rounded-lg shadow-sm">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <Cloud className="text-blue-600" /> WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">PUBLIC MODE</span>
+              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">MODO SEGURO</span>
             </h1>
-            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Users size={12}/> {loading ? 'Conectando...' : 'Modo Público Activo'}</p>
+            <p className="text-xs text-slate-500 mt-1">{loading ? 'Conectando...' : 'Sistema Activo'}</p>
           </div>
-          <button onClick={addProduct} disabled={loading} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-lg text-sm font-bold disabled:opacity-50"><Plus size={18} /> AGREGAR</button>
+          <button onClick={addProduct} disabled={loading} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow font-bold text-sm">
+            ➕ AGREGAR PRODUCTO
+          </button>
         </header>
 
-        {loading && (
-          <div className="flex justify-center h-64 items-center">
-             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
+        {loading && <div className="text-center py-20 font-bold text-blue-600">Cargando base de datos...</div>}
 
         {!loading && (
           <div className="grid grid-cols-1 gap-6">
-            {products.length === 0 && <div className="text-center py-20 bg-white rounded-xl border-dashed border-slate-300"><p>Base de datos conectada. Agrega tu primer producto.</p></div>}
+            {products.length === 0 && <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300"><p>Base de datos conectada. Agrega tu primer producto.</p></div>}
             {products.map(p => {
               const st = STATUS_CONFIG[p.status] || STATUS_CONFIG.pending; 
-              const Icon = st.icon; const m = calculateMetrics(p);
+              const m = calculateMetrics(p);
               return (
-                <div key={p.id} className={`border-2 shadow-md bg-white rounded-xl overflow-hidden ${st.color.split(' ')[1]}`}>
-                   <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color.replace('text-', 'bg-').split(' ')[0]} bg-opacity-10`}>
-                      <div className={`flex items-center gap-2 ${st.color.split(' ')[2]}`}><Icon size={18}/><span className="font-bold uppercase text-xs">{st.label}</span></div>
-                      <div className="flex items-center gap-3"><button onClick={() => deleteProduct(p.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={16}/></button></div>
+                <div key={p.id} className={`border-2 shadow-sm bg-white rounded-xl overflow-hidden`}>
+                   {/* Header Tarjeta */}
+                   <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color}`}>
+                      <div className="flex items-center gap-2 font-bold uppercase text-xs"><span>{st.emoji}</span> {st.label}</div>
+                      <button onClick={() => deleteProduct(p.id)} className="text-slate-500 hover:text-red-600 font-bold px-2">🗑️ ELIMINAR</button>
                    </div>
+                   
                    <div className="flex flex-col xl:flex-row">
+                      {/* Col 1 */}
                       <div className="w-full xl:w-[25%] p-5 border-r border-slate-200">
                         <div className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-4 relative flex items-center justify-center group">
-                          {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <Upload className="text-slate-300"/>}
+                          {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <span className="text-4xl text-slate-300">📷</span>}
                           <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p)}/>
                         </div>
                         <input value={p.name} onChange={(e)=>updateProductField(p.id,'name',e.target.value)} className="w-full text-lg font-black bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none mb-2" placeholder="Nombre..."/>
                         <textarea value={p.description} onChange={(e)=>updateProductField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
+                      
+                      {/* Col 2 */}
                       <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                            {[{k:'base',l:'Base'},{k:'cpa',l:'CPA'},{k:'freight',l:'Flete'},{k:'fulfillment',l:'Logística'},{k:'commission',l:'Comisión'},{k:'returns',l:'Devoluciones'},{k:'fixed',l:'Fijos'}].map(f=>(
@@ -197,13 +205,15 @@ export default function App() {
                             </div>
                             <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">Utilidad</span><span className={`font-mono text-2xl font-black ${m.productProfit>0?'text-slate-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span></div>
                          </div>
-                         <div className="mt-4 flex flex-wrap gap-2">{Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>updateProductField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}>{s.label}</button>))}</div>
+                         <div className="mt-4 flex flex-wrap gap-2">{Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>updateProductField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}>{s.emoji} {s.label}</button>))}</div>
                       </div>
+                      
+                      {/* Col 3 */}
                       <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col">
                         <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1 custom-scrollbar">
                            {p.upsells.map(u=>(
                              <div key={u.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex gap-2">
-                               <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <Plus size={10}/>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p,u.id)}/></div>
+                               <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">➕</span>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p,u.id)}/></div>
                                <div className="flex-1"><input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-xs bg-transparent border-b border-slate-700 mb-1" placeholder="Upsell..."/><div className="flex gap-1"><input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-slate-900 text-[10px] p-1 rounded" placeholder="Costo"/><input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-900 text-[10px] p-1 rounded font-bold text-blue-300" placeholder="Precio"/></div></div>
                              </div>
                            ))}
