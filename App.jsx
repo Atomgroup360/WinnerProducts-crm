@@ -50,6 +50,7 @@ const firebaseConfig = {
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77"
 };
 
+
 // Inicializamos 'app' fuera del componente, pero los servicios 'auth' y 'db' se inicializan en el useEffect.
 const app = initializeApp(firebaseConfig); 
 
