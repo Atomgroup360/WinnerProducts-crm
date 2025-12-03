@@ -50,6 +50,7 @@ const INITIAL_PRODUCT_STATE = {
 };
 
 // --- Helpers ---
+// Formatea el valor a moneda Colombiana (COP) sin decimales.
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
 
 const calculateMetrics = (product) => {
@@ -66,6 +67,7 @@ const calculateMetrics = (product) => {
   const upsellsCost = upsellsList.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
   const upsellsPrice = upsellsList.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
   
+  // Métrica Bundle (Producto + Upsells)
   const bundleTotalCost = totalProductCost + upsellsCost;
   const bundleTotalPrice = productPrice + upsellsPrice;
   const bundleProfit = bundleTotalPrice - bundleTotalCost;
@@ -114,21 +116,37 @@ export default function App() {
       await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products'), {
         ...INITIAL_PRODUCT_STATE, createdAt: serverTimestamp(), createdBy: user.uid
       });
-    } catch (e) { alert("Error al guardar: " + e.message); }
+    } catch (e) { /* Usamos alert() temporalmente hasta implementar un modal personalizado */ alert("Error al guardar: " + e.message); }
   };
   const updateProductField = async (id, f, v) => {
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { [f]: v });
   };
   const updateProductCost = async (id, costs, f, v) => {
+    // Asegura que el valor se guarde como número
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { costs: { ...costs, [f]: parseFloat(v) } });
   };
   const updateUpsell = async (p, uid, f, v) => {
     const newUpsells = p.upsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', p.id), { upsells: newUpsells });
   };
+  
+  // Eliminar Upsell (limpia el slot a su estado inicial)
+  const deleteUpsell = async (p, uid) => {
+    // Usamos confirm() temporalmente hasta implementar un modal
+    if (confirm('¿Deseas eliminar este Upsell? Se borrarán todos los datos, costos e imágenes asociados.')) {
+        const clearedUpsells = p.upsells.map(u => 
+          // Si el ID coincide, reinicia el objeto a su estado vacío inicial (solo mantiene el ID)
+          u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u
+        );
+        await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
+    }
+  };
+
   const deleteProduct = async (id) => {
+    // Usamos confirm() temporalmente hasta implementar un modal
     if (confirm('¿Eliminar producto?')) await deleteDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id));
   };
+  
   const handleImageUpload = (e, p, uid=null) => {
     const file = e.target.files[0];
     if (file) {
@@ -158,7 +176,7 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-blue-900 text-white p-4 rounded-lg shadow-lg">
           <div>
             <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
-              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal bg-blue-600 px-2 py-0.5 rounded-full border border-blue-400">V9.0 FINAL</span>
+              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal bg-blue-600 px-2 py-0.5 rounded-full border border-blue-400">V10.0</span>
             </h1>
             <p className="text-xs text-blue-200 mt-1">{loading ? 'Conectando...' : 'Sistema Activo • Modo Público'}</p>
           </div>
@@ -194,7 +212,7 @@ export default function App() {
                         <textarea value={p.description} onChange={(e)=>updateProductField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
                       
-                      {/* Col 2: Costos y Métricas */}
+                      {/* Col 2: Costos y Métricas (Producto Principal) */}
                       <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                            {[
@@ -224,31 +242,88 @@ export default function App() {
                                     placeholder="0"
                                   />
                                </div>
-                               <div className="text-right">
-                                 <label className="text-[10px] font-bold text-red-500 uppercase">COSTO TOTAL</label>
-                                 <span className="font-mono text-sm text-red-600">{formatCurrency(m.totalProductCost)}</span>
-                               </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-xs font-bold text-slate-500 uppercase">Utilidad Neta</span>
-                              <span className={`font-mono text-2xl font-black ${m.productProfit>0?'text-slate-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span>
+                            
+                            {/* Desglose de Ganancia Producto Individual (NUEVO/MEJORADO) */}
+                            <h4 className="text-sm font-black text-slate-700 mb-3 uppercase pt-2 border-t border-slate-300">Análisis de Ganancia (Producto Base)</h4>
+                            
+                            {/* 1. PRECIO VENTA (Target Price) */}
+                            <div className="flex justify-between border-b border-slate-300 py-1.5">
+                                <span className="text-xs font-bold text-slate-500">A. PRECIO DE VENTA</span>
+                                <span className="font-mono font-bold text-slate-800">{formatCurrency(p.targetPrice)}</span>
                             </div>
+                            
+                            {/* 2. COSTO TOTAL (totalProductCost) */}
+                            <div className="flex justify-between border-b border-slate-300 py-1.5">
+                                <span className="text-xs font-bold text-red-500">B. COSTO TOTAL (A-Z)</span>
+                                <span className="font-mono font-bold text-red-600">{formatCurrency(m.totalProductCost)}</span>
+                            </div>
+                            
+                            {/* 3. UTILIDAD (productProfit) */}
+                            <div className="flex justify-between pt-3">
+                              <span className="text-xs font-black text-slate-700 uppercase">UTILIDAD NETA (A - B)</span>
+                              <span className={`font-mono text-xl font-black ${m.productProfit>0?'text-blue-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span>
+                            </div>
+
+                            {/* 4. MARGEN (productMargin) */}
+                            <div className="flex justify-between mt-1">
+                              <span className="text-xs font-black text-slate-700 uppercase">MARGEN NETO</span>
+                              <span className={`font-mono text-xl font-black ${m.productMargin>0?'text-blue-800':'text-red-500'}`}>{m.productMargin.toFixed(1)}%</span>
+                            </div>
+
                          </div>
                          <div className="mt-4 flex flex-wrap gap-2">{Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>updateProductField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}>{s.emoji} {s.label}</button>))}</div>
                       </div>
                       
-                      {/* Col 3: Upsells */}
+                      {/* Col 3: Upsells y CÁLCULO DE BUNDLE (Recalculado) */}
                       <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col">
+                        <h3 className="text-sm font-bold text-blue-300 mb-3">5 SLOTS DE UPSELLS ({m.upsellsCount} ACTIVOS)</h3>
                         <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1 custom-scrollbar">
                            {p.upsells.map(u=>(
                              <div key={u.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex gap-2">
                                <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">➕</span>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p,u.id)}/></div>
-                               <div className="flex-1"><input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-xs bg-transparent border-b border-slate-700 mb-1" placeholder="Upsell..."/><div className="flex gap-1"><input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-slate-900 text-[10px] p-1 rounded" placeholder="Costo"/><input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-900 text-[10px] p-1 rounded font-bold text-blue-300" placeholder="Precio"/></div></div>
+                               <div className="flex-1">
+                                 <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-xs bg-transparent border-b border-slate-700 mb-1" placeholder="Nombre Upsell..."/>
+                                 <div className="flex gap-1">
+                                   <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-slate-900 text-[10px] p-1 rounded" placeholder="Costo"/>
+                                   <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-900 text-[10px] p-1 rounded font-bold text-blue-300" placeholder="Precio"/>
+                                 </div>
+                               </div>
+                               {/* Botón de ELIMINAR UPSELL */}
+                               <button onClick={() => deleteUpsell(p, u.id)} className="shrink-0 text-red-400 hover:text-red-200 transition-colors text-sm pl-2">🗑️</button>
                              </div>
                            ))}
                         </div>
-                        <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg p-4 border border-blue-500 mt-auto">
-                           <div className="flex justify-between items-end"><div><p className="text-[10px] text-blue-200 uppercase">Ganancia Total</p><p className="text-xl font-mono font-bold">{formatCurrency(m.bundleProfit)}</p></div><span className="bg-white text-blue-700 px-2 py-0.5 rounded text-sm font-bold">{m.bundleMargin.toFixed(1)}%</span></div>
+                        
+                        {/* Desglose de Ganancia Bundle (NUEVO/MEJORADO) */}
+                        <div className="bg-slate-700 p-3 rounded-lg flex flex-col mt-auto text-sm text-white">
+                            <h4 className="font-black mb-2 border-b border-slate-600 pb-1 uppercase text-xs text-blue-300">Análisis Económico del BUNDLE</h4>
+                            
+                            {/* 1. Precio Total Venta */}
+                            <div className="flex justify-between py-1">
+                                <span className="text-blue-300 text-xs">A. PRECIO VENTA TOTAL (Producto + Upsells)</span>
+                                <span className="font-mono font-bold">{formatCurrency(m.bundleTotalPrice)}</span>
+                            </div>
+                            
+                            {/* 2. Costo Total Bundle */}
+                            <div className="flex justify-between py-1">
+                                <span className="text-red-400 text-xs">B. COSTO TOTAL BUNDLE (Prod Costo + Upsells Costo)</span>
+                                <span className="font-mono font-bold text-red-300">{formatCurrency(m.bundleTotalCost)}</span>
+                            </div>
+                        </div>
+
+                        {/* Resultado Final Bundle */}
+                        <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg p-4 border border-blue-500 mt-3">
+                           <div className="flex justify-between items-end">
+                              <div>
+                                 <p className="text-[10px] text-blue-200 uppercase">GANANCIA NETA (A - B)</p>
+                                 <p className="text-xl font-mono font-bold">{formatCurrency(m.bundleProfit)}</p>
+                              </div>
+                              <div className="text-right">
+                                  <p className="text-[10px] text-blue-200 uppercase">MARGEN BUNDLE</p>
+                                  <span className="bg-white text-blue-700 px-2 py-0.5 rounded text-sm font-black">{m.bundleMargin.toFixed(1)}%</span>
+                              </div>
+                           </div>
                         </div>
                       </div>
                    </div>
