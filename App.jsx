@@ -1,4 +1,4 @@
-Import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -40,18 +40,27 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuración de Firebase (TUS CLAVES AQUÍ) ---
-// NOTA: REEMPLAZA ESTE BLOQUE CON TUS CLAVES O LA APLICACIÓN NO FUNCIONARÁ.
+// 🔴 ¡REEMPLAZA ESTE BLOQUE CON TUS CLAVES REALES DE LA CONSOLA DE FIREBASE!
 const firebaseConfig = {
-  apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0",
+  apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0", // Pega tu clave real AQUÍ
   authDomain: "winnerproduct-crm.firebaseapp.com",
-  projectId: "winnerproduct-crm",
+  projectId: "winnerproduct-crm", 
   storageBucket: "winnerproduct-crm.firebasestorage.app",
   messagingSenderId: "697988179670",
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77"
 };
 
+// *** VERIFICACIÓN CRÍTICA ***
+if (firebaseConfig.apiKey.includes("EL_VALOR_DE_TU_APIKEY") || firebaseConfig.apiKey.length < 30) {
+  // Esta verificación detecta si la clave está incompleta o es el placeholder
+  console.error("==========================================================================================");
+  console.error("🔴 ERROR CRÍTICO DE CONFIGURACIÓN:");
+  console.error("   La CLAVE API (apiKey) es inválida o aún es el marcador de posición.");
+  console.error("   SOLUCIÓN: Copia la clave de la Configuración de tu Proyecto de Firebase y reemplázala en App.jsx.");
+  console.error("==========================================================================================");
+}
 
-// Inicializamos 'app' fuera del componente, pero los servicios 'auth' y 'db' se inicializan en el useEffect.
+// Inicializamos 'app' una sola vez (esto es correcto)
 const app = initializeApp(firebaseConfig); 
 
 // --- Constantes de UI ---
@@ -111,7 +120,7 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // AHORA DEFINIMOS LAS VARIABLES DE CONEXIÓN DENTRO DEL COMPONENTE (USANDO EL ESTADO)
+  // ESTO CORRIGE EL ERROR: Inicializamos auth y db usando estados
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [appId] = useState(firebaseConfig.projectId);
@@ -122,7 +131,7 @@ export default function App() {
 
   // 1. Autenticación e Inicialización de Servicios (CORREGIDO)
   useEffect(() => {
-    // 1. Inicializar servicios de Firebase
+    // 1. Inicializar servicios de Firebase DENTRO del useEffect
     const firebaseAuth = getAuth(app);
     const firestoreDb = getFirestore(app);
     setAuth(firebaseAuth);
@@ -130,14 +139,11 @@ export default function App() {
 
     // 2. Iniciar sesión
     const initAuth = async () => {
-      // Nota: Asumimos que __initial_auth_token no existe en Vercel, por eso usamos signInAnonymously
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(firebaseAuth, __initial_auth_token);
-        } else {
-          await signInAnonymously(firebaseAuth);
-        }
+        // En Vercel, el __initial_auth_token no existe, por eso usamos signInAnonymously
+        await signInAnonymously(firebaseAuth);
       } catch (error) {
+        // Mostramos el error en la consola si no es por clave
         console.error("Auth error:", error);
       }
     };
@@ -148,11 +154,11 @@ export default function App() {
       setUser(currentUser);
     });
     return () => unsubscribe();
-  }, []); // Se ejecuta solo una vez al montar
+  }, []); 
 
   // 2. Suscripción a Datos (Real-time)
   useEffect(() => {
-    if (!user || !db) return; // Solo se ejecuta si hay usuario y DB
+    if (!user || !db) return; 
 
     // Ruta pública para compartir datos entre socios
     const q = collection(db, 'artifacts', appId, 'public', 'data', 'products');
@@ -177,7 +183,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [user, db, appId]); // Depende de que 'user' y 'db' estén listos
+  }, [user, db, appId]); 
 
   // --- Acciones de Base de Datos ---
 
@@ -441,4 +447,166 @@ export default function App() {
                         <div className="flex items-center justify-between">
                             <div className="text-xs font-bold text-slate-500 uppercase">Utilidad Neta (Solo Prod.)</div>
                             <div className="text-right flex items-center gap-4">
-                                <span cla
+                                <span className={`font-mono text-2xl font-black ${m.productProfit > 0 ? 'text-slate-800' : 'text-red-500'}`}>
+                                    {formatCurrency(m.productProfit)}
+                                </span>
+                                <span className={`px-2 py-1 rounded text-sm font-bold ${m.productMargin > 25 ? 'bg-green-100 text-green-700' : m.productMargin > 10 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                    {m.productMargin.toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        {Object.values(STATUS_CONFIG).map((status) => (
+                            <button
+                            key={status.id}
+                            onClick={() => handleStatusChange(product, status.id)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${
+                                product.status === status.id 
+                                ? 'ring-2 ring-offset-1 ' + (status.id === 'pending' ? 'ring-slate-400 bg-slate-200 text-slate-800' : 'ring-blue-500 ' + status.color)
+                                : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+                            }`}
+                            >
+                            <status.icon size={14} />
+                            {status.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {product.status === 'rejected' && (
+                        <div className="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-100 animate-in fade-in">
+                            <strong>Motivo:</strong> {product.rejectionReason}
+                        </div>
+                    )}
+                  </div>
+
+                  {/* === COLUMNA 3: UPSELLS === */}
+                  <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-700">
+                      <Calculator size={16} className="text-green-400"/>
+                      <span className="text-xs font-bold uppercase tracking-wider">Métricas de la Oferta Total</span>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-xs uppercase flex items-center gap-2 text-blue-400">
+                            <MoreVertical size={14} /> Upsells ({m.upsellsCount})
+                        </h3>
+                        <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-1 rounded border border-slate-700">
+                           BUNDLE
+                        </span>
+                    </div>
+
+                    <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1 pr-1 custom-scrollbar">
+                         {(product.upsells || []).map((upsell) => (
+                        <div key={upsell.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex gap-2 group hover:border-slate-600 transition-colors">
+                          <div className="w-10 h-10 bg-slate-700 rounded shrink-0 relative overflow-hidden mt-1">
+                             {upsell.image ? (
+                                <img src={upsell.image} className="w-full h-full object-cover" />
+                             ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-500">
+                                  <Plus size={12} />
+                                </div>
+                             )}
+                             <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, product, upsell.id)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                             <input 
+                                type="text" 
+                                value={upsell.name}
+                                onChange={(e) => updateUpsell(product, upsell.id, 'name', e.target.value)}
+                                className="w-full text-xs font-medium text-slate-200 bg-transparent border-b border-slate-700 focus:border-blue-500 focus:outline-none mb-1.5 pb-0.5 placeholder-slate-600"
+                                placeholder={`Upsell #${upsell.id}`}
+                              />
+                             <div className="flex gap-2">
+                                <div className="flex-1 bg-slate-900/50 rounded px-1.5 py-0.5 border border-slate-700">
+                                    <label className="text-[8px] text-slate-500 block uppercase">Costo</label>
+                                    <input 
+                                        type="number" 
+                                        value={upsell.cost || ''} 
+                                        onChange={(e) => updateUpsell(product, upsell.id, 'cost', parseFloat(e.target.value))}
+                                        className="w-full bg-transparent text-xs font-mono outline-none text-slate-300" 
+                                        placeholder="0"
+                                    />
+                                </div>
+                                <div className="flex-1 bg-blue-900/20 rounded px-1.5 py-0.5 border border-blue-900/30">
+                                    <label className="text-[8px] text-blue-400 block uppercase">Venta</label>
+                                    <input 
+                                        type="number" 
+                                        value={upsell.price || ''} 
+                                        onChange={(e) => updateUpsell(product, upsell.id, 'price', parseFloat(e.target.value))}
+                                        className="w-full bg-transparent text-xs font-mono font-bold text-blue-400 outline-none" 
+                                        placeholder="0"
+                                    />
+                                </div>
+                             </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* RESULTADO ESCENARIO BUNDLE */}
+                    <div className="mt-auto bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg p-4 shadow-lg border border-blue-500">
+                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-500/50">
+                            <TrendingUp size={16} className="text-white"/>
+                            <span className="text-xs font-black uppercase tracking-wider text-white">Escenario Total</span>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-xs text-blue-100">
+                                <span>Precio Total Venta:</span>
+                                <span className="font-mono">{formatCurrency(m.bundleTotalPrice)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-blue-100">
+                                <span>Costo Total Bundle:</span>
+                                <span className="font-mono text-blue-200">{formatCurrency(m.bundleTotalCost)}</span>
+                            </div>
+                            
+                            <div className="pt-2 mt-2 border-t border-blue-500/50 flex justify-between items-end">
+                                <div>
+                                    <p className="text-[10px] text-blue-200 uppercase mb-0.5">Ganancia Neta</p>
+                                    <p className="text-xl font-mono font-bold text-white">{formatCurrency(m.bundleProfit)}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-blue-200 uppercase mb-0.5">Margen</p>
+                                    <span className={`px-2 py-0.5 rounded text-sm font-bold shadow-sm ${m.bundleMargin < 20 ? 'bg-orange-100 text-orange-800' : 'bg-white text-blue-700'}`}>
+                                        {m.bundleMargin.toFixed(1)}%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        )}
+      </div>
+      
+       {showRejectModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <XCircle className="text-red-500" /> Motivo del Rechazo
+            </h3>
+            <textarea
+              autoFocus
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:border-red-500 outline-none h-32 resize-none mb-4"
+              placeholder="Justificación obligatoria..."
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowRejectModal(null)} className="px-4 py-2 text-sm text-gray-600 font-medium hover:bg-gray-100 rounded-lg">Cancelar</button>
+              <button onClick={confirmRejection} className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg">Rechazar Producto</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
