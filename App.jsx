@@ -1,20 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, Trash2, Upload, Package, TrendingUp, CheckCircle2, 
-  Beaker, XCircle, MoreVertical, Clock, Calculator, Truck, CreditCard, 
-  Target, Cloud, Users
+  Beaker, XCircle, Clock, Calculator, CreditCard, 
+  Cloud, Users, AlertCircle
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, signInAnonymously, onAuthStateChanged 
-} from 'firebase/auth';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
   onSnapshot, serverTimestamp 
 } from 'firebase/firestore';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-// Limpiamos las claves de posibles espacios invisibles con .trim()
 const firebaseConfig = {
   apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0".trim(),
   authDomain: "winnerproduct-crm.firebaseapp.com".trim(),
@@ -24,9 +20,8 @@ const firebaseConfig = {
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
 };
 
-// Inicializamos la app
+// Inicializamos SOLO la base de datos (Sin Auth)
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- Constantes de UI ---
@@ -69,73 +64,47 @@ const calculateMetrics = (product) => {
   return { totalProductCost, productProfit, productMargin, bundleTotalCost, bundleTotalPrice, bundleProfit, bundleMargin, upsellsCount: upsellsList.filter(u => u.name && u.price > 0).length };
 };
 
-// --- Componente Principal ---
+// --- Componente Principal (MODO PÚBLICO) ---
 export default function App() {
-  const [user, setUser] = useState(null);
+  // Generamos un ID de usuario falso para que el sistema funcione sin Auth
+  const [user] = useState({ uid: 'public_user_' + Math.floor(Math.random() * 1000) });
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null); 
   const [showRejectModal, setShowRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  // 1. Autenticación
+  // 1. Conexión Directa a Base de Datos (Sin Auth)
   useEffect(() => {
-    console.log("Iniciando autenticación...");
-    const initAuth = async () => {
-      try {
-        await signInAnonymously(auth);
-        console.log("Autenticación exitosa");
-      } catch (error) {
-        console.error("Auth Error:", error);
-        setLoading(false); // IMPORTANTE: Dejar de cargar si hay error
-        if (error.code === 'auth/configuration-not-found') {
-          setErrorMsg("⚠️ ERROR FIREBASE: El 'Inicio de sesión Anónimo' NO está habilitado en la consola.");
-        } else if (error.code === 'auth/api-key-not-valid') {
-           setErrorMsg("⚠️ ERROR CLAVE: La API Key es inválida.");
-        } else {
-          setErrorMsg(`Error de conexión: ${error.message}`);
-        }
-      }
-    };
-    initAuth();
-    
-    return onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setErrorMsg(null); 
-        console.log("Usuario detectado:", currentUser.uid);
-      }
-    });
-  }, []);
-
-  // 2. Base de Datos
-  useEffect(() => {
-    if (!user) return;
-    
+    // Intentamos conectar directamente a la colección
     const q = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products');
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       loaded.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setProducts(loaded);
       setLoading(false);
+      setErrorMsg(null); // Si carga, limpiamos errores
     }, (err) => {
       console.error("Firestore Error:", err);
       setLoading(false);
+      // Manejo de errores de base de datos
       if (err.code === 'permission-denied') {
-        setErrorMsg("⚠️ PERMISO DENEGADO: Revisa las 'Reglas de Seguridad' en Firestore.");
+        setErrorMsg("⚠️ ACCESO DENEGADO: La base de datos está bloqueada. Ve a Firestore > Reglas y asegúrate de tener: 'allow read, write: if true;'");
       } else {
         setErrorMsg(`Error de base de datos: ${err.message}`);
       }
     });
     return () => unsubscribe();
-  }, [user]);
+  }, []);
 
   // --- Funciones de Datos ---
   const addProduct = async () => {
-    if (!user) return;
-    await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products'), {
-      ...INITIAL_PRODUCT_STATE, createdAt: serverTimestamp(), createdBy: user.uid
-    });
+    try {
+      await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products'), {
+        ...INITIAL_PRODUCT_STATE, createdAt: serverTimestamp(), createdBy: user.uid
+      });
+    } catch (e) { alert("Error al guardar: " + e.message); }
   };
   const updateProductField = async (id, f, v) => {
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { [f]: v });
@@ -159,22 +128,17 @@ export default function App() {
     }
   };
 
-  // --- Renderizado de Error (SIN ICONOS PARA EVITAR CRASH) ---
+  // --- Renderizado de Error ---
   if (errorMsg) {
     return (
-      <div style={{ padding: '40px', backgroundColor: '#FEF2F2', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '600px', borderLeft: '8px solid #EF4444' }}>
-          <h2 style={{ color: '#1F2937', fontSize: '24px', fontWeight: 'bold', marginBottom: '10px' }}>¡Problema de Conexión!</h2>
-          <p style={{ color: '#DC2626', fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>{errorMsg}</p>
-          <div style={{ backgroundColor: '#F3F4F6', padding: '15px', borderRadius: '6px', fontSize: '12px', fontFamily: 'monospace', color: '#4B5563', overflowX: 'auto' }}>
-            <p><strong>Configuración usada:</strong></p>
-            <p>Project ID: {firebaseConfig.projectId}</p>
-            <p>API Key: {firebaseConfig.apiKey.substring(0, 10)}...</p>
-            <p>Auth Domain: {firebaseConfig.authDomain}</p>
+      <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl text-center border-l-8 border-red-500">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black text-slate-800 mb-2">Error de Base de Datos</h2>
+          <p className="text-lg text-red-600 font-bold mb-4">{errorMsg}</p>
+          <div className="text-left bg-slate-100 p-4 rounded text-xs font-mono text-slate-600">
+            <p>ID Proyecto: {firebaseConfig.projectId}</p>
           </div>
-          <p style={{ marginTop: '20px', fontSize: '14px', color: '#6B7280' }}>
-            Si el error es "configuration-not-found", ve a <strong>Firebase Console &gt; Authentication &gt; Sign-in method</strong> y asegúrate de que <strong>Anonymous</strong> esté en estado <strong>Enabled</strong>.
-          </p>
         </div>
       </div>
     );
@@ -186,16 +150,16 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <Cloud className="text-blue-600" /> WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">V6.0</span>
+              <Cloud className="text-blue-600" /> WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">PUBLIC MODE</span>
             </h1>
-            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Users size={12}/> {loading ? 'Cargando...' : `ID: ${user?.uid}`}</p>
+            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Users size={12}/> {loading ? 'Conectando...' : 'Modo Público Activo'}</p>
           </div>
-          <button onClick={addProduct} disabled={!user || loading} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-lg text-sm font-bold disabled:opacity-50"><Plus size={18} /> AGREGAR</button>
+          <button onClick={addProduct} disabled={loading} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow-lg text-sm font-bold disabled:opacity-50"><Plus size={18} /> AGREGAR</button>
         </header>
 
         {loading && (
           <div className="flex justify-center h-64 items-center">
-             <div style={{ borderTopColor: 'transparent' }} className="w-8 h-8 border-4 border-blue-600 rounded-full animate-spin"></div>
+             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
           </div>
         )}
 
@@ -203,7 +167,8 @@ export default function App() {
           <div className="grid grid-cols-1 gap-6">
             {products.length === 0 && <div className="text-center py-20 bg-white rounded-xl border-dashed border-slate-300"><p>Base de datos conectada. Agrega tu primer producto.</p></div>}
             {products.map(p => {
-              const st = STATUS_CONFIG[p.status]; const Icon = st.icon; const m = calculateMetrics(p);
+              const st = STATUS_CONFIG[p.status] || STATUS_CONFIG.pending; 
+              const Icon = st.icon; const m = calculateMetrics(p);
               return (
                 <div key={p.id} className={`border-2 shadow-md bg-white rounded-xl overflow-hidden ${st.color.split(' ')[1]}`}>
                    <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color.replace('text-', 'bg-').split(' ')[0]} bg-opacity-10`}>
