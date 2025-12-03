@@ -15,7 +15,7 @@ const firebaseConfig = {
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
 };
 
-// Inicialización Segura
+// Inicialización Segura de Base de Datos
 let db;
 let initError = null;
 
@@ -27,7 +27,7 @@ try {
   initError = e.message;
 }
 
-// --- Constantes de UI (SIN ICONOS, SOLO TEXTO/COLOR) ---
+// --- Constantes de UI (Emojis para evitar errores de iconos) ---
 const STATUS_CONFIG = {
   pending: { id: 'pending', label: 'Pendiente', color: 'bg-gray-100 text-gray-600', emoji: '🕒' },
   prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-100 text-blue-700', emoji: '📦' },
@@ -54,18 +54,23 @@ const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currenc
 
 const calculateMetrics = (product) => {
   const c = product.costs || {};
+  // COSTOS: base, freight, fulfillment, commission, cpa, returns, fixed
   const totalProductCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
     (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
-  const productPrice = parseFloat(product.targetPrice) || 0;
+  
+  const productPrice = parseFloat(product.targetPrice) || 0; // Precio de Venta (targetPrice)
   const productProfit = productPrice - totalProductCost;
   const productMargin = productPrice > 0 ? (productProfit / productPrice) * 100 : 0;
+  
   const upsellsList = product.upsells || [];
   const upsellsCost = upsellsList.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
   const upsellsPrice = upsellsList.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
+  
   const bundleTotalCost = totalProductCost + upsellsCost;
   const bundleTotalPrice = productPrice + upsellsPrice;
   const bundleProfit = bundleTotalPrice - bundleTotalCost;
   const bundleMargin = bundleTotalPrice > 0 ? (bundleProfit / bundleTotalPrice) * 100 : 0;
+  
   return { totalProductCost, productProfit, productMargin, bundleTotalCost, bundleTotalPrice, bundleProfit, bundleMargin, upsellsCount: upsellsList.filter(u => u.name && u.price > 0).length };
 };
 
@@ -75,8 +80,6 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(initError); 
-  const [showRejectModal, setShowRejectModal] = useState(null);
-  const [rejectReason, setRejectReason] = useState("");
 
   // Conexión a Base de Datos
   useEffect(() => {
@@ -142,7 +145,7 @@ export default function App() {
         <div className="bg-white p-6 rounded shadow-lg border border-red-500 max-w-lg text-center">
           <h1 className="text-2xl font-bold mb-4">⚠️ Algo salió mal</h1>
           <p className="font-bold mb-4">{errorMsg}</p>
-          <p className="text-sm">Si el error menciona "Reglas" o "Permisos", revisa Firebase Console.</p>
+          <p className="text-sm">Por favor revisa la consola de Vercel para ver los errores de construcción.</p>
         </div>
       </div>
     );
@@ -151,15 +154,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-800">
       <div className="max-w-[1600px] mx-auto">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 rounded-lg shadow-sm">
+        {/* Header - AZUL */}
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-blue-900 text-white p-4 rounded-lg shadow-lg">
           <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">MODO SEGURO</span>
+            <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal bg-blue-600 px-2 py-0.5 rounded-full border border-blue-400">V9.0 FINAL</span>
             </h1>
-            <p className="text-xs text-slate-500 mt-1">{loading ? 'Conectando...' : 'Sistema Activo'}</p>
+            <p className="text-xs text-blue-200 mt-1">{loading ? 'Conectando...' : 'Sistema Activo • Modo Público'}</p>
           </div>
-          <button onClick={addProduct} disabled={loading} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg shadow font-bold text-sm">
+          <button onClick={addProduct} disabled={loading} className="bg-white text-blue-900 hover:bg-blue-50 px-5 py-2.5 rounded-lg shadow font-bold text-sm transition-colors">
             ➕ AGREGAR PRODUCTO
           </button>
         </header>
@@ -181,7 +184,7 @@ export default function App() {
                    </div>
                    
                    <div className="flex flex-col xl:flex-row">
-                      {/* Col 1 */}
+                      {/* Col 1: Producto */}
                       <div className="w-full xl:w-[25%] p-5 border-r border-slate-200">
                         <div className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-4 relative flex items-center justify-center group">
                           {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <span className="text-4xl text-slate-300">📷</span>}
@@ -191,24 +194,50 @@ export default function App() {
                         <textarea value={p.description} onChange={(e)=>updateProductField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
                       
-                      {/* Col 2 */}
+                      {/* Col 2: Costos y Métricas */}
                       <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                           {[{k:'base',l:'Base'},{k:'cpa',l:'CPA'},{k:'freight',l:'Flete'},{k:'fulfillment',l:'Logística'},{k:'commission',l:'Comisión'},{k:'returns',l:'Devoluciones'},{k:'fixed',l:'Fijos'}].map(f=>(
-                             <div key={f.k} className="bg-white p-2 rounded border border-slate-200"><label className="text-[10px] font-bold text-slate-400 uppercase">{f.l}</label><input type="number" value={p.costs?.[f.k]||''} onChange={(e)=>updateProductCost(p.id,p.costs,f.k,e.target.value)} className="w-full font-mono text-sm outline-none" placeholder="0"/></div>
+                           {[
+                             {k:'base',l:'COSTO PRODUCTO'},
+                             {k:'cpa',l:'CPA'},
+                             {k:'freight',l:'FLETE'},
+                             {k:'fulfillment',l:'LOGÍSTICA'},
+                             {k:'commission',l:'COMISIÓN'},
+                             {k:'returns',l:'DEVOLUCIÓN'},
+                             {k:'fixed',l:'FIJOS'}
+                           ].map(f=>(
+                             <div key={f.k} className="bg-white p-2 rounded border border-slate-200">
+                               <label className="text-[10px] font-bold text-slate-400 uppercase">{f.l}</label>
+                               <input type="number" value={p.costs?.[f.k]||''} onChange={(e)=>updateProductCost(p.id,p.costs,f.k,e.target.value)} className="w-full font-mono text-sm outline-none" placeholder="0"/>
+                             </div>
                            ))}
                          </div>
                          <div className="bg-slate-200 rounded-lg p-4 mt-auto">
                             <div className="flex justify-between items-end mb-4 pb-3 border-b border-slate-300">
-                               <div><label className="text-[10px] font-bold text-slate-500 uppercase">Precio Objetivo</label><input type="number" value={p.targetPrice||''} onChange={(e)=>updateProductField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-mono font-bold text-xl w-32 outline-none"/></div>
-                               <div className="text-right"><label className="text-[10px] font-bold text-red-500 uppercase">Costo Total</label><span className="font-mono text-sm text-red-600">{formatCurrency(m.totalProductCost)}</span></div>
+                               <div>
+                                 <label className="text-[10px] font-bold text-slate-500 uppercase">PRECIO OBJETIVO</label>
+                                 <input 
+                                    type="number" 
+                                    value={p.targetPrice||''} 
+                                    onChange={(e)=>updateProductField(p.id,'targetPrice',e.target.value)} 
+                                    className="bg-transparent font-mono font-bold text-xl w-32 outline-none"
+                                    placeholder="0"
+                                  />
+                               </div>
+                               <div className="text-right">
+                                 <label className="text-[10px] font-bold text-red-500 uppercase">COSTO TOTAL</label>
+                                 <span className="font-mono text-sm text-red-600">{formatCurrency(m.totalProductCost)}</span>
+                               </div>
                             </div>
-                            <div className="flex justify-between"><span className="text-xs font-bold text-slate-500 uppercase">Utilidad</span><span className={`font-mono text-2xl font-black ${m.productProfit>0?'text-slate-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span></div>
+                            <div className="flex justify-between">
+                              <span className="text-xs font-bold text-slate-500 uppercase">Utilidad Neta</span>
+                              <span className={`font-mono text-2xl font-black ${m.productProfit>0?'text-slate-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span>
+                            </div>
                          </div>
                          <div className="mt-4 flex flex-wrap gap-2">{Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>updateProductField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}>{s.emoji} {s.label}</button>))}</div>
                       </div>
                       
-                      {/* Col 3 */}
+                      {/* Col 3: Upsells */}
                       <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col">
                         <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1 custom-scrollbar">
                            {p.upsells.map(u=>(
