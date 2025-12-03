@@ -1,0 +1,28 @@
+{
+      "name": "winner-products-os",
+      "version": "1.0.0",
+      "description": "App para la gestión de productos ganadores con Firebase",
+      "main": "App.jsx",
+      "scripts": {
+        "start": "react-scripts start",
+        "build": "react-scripts build"
+      },
+      "dependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "firebase": "^9.22.0",
+        "lucide-react": "^0.292.0"
+      },
+      "browserslist": {
+        "production": [
+          ">0.2%",
+          "not dead",
+          "not op_mini all"
+        ],
+        "development": [
+          "last 1 chrome version",
+          "last 1 firefox version",
+          "last 1 safari version"
+        ]
+      }
+    }
