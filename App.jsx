@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, Trash2, Upload, Package, TrendingUp, AlertCircle, CheckCircle2, 
   Beaker, XCircle, MoreVertical, Clock, Calculator, Truck, CreditCard, 
-  Target, RefreshCw, Box, Building2, Cloud, Users, ShieldAlert
+  Target, RefreshCw, Box, Building2, Cloud, Users, Lock
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -13,8 +13,8 @@ import {
   onSnapshot, serverTimestamp 
 } from 'firebase/firestore';
 
-// --- CONFIGURACIÓN DE FIREBASE (YA INCLUIDA) ---
-// He copiado estos valores directamente de tu foto. No necesitas editarlos.
+// --- CONFIGURACIÓN DE FIREBASE ---
+// Claves tomadas de tu mensaje anterior.
 const firebaseConfig = {
   apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0",
   authDomain: "winnerproduct-crm.firebaseapp.com",
@@ -74,7 +74,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null); // Estado para mostrar errores en pantalla
+  const [errorMsg, setErrorMsg] = useState(null); 
   const [showRejectModal, setShowRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -85,11 +85,10 @@ export default function App() {
         await signInAnonymously(auth);
       } catch (error) {
         console.error("Auth Error:", error);
-        // Traducir errores comunes para mostrar en pantalla
         if (error.code === 'auth/configuration-not-found') {
-          setErrorMsg("⚠️ ERROR EN FIREBASE: El 'Inicio de sesión Anónimo' no está habilitado en la consola de Firebase. Ve a Authentication > Sign-in method y actívalo.");
+          setErrorMsg("⚠️ ERROR FIREBASE: Activa 'Inicio de sesión Anónimo' en la consola de Firebase (Authentication > Sign-in method).");
         } else if (error.code === 'auth/api-key-not-valid') {
-           setErrorMsg("⚠️ ERROR DE CLAVE: La API Key es inválida. Verifica el archivo App.jsx.");
+           setErrorMsg("⚠️ ERROR CLAVE: La API Key en el código es incorrecta. Verifica App.jsx.");
         } else {
           setErrorMsg(`Error de conexión: ${error.message}`);
         }
@@ -99,7 +98,7 @@ export default function App() {
     
     return onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) setErrorMsg(null); // Limpiar error si se conecta
+      if (currentUser) setErrorMsg(null); 
     });
   }, []);
 
@@ -116,7 +115,7 @@ export default function App() {
     }, (err) => {
       console.error("Firestore Error:", err);
       if (err.code === 'permission-denied') {
-        setErrorMsg("⚠️ PERMISO DENEGADO: Las 'Reglas de Seguridad' de Firestore bloquean el acceso. Ve a Firestore Database > Reglas y publícalas.");
+        setErrorMsg("⚠️ PERMISO DENEGADO: Publica las 'Reglas de Seguridad' en Firestore Database > Reglas.");
       } else {
         setErrorMsg(`Error de base de datos: ${err.message}`);
       }
@@ -125,7 +124,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- Funciones (Simplificadas para brevedad, lógica idéntica) ---
+  // --- Funciones de Datos ---
   const addProduct = async () => {
     if (!user) return;
     await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products'), {
@@ -154,15 +153,19 @@ export default function App() {
     }
   };
 
-  // --- Renderizado ---
+  // --- Renderizado de Error (Pantalla Roja) ---
   if (errorMsg) {
     return (
       <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl text-center border-l-8 border-red-500">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-slate-800 mb-2">¡La App no puede arrancar!</h2>
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black text-slate-800 mb-2">¡Problema de Conexión!</h2>
           <p className="text-lg text-red-600 font-bold mb-4">{errorMsg}</p>
-          <p className="text-slate-500 text-sm">Por favor, revisa la consola de Firebase según el mensaje de arriba.</p>
+          <div className="text-left bg-slate-100 p-4 rounded text-xs font-mono text-slate-600 overflow-auto">
+            <p><strong>Configuración usada:</strong></p>
+            <p>Project ID: {firebaseConfig.projectId}</p>
+            <p>API Key: {firebaseConfig.apiKey.substring(0, 10)}...</p>
+          </div>
         </div>
       </div>
     );
@@ -174,7 +177,7 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <Cloud className="text-blue-600" /> WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">V4.0</span>
+              <Cloud className="text-blue-600" /> WINNER PRODUCT OS <span className="text-xs font-normal text-white bg-blue-600 px-2 py-0.5 rounded-full">V5.0</span>
             </h1>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Users size={12}/> {loading ? 'Cargando...' : `ID: ${user?.uid}`}</p>
           </div>
@@ -190,13 +193,11 @@ export default function App() {
               const st = STATUS_CONFIG[p.status]; const Icon = st.icon; const m = calculateMetrics(p);
               return (
                 <div key={p.id} className={`border-2 shadow-md bg-white rounded-xl overflow-hidden ${st.color.split(' ')[1]}`}>
-                   {/* Header Tarjeta */}
                    <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color.replace('text-', 'bg-').split(' ')[0]} bg-opacity-10`}>
                       <div className={`flex items-center gap-2 ${st.color.split(' ')[2]}`}><Icon size={18}/><span className="font-bold uppercase text-xs">{st.label}</span></div>
                       <div className="flex items-center gap-3"><button onClick={() => deleteProduct(p.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={16}/></button></div>
                    </div>
                    <div className="flex flex-col xl:flex-row">
-                      {/* Col 1 */}
                       <div className="w-full xl:w-[25%] p-5 border-r border-slate-200">
                         <div className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-4 relative flex items-center justify-center group">
                           {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <Upload className="text-slate-300"/>}
@@ -205,7 +206,6 @@ export default function App() {
                         <input value={p.name} onChange={(e)=>updateProductField(p.id,'name',e.target.value)} className="w-full text-lg font-black bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none mb-2" placeholder="Nombre..."/>
                         <textarea value={p.description} onChange={(e)=>updateProductField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
-                      {/* Col 2 */}
                       <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                            {[{k:'base',l:'Base'},{k:'cpa',l:'CPA'},{k:'freight',l:'Flete'},{k:'fulfillment',l:'Logística'},{k:'commission',l:'Comisión'},{k:'returns',l:'Devoluciones'},{k:'fixed',l:'Fijos'}].map(f=>(
@@ -221,7 +221,6 @@ export default function App() {
                          </div>
                          <div className="mt-4 flex flex-wrap gap-2">{Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>updateProductField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}>{s.label}</button>))}</div>
                       </div>
-                      {/* Col 3 */}
                       <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col">
                         <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1 custom-scrollbar">
                            {p.upsells.map(u=>(
