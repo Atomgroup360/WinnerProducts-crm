@@ -4,6 +4,7 @@ import {
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
   onSnapshot, serverTimestamp 
 } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 // --- CONFIGURACIÓN DE FIREBASE ORIGINAL ---
 const firebaseConfig = {
@@ -18,6 +19,7 @@ const firebaseConfig = {
 // Inicialización de Base de Datos
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 // --- Constantes de UI ---
 const STATUS_CONFIG = {
@@ -72,18 +74,24 @@ const calculateMetrics = (product) => {
 };
 
 export default function App() {
-  const [user] = useState({ uid: 'public_user' });
+  const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending'); 
   const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
   
-  // ESTADOS PARA LA NUEVA VISTA DE CREACIÓN
   const [isCreating, setIsCreating] = useState(false);
   const [newProduct, setNewProduct] = useState(INITIAL_PRODUCT_STATE);
 
-  // Conexión a Base de Datos
+  // 1. Autenticación
   useEffect(() => {
+    signInAnonymously(auth).catch(console.error);
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  // 2. Conexión a Base de Datos
+  useEffect(() => {
+    if (!user) return;
     const q = collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -95,7 +103,7 @@ export default function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   // --- Funciones de Datos ---
   const handleSaveNewProduct = async () => {
@@ -129,9 +137,14 @@ export default function App() {
     await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', p.id), { upsells: newUpsells });
   };
 
+  // FUNCIÓN DE ELIMINACIÓN TOTAL (Libera espacio eliminando el Doc y sus imágenes Base64)
   const deleteProduct = async (id) => {
-    if (window.confirm('¿Eliminar producto?')) {
-      await deleteDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id));
+    if (window.confirm('¿ELIMINAR PERMANENTEMENTE? Se borrarán todos los datos e imágenes de la nube para liberar espacio.')) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id));
+      } catch (e) {
+        alert("Error al eliminar: " + e.message);
+      }
     }
   };
 
@@ -166,9 +179,9 @@ export default function App() {
             setNewProduct({...newProduct, image: reader.result});
           }
         } else {
-          // Lógica para productos ya existentes (target es el producto objeto)
           if (upsellId) {
-            updateUpsell(target, upsellId, 'image', reader.result);
+            const up = target.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+            updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', target.id), { upsells: up });
           } else {
             updateField(target.id, 'image', reader.result);
           }
@@ -203,7 +216,6 @@ export default function App() {
           </header>
 
           <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Columna Izquierda: Imagen e Info Básica */}
             <div className="lg:col-span-1 space-y-6">
               <div className="aspect-square bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 relative flex items-center justify-center overflow-hidden group">
                 {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-slate-400 font-bold text-center p-4">Haz clic para subir imagen principal</span>}
@@ -230,7 +242,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Columna Central: Costos y Precios */}
             <div className="lg:col-span-2 space-y-8">
               <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
                 <h3 className="text-sm font-black uppercase text-slate-600 mb-4 border-b pb-2 border-slate-200">Estructura de Costos (COP)</h3>
@@ -264,7 +275,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Upsells */}
               <div className="bg-slate-900 p-6 rounded-xl text-white">
                 <h3 className="text-sm font-black uppercase text-blue-300 mb-4 flex justify-between items-center">
                   <span>Estrategia de Upsells</span>
@@ -311,7 +321,6 @@ export default function App() {
                 </div>
               </div>
               
-              {/* Boton de Guardar Final */}
               <div className="flex gap-4 pt-4">
                 <button 
                   onClick={() => setIsCreating(false)} 
@@ -395,6 +404,7 @@ export default function App() {
                         <input value={p.name} onChange={(e)=>updateField(p.id,'name',e.target.value)} className="w-full text-lg font-black bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none mb-2" placeholder="Nombre..."/>
                         <textarea value={p.description} onChange={(e)=>updateField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
+                      
                       <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                            {[{k:'base',l:'COSTO PRODUCTO'}, {k:'cpa',l:'CPA'}, {k:'freight',l:'FLETE'}, {k:'fulfillment',l:'LOGÍSTICA'}, {k:'commission',l:'COMISIÓN'}, {k:'returns',l:'DEVOLUCIÓN'}, {k:'fixed',l:'FIJOS'}].map(f=>(
@@ -453,14 +463,13 @@ export default function App() {
       </div>
 
       {rejectModal.isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
             <h2 className="text-xl font-black text-slate-800 mb-4 uppercase">Rechazar Producto</h2>
-            <p className="text-sm text-slate-600 mb-4">Ingresa el motivo del rechazo para guardarlo en el historial:</p>
-            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-red-100 mb-6" placeholder="Ej: El flete es muy costoso..." />
+            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-red-100 mb-6" placeholder="Motivo del rechazo..." />
             <div className="flex gap-3">
               <button onClick={() => setRejectModal({ isOpen: false, productId: null, reason: '' })} className="flex-1 py-3 bg-slate-100 font-bold rounded">Cancelar</button>
-              <button onClick={confirmRejection} className="flex-1 py-3 bg-red-600 text-white font-bold rounded shadow-lg">Confirmar</button>
+              <button onClick={confirmRejection} className="flex-1 py-3 bg-red-600 text-white font-bold rounded shadow-lg uppercase">Rechazar</button>
             </div>
           </div>
         </div>
