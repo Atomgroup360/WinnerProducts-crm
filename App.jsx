@@ -15,17 +15,19 @@ const firebaseConfig = {
   appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
 };
 
-// Inicialización Segura
+// Inicialización Segura de Base de Datos
 let db;
 let initError = null;
+
 try {
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
 } catch (e) {
-  console.error("Error Firebase:", e);
+  console.error("Error inicializando Firebase:", e);
   initError = e.message;
 }
 
+// --- Constantes de UI ---
 const STATUS_CONFIG = {
   pending: { id: 'pending', label: 'Pendiente', color: 'bg-gray-100 text-gray-600', emoji: '🕒' },
   prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-100 text-blue-700', emoji: '📦' },
@@ -47,191 +49,278 @@ const INITIAL_PRODUCT_STATE = {
   ]
 };
 
+// --- Helpers ---
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
 
 const calculateMetrics = (product) => {
   const c = product.costs || {};
   const totalProductCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
     (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
+  
   const productPrice = parseFloat(product.targetPrice) || 0; 
   const productProfit = productPrice - totalProductCost;
   const productMargin = productPrice > 0 ? (productProfit / productPrice) * 100 : 0;
+  
   const upsellsList = product.upsells || [];
   const upsellsCost = upsellsList.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
   const upsellsPrice = upsellsList.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
+  
   const bundleTotalCost = totalProductCost + upsellsCost;
   const bundleTotalPrice = productPrice + upsellsPrice;
   const bundleProfit = bundleTotalPrice - bundleTotalCost;
   const bundleMargin = bundleTotalPrice > 0 ? (bundleProfit / bundleTotalPrice) * 100 : 0;
+  
   return { totalProductCost, productProfit, productMargin, bundleTotalCost, bundleTotalPrice, bundleProfit, bundleMargin, upsellsCount: upsellsList.filter(u => u.name && u.price > 0).length };
 };
 
+// --- Componente Principal ---
 export default function App() {
+  const [user] = useState({ uid: 'public_user' });
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('active'); 
+  const [errorMsg, setErrorMsg] = useState(initError); 
+  
+  // FUNCIONALIDAD AGREGADA: Pestañas y Modal de Rechazo
+  const [activeTab, setActiveTab] = useState('active'); // 'active' o 'rejected'
   const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
 
+  // Conexión a Base de Datos
   useEffect(() => {
     if (initError || !db) return;
-    const q = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products');
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setProducts(loaded);
+    try {
+      const q = collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products');
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        loaded.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setProducts(loaded);
+        setLoading(false);
+      }, (err) => {
+        console.error("Firestore Error:", err);
+        setLoading(false);
+        setErrorMsg(`Error Base de Datos: ${err.message}`);
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      setErrorMsg("Error crítico al conectar: " + err.message);
       setLoading(false);
-    });
-    return () => unsubscribe();
+    }
   }, []);
 
+  // --- Funciones de Datos ---
   const addProduct = async () => {
-    setActiveTab('active');
     try {
       await addDoc(collection(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products'), {
-        ...INITIAL_PRODUCT_STATE, createdAt: serverTimestamp()
+        ...INITIAL_PRODUCT_STATE, createdAt: serverTimestamp(), createdBy: user.uid
       });
-    } catch (e) { alert("Error: " + e.message); }
+    } catch (e) { alert("Error al guardar: " + e.message); }
   };
-
-  const updateField = async (id, f, v) => {
+  const updateProductField = async (id, f, v) => {
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { [f]: v });
   };
-
-  const updateCost = async (id, costs, f, v) => {
-    await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { costs: { ...costs, [f]: parseFloat(v) || 0 } });
+  const updateProductCost = async (id, costs, f, v) => {
+    await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id), { costs: { ...costs, [f]: parseFloat(v) } });
   };
-
   const updateUpsell = async (p, uid, f, v) => {
     const newUpsells = p.upsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
     await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', p.id), { upsells: newUpsells });
   };
-
-  const confirmRejection = async () => {
-    if (!rejectModal.productId) return;
-    await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', rejectModal.productId), {
-      status: 'rejected',
-      rejectionReason: rejectModal.reason
-    });
-    setRejectModal({ isOpen: false, productId: null, reason: '' });
+  const deleteUpsell = async (p, uid) => {
+    if (confirm('¿Deseas eliminar este Upsell?')) {
+        const clearedUpsells = p.upsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
+        await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
+    }
+  };
+  const deleteProduct = async (id) => {
+    if (confirm('¿Eliminar producto?')) await deleteDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', id));
+  };
+  const handleImageUpload = (e, p, uid=null) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => uid ? updateUpsell(p, uid, 'image', reader.result) : updateProductField(p.id, 'image', reader.result);
+      reader.readAsDataURL(file);
+    }
   };
 
+  // FUNCIONALIDAD AGREGADA: Confirmación de Rechazo
+  const confirmRejection = async () => {
+    if (!rejectModal.productId) return;
+    try {
+      await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'public', 'data', 'products', rejectModal.productId), {
+        status: 'rejected',
+        rejectionReason: rejectModal.reason
+      });
+      setRejectModal({ isOpen: false, productId: null, reason: '' });
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  if (errorMsg) return <div className="p-10 text-red-600 text-center font-bold">{errorMsg}</div>;
+
+  // Filtrado de productos para las vistas
   const displayedProducts = products.filter(p => activeTab === 'active' ? p.status !== 'rejected' : p.status === 'rejected');
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-800">
       <div className="max-w-[1600px] mx-auto">
-        <header className="flex justify-between items-center mb-6 bg-blue-900 text-white p-6 rounded-2xl shadow-xl">
-          <h1 className="text-2xl font-black italic uppercase">Winner Product OS V10</h1>
-          <button onClick={addProduct} className="bg-white text-blue-900 px-6 py-2 rounded-xl font-black text-sm uppercase">➕ Nuevo Producto</button>
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-blue-900 text-white p-4 rounded-lg shadow-lg">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+              ☁️ WINNER PRODUCT OS <span className="text-xs font-normal bg-blue-600 px-2 py-0.5 rounded-full border border-blue-400">V10.0</span>
+            </h1>
+            <p className="text-xs text-blue-200 mt-1">{loading ? 'Conectando...' : 'Sistema Activo • Modo Público'}</p>
+          </div>
+          <button onClick={addProduct} disabled={loading} className="bg-white text-blue-900 hover:bg-blue-50 px-5 py-2.5 rounded-lg shadow font-bold text-sm transition-colors">
+            ➕ AGREGAR PRODUCTO
+          </button>
         </header>
 
-        <div className="flex gap-4 mb-8">
-          <button onClick={() => setActiveTab('active')} className={`flex-1 py-3 rounded-xl font-black uppercase text-xs transition-all ${activeTab === 'active' ? 'bg-blue-600 text-white ring-4 ring-blue-100' : 'bg-white text-slate-500 shadow-sm'}`}>📦 Activos ({products.filter(p => p.status !== 'rejected').length})</button>
-          <button onClick={() => setActiveTab('rejected')} className={`flex-1 py-3 rounded-xl font-black uppercase text-xs transition-all ${activeTab === 'rejected' ? 'bg-red-600 text-white ring-4 ring-red-100' : 'bg-white text-slate-500 shadow-sm'}`}>❌ Rechazados ({products.filter(p => p.status === 'rejected').length})</button>
+        {/* NAVEGACIÓN AGREGADA */}
+        <div className="flex gap-4 mb-6">
+          <button onClick={() => setActiveTab('active')} className={`px-6 py-2 rounded-lg font-bold text-sm shadow-sm transition-colors ${activeTab === 'active' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+            📦 Activos ({products.filter(p => p.status !== 'rejected').length})
+          </button>
+          <button onClick={() => setActiveTab('rejected')} className={`px-6 py-2 rounded-lg font-bold text-sm shadow-sm transition-colors ${activeTab === 'rejected' ? 'bg-red-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+            ❌ Rechazados ({products.filter(p => p.status === 'rejected').length})
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-8">
-          {displayedProducts.map(p => {
-            const st = STATUS_CONFIG[p.status] || STATUS_CONFIG.pending; 
-            const m = calculateMetrics(p);
-            return (
-              <div key={p.id} className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100">
-                {p.status === 'rejected' && (
-                  <div className="bg-red-50 p-6 border-b border-red-100">
-                    <label className="text-[10px] font-black text-red-600 uppercase mb-2 block tracking-widest">Motivo de Descarte:</label>
-                    <textarea value={p.rejectionReason} onChange={(e)=>updateField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full text-sm bg-white border border-red-200 rounded-xl p-3 outline-none resize-none focus:border-red-400" />
-                  </div>
-                )}
-                <div className={`px-8 py-3 flex justify-between items-center border-b ${st.color}`}>
-                  <span className="font-black text-xs uppercase tracking-widest">{st.emoji} {st.label}</span>
-                </div>
-                <div className="flex flex-col xl:flex-row">
-                  <div className="xl:w-1/4 p-8 border-r border-slate-50">
-                    <div className="aspect-square bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 mb-6 flex items-center justify-center relative overflow-hidden group">
-                      {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <span className="text-4xl">📸</span>}
-                    </div>
-                    <input value={p.name} onChange={(e)=>updateField(p.id, 'name', e.target.value)} className="w-full text-2xl font-black bg-transparent outline-none mb-2" />
-                  </div>
-                  <div className="flex-1 p-8">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                      {['base','cpa','freight','fulfillment','commission','returns','fixed'].map(f => (
-                        <div key={f} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <label className="text-[8px] font-black text-slate-400 uppercase block mb-1">{f}</label>
-                          <input type="number" value={p.costs?.[f]||''} onChange={(e)=>updateCost(p.id,p.costs,f,e.target.value)} className="w-full bg-transparent font-mono font-bold outline-none" />
+        {loading && <div className="text-center py-20 font-bold text-blue-600">Cargando base de datos...</div>}
+
+        {!loading && (
+          <div className="grid grid-cols-1 gap-6">
+            {displayedProducts.length === 0 && <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300"><p>No hay productos en esta sección.</p></div>}
+            {displayedProducts.map(p => {
+              const st = STATUS_CONFIG[p.status] || STATUS_CONFIG.pending; 
+              const m = calculateMetrics(p);
+              return (
+                <div key={p.id} className={`border-2 shadow-sm bg-white rounded-xl overflow-hidden`}>
+                   
+                   {/* BANNER DE RECHAZO AGREGADO */}
+                   {p.status === 'rejected' && (
+                     <div className="bg-red-50 p-4 border-b border-red-100">
+                       <label className="text-xs font-black text-red-800 uppercase block mb-1">Motivo del rechazo:</label>
+                       <textarea value={p.rejectionReason} onChange={(e)=>updateProductField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full text-sm bg-transparent border-b border-red-200 text-red-900 font-medium outline-none resize-none focus:border-red-500" placeholder="Escribe el motivo aquí..."/>
+                     </div>
+                   )}
+
+                   <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color}`}>
+                      <div className="flex items-center gap-2 font-bold uppercase text-xs"><span>{st.emoji}</span> {st.label}</div>
+                      <button onClick={() => deleteProduct(p.id)} className="text-slate-500 hover:text-red-600 font-bold px-2">🗑️ ELIMINAR</button>
+                   </div>
+                   
+                   <div className="flex flex-col xl:flex-row">
+                      <div className="w-full xl:w-[25%] p-5 border-r border-slate-200">
+                        <div className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-4 relative flex items-center justify-center group overflow-hidden">
+                          {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <span className="text-4xl text-slate-300">📷</span>}
+                          <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p)}/>
                         </div>
-                      ))}
-                    </div>
-                    <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white">
-                      <div className="flex justify-between items-end border-b border-white/10 pb-6 mb-6">
-                        <div>
-                          <label className="text-[10px] text-blue-400 font-black uppercase">Precio Venta</label>
-                          <input type="number" value={p.targetPrice||''} onChange={(e)=>updateField(p.id,'targetPrice',e.target.value)} className="bg-transparent text-5xl font-black outline-none w-full" />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] text-red-400 font-black">Costo Total</p>
-                          <p className="text-2xl font-mono font-black">{formatCurrency(m.totalProductCost)}</p>
-                        </div>
+                        <input value={p.name} onChange={(e)=>updateProductField(p.id,'name',e.target.value)} className="w-full text-lg font-black bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none mb-2" placeholder="Nombre..."/>
+                        <textarea value={p.description} onChange={(e)=>updateProductField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
                       </div>
-                      <div className="flex justify-between items-end">
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-black">Utilidad</p>
-                          <p className={`text-4xl font-black ${m.productProfit > 0 ? 'text-green-400' : 'text-red-400'}`}>{formatCurrency(m.productProfit)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] text-slate-400 font-black">Margen</p>
-                          <p className="text-6xl font-black italic tracking-tighter">{m.productMargin.toFixed(1)}%</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-8 flex flex-wrap gap-3">
-                      {Object.values(STATUS_CONFIG).map(s => (
-                        <button key={s.id} onClick={() => s.id === 'rejected' ? setRejectModal({ isOpen: true, productId: p.id, reason: '' }) : updateField(p.id, 'status', s.id)} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${p.status === s.id ? `${s.color} border-current shadow-md` : 'bg-white border-slate-100 text-slate-400'}`}>{s.emoji} {s.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="xl:w-1/4 bg-blue-50/50 p-8 border-l border-slate-100 flex flex-col">
-                    <h3 className="text-xs font-black text-blue-900 uppercase mb-6 tracking-widest">Estrategia Upsells</h3>
-                    <div className="space-y-4 mb-8 overflow-y-auto max-h-[300px]">
-                      {p.upsells.map(u => (
-                        <div key={u.id} className="bg-white p-3 rounded-2xl flex gap-3 border border-blue-100 shadow-sm relative group">
-                          <div className="w-12 h-12 bg-slate-50 rounded-xl shrink-0 flex items-center justify-center border border-slate-100 overflow-hidden">{u.image ? <img src={u.image} className="w-full h-full object-cover" /> : <span className="text-xs opacity-20">📸</span>}</div>
-                          <div className="flex-1 min-w-0">
-                            <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-[10px] font-black text-slate-800 bg-transparent outline-none mb-1 truncate" placeholder="Nombre..." />
-                            <div className="flex gap-2">
-                              <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-1/2 bg-slate-50 text-[9px] p-1 rounded font-mono" placeholder="Costo" />
-                              <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-1/2 bg-blue-50 text-[9px] p-1 rounded font-mono font-bold text-blue-700" placeholder="PVP" />
+                      
+                      <div className="flex-1 p-5 border-r border-slate-200 bg-slate-50">
+                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                           {[
+                             {k:'base',l:'COSTO PRODUCTO'}, {k:'cpa',l:'CPA'}, {k:'freight',l:'FLETE'},
+                             {k:'fulfillment',l:'LOGÍSTICA'}, {k:'commission',l:'COMISIÓN'},
+                             {k:'returns',l:'DEVOLUCIÓN'}, {k:'fixed',l:'FIJOS'}
+                           ].map(f=>(
+                             <div key={f.k} className="bg-white p-2 rounded border border-slate-200">
+                               <label className="text-[10px] font-bold text-slate-400 uppercase">{f.l}</label>
+                               <input type="number" value={p.costs?.[f.k]||''} onChange={(e)=>updateProductCost(p.id,p.costs,f.k,e.target.value)} className="w-full font-mono text-sm outline-none" placeholder="0"/>
+                             </div>
+                           ))}
+                         </div>
+                         <div className="bg-slate-200 rounded-lg p-4 mt-auto">
+                            <div className="flex justify-between items-end mb-4 pb-3 border-b border-slate-300">
+                               <div>
+                                 <label className="text-[10px] font-bold text-slate-500 uppercase">PRECIO OBJETIVO</label>
+                                 <input type="number" value={p.targetPrice||''} onChange={(e)=>updateProductField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-mono font-bold text-xl w-32 outline-none" placeholder="0" />
+                               </div>
+                               <div className="text-right text-[10px] font-bold text-slate-500 uppercase">
+                                 Costo Total: {formatCurrency(m.totalProductCost)}
+                               </div>
                             </div>
-                          </div>
+                            
+                            <div className="flex justify-between border-b border-slate-300 py-1.5">
+                                <span className="text-xs font-bold text-slate-500 uppercase">Utilidad Neta</span>
+                                <span className={`font-mono text-xl font-black ${m.productProfit>0?'text-blue-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span>
+                            </div>
+                            <div className="flex justify-between mt-1">
+                              <span className="text-xs font-bold text-slate-500 uppercase">Margen Neto</span>
+                              <span className={`font-mono text-xl font-black ${m.productMargin>0?'text-blue-800':'text-red-500'}`}>{m.productMargin.toFixed(1)}%</span>
+                            </div>
+                         </div>
+
+                         {/* BOTONES DE ESTADO (Interceptando el rechazo) */}
+                         <div className="mt-4 flex flex-wrap gap-2">
+                           {Object.values(STATUS_CONFIG).map(s=>(
+                             <button 
+                               key={s.id} 
+                               onClick={()=>{
+                                 if (s.id === 'rejected' && p.status !== 'rejected') {
+                                   setRejectModal({ isOpen: true, productId: p.id, reason: '' });
+                                 } else {
+                                   updateProductField(p.id,'status',s.id);
+                                   if (p.status === 'rejected' && s.id !== 'rejected') setActiveTab('active');
+                                 }
+                               }} 
+                               className={`px-3 py-1.5 rounded text-xs font-semibold border ${p.status===s.id ? `bg-white ${s.color}` : 'bg-white border-slate-200 text-slate-500'}`}
+                             >
+                               {s.emoji} {s.label}
+                             </button>
+                           ))}
+                         </div>
+                      </div>
+                      
+                      <div className="w-full xl:w-[28%] bg-slate-900 text-white p-5 flex flex-col text-sm">
+                        <h3 className="text-xs font-bold text-blue-300 mb-3 uppercase">Upsells ({m.upsellsCount} Activos)</h3>
+                        <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1">
+                           {p.upsells.map(u=>(
+                             <div key={u.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex gap-2">
+                               <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">➕</span>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImageUpload(e,p,u.id)}/></div>
+                               <div className="flex-1">
+                                 <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-xs bg-transparent border-b border-slate-700 mb-1 outline-none" placeholder="Nombre..."/>
+                                 <div className="flex gap-1">
+                                   <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-slate-900 text-[10px] p-1 rounded outline-none" placeholder="Costo"/>
+                                   <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-900 text-[10px] p-1 rounded font-bold text-blue-300 outline-none" placeholder="Precio"/>
+                                 </div>
+                               </div>
+                               <button onClick={() => deleteUpsell(p, u.id)} className="text-red-400 text-xs px-1">✕</button>
+                             </div>
+                           ))}
                         </div>
-                      ))}
-                    </div>
-                    <div className="bg-gradient-to-br from-blue-700 to-indigo-900 rounded-[2rem] p-6 text-white shadow-2xl mt-auto">
-                      <div className="flex justify-between items-end mb-1">
-                        <p className="text-[10px] text-blue-200 uppercase font-black">Ganancia Bundle</p>
-                        <p className="text-2xl font-mono font-bold">{formatCurrency(m.bundleProfit)}</p>
+                        <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg p-4 border border-blue-500 mt-auto shadow-lg">
+                           <div className="flex justify-between items-end">
+                              <div>
+                                 <p className="text-[10px] text-blue-200 uppercase">Utilidad Bundle</p>
+                                 <p className="text-xl font-mono font-bold">{formatCurrency(m.bundleProfit)}</p>
+                              </div>
+                              <div className="text-right">
+                                  <p className="text-[10px] text-blue-200 uppercase">Margen</p>
+                                  <span className="bg-white text-blue-700 px-2 py-0.5 rounded text-sm font-black">{m.bundleMargin.toFixed(1)}%</span>
+                              </div>
+                           </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <p className="text-[10px] text-blue-200 uppercase font-black">Margen Total</p>
-                        <span className="bg-white text-blue-700 px-2 py-0.5 rounded-lg text-sm font-black">{m.bundleMargin.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  </div>
+                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
+      {/* MODAL DE RECHAZO AGREGADO */}
       {rejectModal.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-red-100 animate-in zoom-in-95 duration-200">
-            <h2 className="text-2xl font-black text-slate-800 uppercase mb-4 tracking-tighter">🚨 Rechazar Producto</h2>
-            <p className="text-sm text-slate-500 mb-6 font-medium">Por favor, indica el motivo del rechazo:</p>
-            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 text-sm focus:outline-none focus:border-red-400 focus:ring-4 focus:ring-red-50 mb-8" placeholder="Escribe el motivo aquí..." />
-            <div className="flex gap-4">
-              <button onClick={() => setRejectModal({ isOpen: false, productId: null, reason: '' })} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-black uppercase text-[10px] rounded-xl">Cancelar</button>
-              <button onClick={confirmRejection} className="flex-1 py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase text-[10px] rounded-xl shadow-lg shadow-red-200 transition-all active:scale-95">Rechazar</button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-black text-slate-800 mb-4 uppercase">Rechazar Producto</h2>
+            <p className="text-sm text-slate-600 mb-4">Ingresa el motivo del rechazo para guardarlo en el historial:</p>
+            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-red-100 mb-6" placeholder="Ej: El flete es muy costoso..." />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectModal({ isOpen: false, productId: null, reason: '' })} className="flex-1 py-3 bg-slate-100 font-bold rounded">Cancelar</button>
+              <button onClick={confirmRejection} className="flex-1 py-3 bg-red-600 text-white font-bold rounded shadow-lg">Confirmar</button>
             </div>
           </div>
         </div>
