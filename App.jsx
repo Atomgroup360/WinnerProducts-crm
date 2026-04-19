@@ -29,7 +29,7 @@ const STATUS_CONFIG = {
 };
 
 const INITIAL_PRODUCT_STATE = {
-  name: 'Nuevo Producto',
+  name: '',
   description: '',
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0,
@@ -77,19 +77,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending'); 
   const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
+  
+  // ESTADOS PARA LA NUEVA VISTA DE CREACIÓN
+  const [isCreating, setIsCreating] = useState(false);
+  const [newProduct, setNewProduct] = useState(INITIAL_PRODUCT_STATE);
 
   // Conexión a Base de Datos
   useEffect(() => {
     const q = collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Ordenamiento estable: Primero por 'order', luego por 'createdAt' si son iguales
-      loaded.sort((a, b) => {
-        if ((a.order || 0) !== (b.order || 0)) {
-          return (a.order || 0) - (b.order || 0);
-        }
-        return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
-      });
+      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
       setProducts(loaded);
       setLoading(false);
     }, (err) => {
@@ -99,17 +97,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- Funciones ---
-  const addProduct = async () => {
+  // --- Funciones de Datos ---
+  const handleSaveNewProduct = async () => {
+    if (!newProduct.name) {
+      alert("Por favor ingresa al menos el nombre del producto.");
+      return;
+    }
     try {
       await addDoc(collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products'), {
-        ...INITIAL_PRODUCT_STATE, 
+        ...newProduct, 
         order: Date.now(), 
         createdAt: serverTimestamp(), 
         createdBy: user.uid
       });
+      setIsCreating(false);
+      setNewProduct(INITIAL_PRODUCT_STATE);
       setActiveTab('pending');
-    } catch (e) { alert("Error: " + e.message); }
+    } catch (e) { alert("Error al guardar: " + e.message); }
   };
 
   const updateField = async (id, f, v) => {
@@ -131,43 +135,45 @@ export default function App() {
     }
   };
 
-  // FUNCIÓN CORREGIDA: Intercambio preciso de orden
   const moveProduct = async (productId, direction) => {
-    // Obtenemos solo los productos de la pestaña actual
     const currentList = products.filter(p => p.status === activeTab);
     const index = currentList.findIndex(p => p.id === productId);
     const targetIndex = index + direction;
 
-    // Verificamos que el movimiento sea posible dentro del rango
     if (targetIndex >= 0 && targetIndex < currentList.length) {
       const productA = currentList[index];
       const productB = currentList[targetIndex];
-
-      // Caso crítico: Si los órdenes son iguales o no existen, forzamos valores nuevos antes de intercambiar
-      let orderA = productA.order;
-      let orderB = productB.order;
-
-      if (orderA === orderB || !orderA || !orderB) {
-        // Asignamos órdenes basados en la posición actual para "desempatar"
-        orderA = index * 1000;
-        orderB = targetIndex * 1000;
-      }
+      const orderA = productA.order || (Date.now() + index);
+      const orderB = productB.order || (Date.now() + targetIndex);
 
       try {
-        // Intercambiamos los valores
         await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productA.id), { order: orderB });
         await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productB.id), { order: orderA });
-      } catch (e) {
-        console.error("Error al mover producto:", e);
-      }
+      } catch (e) { console.error(e); }
     }
   };
 
-  const handleImage = (e, p, uid=null) => {
+  const handleImage = (e, target = "new", upsellId = null) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => uid ? updateUpsell(p, uid, 'image', reader.result) : updateField(p.id, 'image', reader.result);
+      reader.onloadend = () => {
+        if (target === "new") {
+          if (upsellId) {
+            const up = newProduct.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+            setNewProduct({...newProduct, upsells: up});
+          } else {
+            setNewProduct({...newProduct, image: reader.result});
+          }
+        } else {
+          // Lógica para productos ya existentes (target es el producto objeto)
+          if (upsellId) {
+            updateUpsell(target, upsellId, 'image', reader.result);
+          } else {
+            updateField(target.id, 'image', reader.result);
+          }
+        }
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -182,6 +188,151 @@ export default function App() {
     setActiveTab('rejected');
   };
 
+  // --- VISTA INDEPENDIENTE DE CREACIÓN ---
+  if (isCreating) {
+    const mNew = calculateMetrics(newProduct);
+    return (
+      <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-slate-800">
+        <div className="max-w-5xl mx-auto bg-white shadow-2xl rounded-2xl overflow-hidden border border-slate-200">
+          <header className="bg-blue-900 p-6 text-white flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-black uppercase tracking-tight">Configuración de Nuevo Producto</h2>
+              <p className="text-blue-200 text-xs uppercase font-bold mt-1 tracking-widest">Panel de Creación Profesional</p>
+            </div>
+            <button onClick={() => setIsCreating(false)} className="text-white/70 hover:text-white font-bold text-sm">✕ CANCELAR</button>
+          </header>
+
+          <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Columna Izquierda: Imagen e Info Básica */}
+            <div className="lg:col-span-1 space-y-6">
+              <div className="aspect-square bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 relative flex items-center justify-center overflow-hidden group">
+                {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-slate-400 font-bold text-center p-4">Haz clic para subir imagen principal</span>}
+                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, "new")}/>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">Nombre del Producto</label>
+                <input 
+                  value={newProduct.name} 
+                  onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 font-bold text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="Ej: Aspiradora Pro 2024"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">Descripción Estratégica</label>
+                <textarea 
+                  value={newProduct.description} 
+                  onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} 
+                  rows={4} 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                  placeholder="Escribe los puntos clave de venta..."
+                />
+              </div>
+            </div>
+
+            {/* Columna Central: Costos y Precios */}
+            <div className="lg:col-span-2 space-y-8">
+              <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                <h3 className="text-sm font-black uppercase text-slate-600 mb-4 border-b pb-2 border-slate-200">Estructura de Costos (COP)</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    {k:'base',l:'Costo Producto'}, {k:'cpa',l:'CPA Ads'}, {k:'freight',l:'Flete'},
+                    {k:'fulfillment',l:'Logística'}, {k:'commission',l:'Comisión'},
+                    {k:'returns',l:'Devolución'}, {k:'fixed',l:'Fijos'}
+                  ].map(f=>(
+                    <div key={f.k}>
+                      <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">{f.l}</label>
+                      <input 
+                        type="number" 
+                        value={newProduct.costs[f.k] || ''} 
+                        onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [f.k]: parseFloat(e.target.value) || 0}})} 
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-sm outline-none focus:border-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                  ))}
+                  <div className="col-span-2 bg-blue-900 p-3 rounded-lg text-white">
+                    <label className="text-[9px] font-black text-blue-300 uppercase mb-1 block">Precio Objetivo (PVP)</label>
+                    <input 
+                      type="number" 
+                      value={newProduct.targetPrice || ''} 
+                      onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value) || 0})} 
+                      className="w-full bg-transparent border-b border-blue-500 text-xl font-black outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Upsells */}
+              <div className="bg-slate-900 p-6 rounded-xl text-white">
+                <h3 className="text-sm font-black uppercase text-blue-300 mb-4 flex justify-between items-center">
+                  <span>Estrategia de Upsells</span>
+                  <span className="text-[10px] bg-blue-800 px-2 py-1 rounded">Max 5 Slots</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {newProduct.upsells.map(u => (
+                    <div key={u.id} className="bg-slate-800 p-3 rounded-lg flex gap-3 border border-slate-700">
+                      <div className="w-12 h-12 bg-slate-700 rounded-lg shrink-0 relative flex items-center justify-center overflow-hidden border border-slate-600">
+                        {u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">📸</span>}
+                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, "new", u.id)}/>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <input 
+                          value={u.name} 
+                          onChange={(e)=>{
+                            const up = newProduct.upsells.map(x => x.id === u.id ? {...x, name: e.target.value} : x);
+                            setNewProduct({...newProduct, upsells: up});
+                          }}
+                          className="w-full bg-transparent border-b border-slate-700 text-xs font-bold outline-none focus:border-blue-400" 
+                          placeholder="Nombre Upsell..."
+                        />
+                        <div className="flex gap-2">
+                          <input 
+                            type="number" value={u.cost || ''} 
+                            onChange={(e)=>{
+                              const up = newProduct.upsells.map(x => x.id === u.id ? {...x, cost: parseFloat(e.target.value) || 0} : x);
+                              setNewProduct({...newProduct, upsells: up});
+                            }}
+                            className="w-1/2 bg-slate-900 text-[10px] p-1 rounded outline-none" placeholder="Costo" 
+                          />
+                          <input 
+                            type="number" value={u.price || ''} 
+                            onChange={(e)=>{
+                              const up = newProduct.upsells.map(x => x.id === u.id ? {...x, price: parseFloat(e.target.value) || 0} : x);
+                              setNewProduct({...newProduct, upsells: up});
+                            }}
+                            className="w-1/2 bg-blue-800 text-[10px] p-1 rounded font-bold outline-none" placeholder="Precio" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Boton de Guardar Final */}
+              <div className="flex gap-4 pt-4">
+                <button 
+                  onClick={() => setIsCreating(false)} 
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-500 font-black p-4 rounded-xl transition-all uppercase tracking-widest text-sm"
+                >
+                  Descartar
+                </button>
+                <button 
+                  onClick={handleSaveNewProduct} 
+                  className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-black p-4 rounded-xl transition-all shadow-xl shadow-blue-200 uppercase tracking-widest text-sm"
+                >
+                  Guardar Producto
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const displayedProducts = products.filter(p => p.status === activeTab);
 
   return (
@@ -192,9 +343,9 @@ export default function App() {
             <h1 className="text-2xl font-black tracking-tight flex items-center gap-2 uppercase">
               ☁️ WINNER PRODUCT OS <span className="text-xs font-normal bg-blue-600 px-2 py-0.5 rounded-full border border-blue-400">V10.0</span>
             </h1>
-            <p className="text-xs text-blue-200 mt-1">{loading ? 'Cargando...' : 'Sistema Activo • Orden Manual Corregido'}</p>
+            <p className="text-xs text-blue-200 mt-1">{loading ? 'Cargando...' : 'Sistema Activo • Configuración Pro'}</p>
           </div>
-          <button onClick={addProduct} disabled={loading} className="bg-white text-blue-900 hover:bg-blue-50 px-5 py-2.5 rounded-lg shadow font-bold text-sm transition-colors uppercase">
+          <button onClick={() => setIsCreating(true)} disabled={loading} className="bg-white text-blue-900 hover:bg-blue-50 px-5 py-2.5 rounded-lg shadow font-bold text-sm transition-colors uppercase tracking-tight">
             ➕ AGREGAR PRODUCTO
           </button>
         </header>
@@ -204,7 +355,7 @@ export default function App() {
             <button 
               key={config.id}
               onClick={() => setActiveTab(config.id)} 
-              className={`px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all border ${activeTab === config.id ? `${config.color} border-current ring-1 ring-slate-300 shadow-inner` : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+              className={`px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all border ${activeTab === config.id ? `${config.color} border-current ring-1 ring-slate-300` : 'bg-white text-slate-500 border-slate-200'}`}
             >
               {config.emoji} {config.label} ({products.filter(p => p.status === config.id).length})
             </button>
@@ -228,32 +379,18 @@ export default function App() {
                    <div className={`px-4 py-2 flex justify-between items-center border-b ${st.color}`}>
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2 font-bold uppercase text-xs"><span>{st.emoji}</span> {st.label}</div>
-                        
-                        {/* CONTROLES DE POSICIÓN CORREGIDOS */}
                         <div className="flex items-center gap-1 bg-white/50 rounded-md p-1 border border-black/5">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); moveProduct(p.id, -1); }} 
-                            disabled={idx === 0} 
-                            className={`p-1 hover:bg-white rounded transition-all active:scale-90 ${idx === 0 ? 'opacity-10 cursor-not-allowed' : 'opacity-100'}`}
-                          >
-                            <svg className="w-4 h-4 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 15l7-7 7 7"></path></svg>
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); moveProduct(p.id, 1); }} 
-                            disabled={idx === displayedProducts.length - 1} 
-                            className={`p-1 hover:bg-white rounded transition-all active:scale-90 ${idx === displayedProducts.length - 1 ? 'opacity-10 cursor-not-allowed' : 'opacity-100'}`}
-                          >
-                            <svg className="w-4 h-4 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M19 9l-7 7-7-7"></path></svg>
-                          </button>
+                          <button onClick={() => moveProduct(p.id, -1)} disabled={idx === 0} className={`p-1 hover:bg-white rounded ${idx === 0 ? 'opacity-20' : ''}`}><svg className="w-3 h-3 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 15l7-7 7 7"></path></svg></button>
+                          <button onClick={() => moveProduct(p.id, 1)} disabled={idx === displayedProducts.length - 1} className={`p-1 hover:bg-white rounded ${idx === displayedProducts.length - 1 ? 'opacity-20' : ''}`}><svg className="w-3 h-3 text-slate-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M19 9l-7 7-7-7"></path></svg></button>
                         </div>
                       </div>
-                      <button onClick={() => deleteProduct(p.id)} className="text-slate-500 hover:text-red-600 font-bold px-2 text-[10px] uppercase">🗑️ Eliminar</button>
+                      <button onClick={() => deleteProduct(p.id)} className="text-slate-500 hover:text-red-600 font-bold px-2 text-[10px]">🗑️ ELIMINAR</button>
                    </div>
                    <div className="flex flex-col xl:flex-row">
                       <div className="w-full xl:w-[25%] p-5 border-r border-slate-200">
                         <div className="aspect-square bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-4 relative flex items-center justify-center group overflow-hidden">
                           {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <span className="text-4xl text-slate-300">📸</span>}
-                          <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e,p)}/>
+                          <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p)}/>
                         </div>
                         <input value={p.name} onChange={(e)=>updateField(p.id,'name',e.target.value)} className="w-full text-lg font-black bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none mb-2" placeholder="Nombre..."/>
                         <textarea value={p.description} onChange={(e)=>updateField(p.id,'description',e.target.value)} rows={4} className="w-full text-xs bg-slate-50 p-2 rounded resize-none" placeholder="Descripción..."/>
@@ -273,7 +410,7 @@ export default function App() {
                                  <label className="text-[10px] font-bold text-slate-500 uppercase">PRECIO OBJETIVO</label>
                                  <input type="number" value={p.targetPrice||''} onChange={(e)=>updateField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-mono font-bold text-xl w-32 outline-none" placeholder="0" />
                                </div>
-                               <div className="text-right text-[10px] font-bold text-slate-500 uppercase font-mono">Total: {formatCurrency(m.totalProductCost)}</div>
+                               <div className="text-right text-[10px] font-bold text-slate-500 uppercase">Costo Total: {formatCurrency(m.totalProductCost)}</div>
                             </div>
                             <div className="flex justify-between border-b border-slate-300 py-1.5"><span className="text-xs font-bold text-slate-500 uppercase">Utilidad Neta</span><span className={`font-mono text-xl font-black ${m.productProfit>0?'text-blue-800':'text-red-500'}`}>{formatCurrency(m.productProfit)}</span></div>
                             <div className="flex justify-between mt-1"><span className="text-xs font-bold text-slate-500 uppercase">Margen Neto</span><span className={`font-mono text-xl font-black ${m.productMargin>0?'text-blue-800':'text-red-500'}`}>{m.productMargin.toFixed(1)}%</span></div>
@@ -289,7 +426,7 @@ export default function App() {
                         <div className="space-y-2 mb-6 overflow-y-auto max-h-[300px] flex-1">
                            {p.upsells.map(u=>(
                              <div key={u.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex gap-2">
-                               <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">➕</span>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e,p,u.id)}/></div>
+                               <div className="w-10 h-10 bg-slate-700 shrink-0 relative flex items-center justify-center">{u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs">➕</span>}<input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p, u.id)}/></div>
                                <div className="flex-1">
                                  <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-[10px] bg-transparent border-b border-slate-700 mb-1 outline-none" placeholder="Nombre..."/>
                                  <div className="flex gap-1">
