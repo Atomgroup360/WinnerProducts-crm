@@ -25,8 +25,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// IMPORTANTE: Forzamos el ID que definimos en las Reglas de Firebase
-const DB_PATH_ID = 'winnerproduct-crm';
+// Enrutador dinámico para evitar bloqueos de permisos en diferentes entornos
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'winnerproduct-crm';
 
 // --- CONFIGURACIÓN DE ESTADOS ---
 const WINNER_STATUS = {
@@ -42,7 +42,7 @@ const IMPORT_STATUS = {
   approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
 };
 
-// --- FABRICANTES DE ESTADO INICIAL (Clonación segura para evitar mutación de memoria) ---
+// --- FABRICANTES DE ESTADO INICIAL ---
 const getInitialWinner = () => ({
   type: 'winner',
   name: '', dropiCode: '', supplier: '', description: '',
@@ -98,7 +98,7 @@ const calculateImportMetrics = (p) => {
   return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
 };
 
-// --- COMPRESOR DE IMÁGENES (Previene errores por Payload Too Large) ---
+// --- COMPRESOR DE IMÁGENES ---
 const compressImage = (base64Str) => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -111,21 +111,14 @@ const compressImage = (base64Str) => {
       let height = img.height;
 
       if (width > height) {
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
+        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
       } else {
-        if (height > MAX_HEIGHT) {
-          width = Math.round((width * MAX_HEIGHT) / height);
-          height = MAX_HEIGHT;
-        }
+        if (height > MAX_HEIGHT) { width = Math.round((width * MAX_HEIGHT) / height); height = MAX_HEIGHT; }
       }
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      // Reduce calidad a JPEG 70% para aligerar la base de datos
       resolve(canvas.toDataURL('image/jpeg', 0.7)); 
     };
   });
@@ -193,6 +186,9 @@ export default function App() {
   const [newProduct, setNewProduct] = useState(getInitialWinner());
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
+  
+  // NUEVO: Estado para mostrar errores directamente dentro del modal de creación
+  const [formError, setFormError] = useState('');
 
   // 1. Escuchar Auth
   useEffect(() => {
@@ -203,11 +199,11 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Escuchar Firestore (Ruta Corregida para coincidir con Reglas)
+  // 2. Escuchar Firestore
   useEffect(() => {
     if (!user) return;
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const q = collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName);
+    const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -230,6 +226,7 @@ export default function App() {
     setActiveTab('pending');
     setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     setIsCreating(false);
+    setFormError('');
   };
 
   const copyToClipboard = (text) => {
@@ -246,10 +243,12 @@ export default function App() {
 
   // --- MOTOR DE GUARDADO SANITIZADO ---
   const handleSave = async () => {
+    setFormError(''); // Limpiamos errores previos
+
+    // Validación estricta con feedback visual dentro del modal
     if (!newProduct.name || newProduct.name.trim() === '') {
-      setNotification('⚠️ El nombre del producto es obligatorio');
-      setTimeout(() => setNotification(''), 4000);
-      return;
+      setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
+      return; // Detiene la función aquí, por eso el botón parecía inservible
     }
     
     setIsSaving(true);
@@ -260,7 +259,6 @@ export default function App() {
     try {
       if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
 
-      // 1. Preparamos los datos base
       const payloadRaw = {
         ...newProduct,
         regNumber,
@@ -268,28 +266,23 @@ export default function App() {
         createdBy: auth.currentUser.uid
       };
 
-      // 2. SANITIZACIÓN: Convertir a JSON ida y vuelta elimina los 'undefined' invisibles
       const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
-      
-      // 3. Insertar el Timestamp de Firebase solo al final (es un objeto complejo)
       cleanPayload.createdAt = serverTimestamp();
 
-      // Guardado estricto en la ruta permitida por las reglas de Firestore
-      await addDoc(collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName), cleanPayload);
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
       
-      // Éxito: Limpiamos formulario, reseteamos con clonación y cambiamos de tab
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
       setActiveTab('pending'); 
+      setFormError('');
       
       setNotification('¡Registro guardado en la Nube! ✨');
       setTimeout(() => setNotification(''), 3000);
 
     } catch (e) { 
       console.error("Firebase Save Error:", e); 
-      // Si falla, el error se quedará 6 segundos en pantalla para que puedas leerlo
-      setNotification(`⚠️ Error Firestore: ${e.message}`);
-      setTimeout(() => setNotification(''), 6000);
+      // Mostramos el error devuelto por Firebase directamente en el formulario
+      setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -297,44 +290,32 @@ export default function App() {
 
   const updateDocField = async (id, f, v) => {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    try {
-        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id), { [f]: v });
-    } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [f]: v }); } catch (e) { console.error(e); }
   };
 
   const updateNestedField = async (id, parent, f, v) => {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const item = products.find(x => x.id === id);
     if (!item) return;
-    try {
-        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id), { 
-          [parent]: { ...item[parent], [f]: v } 
-        });
-    } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [parent]: { ...item[parent], [f]: v } }); } catch (e) { console.error(e); }
   };
 
   const updateUpsell = async (p, uid, f, v) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
     const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    try {
-        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: newUpsells });
-    } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells }); } catch (e) { console.error(e); }
   };
 
   const resetUpsell = async (p, uid) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
     const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
-    try {
-        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
-    } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells }); } catch (e) { console.error(e); }
   };
 
   const deleteItem = async (id) => {
     if (window.confirm('¿Estás seguro de borrar este registro de la base de datos?')) {
       const colName = activeModule === 'winners' ? 'products' : 'import_products';
-      try {
-          await deleteDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id));
-      } catch (e) { console.error(e); }
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id)); } catch (e) { console.error(e); }
     }
   };
 
@@ -346,8 +327,8 @@ export default function App() {
     if (targetIdx >= 0 && targetIdx < list.length) {
       const a = list[idx], b = list[targetIdx];
       try {
-          await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
-          await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
       } catch (e) { console.error(e); }
     }
   };
@@ -360,13 +341,8 @@ export default function App() {
     reader.onloadend = async () => {
       let result = reader.result;
       
-      // SANITIZACIÓN IMAGEN: Si el archivo pesa más de 500 KB, lo comprimimos forzosamente
       if (file.size > 500 * 1024) {
-        try {
-          result = await compressImage(reader.result);
-        } catch(err) {
-          console.error("Error comprimiendo:", err);
-        }
+        try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
       }
 
       if (!targetId) {
@@ -382,9 +358,9 @@ export default function App() {
         if (!item) return;
         if (upsellId) {
           const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
-          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { upsells: up });
+          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
         } else {
-          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { image: result });
+          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { image: result });
         }
       }
     };
@@ -403,7 +379,9 @@ export default function App() {
               {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Winner</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900" placeholder="Nombre Comercial..."/>
+            <div className="relative">
+                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label>
@@ -444,7 +422,9 @@ export default function App() {
               {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Importación</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900" placeholder="Nombre Producto..."/>
+            <div className="relative">
+                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="text-left">
                 <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label>
@@ -511,7 +491,7 @@ export default function App() {
               <p className="text-[8px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">Sincronizado Cloud</p>
             </div>
           </div>
-          <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
+          <button onClick={() => { setIsCreating(true); setFormError(''); }} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
         </header>
 
         <div className="flex gap-2 mb-6 md:mb-10 overflow-x-auto no-scrollbar pb-2">
@@ -771,14 +751,22 @@ export default function App() {
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
                 <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 md:p-8 border-b flex justify-between items-center z-10">
                     <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic">Registro Cloud</h2>
-                    <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
+                    <button onClick={()=>{setIsCreating(false); setFormError('');}} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
                 </header>
                 <div className="p-5 md:p-12">
                     {renderCreationForm()}
+                    
+                    {/* CAJA DE DIAGNÓSTICO: Muestra el error claramente si algo falla */}
+                    {formError && (
+                      <div className="w-full bg-rose-100 border-2 border-rose-500 text-rose-700 font-bold p-4 rounded-2xl mt-8 text-center text-sm animate-in fade-in">
+                        {formError}
+                      </div>
+                    )}
+
                     <button 
                       onClick={handleSave} 
                       disabled={isSaving}
-                      className="w-full mt-8 bg-zinc-900 hover:bg-black text-white font-black py-5 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
+                      className="w-full mt-6 bg-zinc-900 hover:bg-black text-white font-black py-5 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
                     >
                         {isSaving ? 'Guardando en la Nube...' : 'Confirmar Registro'}
                     </button>
