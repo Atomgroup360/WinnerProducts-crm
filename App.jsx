@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
@@ -20,7 +20,8 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-const STATUS_CONFIG = {
+// --- CONFIGURACIÓN DE ESTADOS ---
+const WINNER_STATUS = {
   pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '🕒' },
   prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-50 text-blue-600', activeColor: 'bg-blue-600 text-white', emoji: '📦' },
   testing: { id: 'testing', label: 'En Testeo', color: 'bg-amber-50 text-amber-600', activeColor: 'bg-amber-500 text-white', emoji: '🧪' },
@@ -28,73 +29,91 @@ const STATUS_CONFIG = {
   rejected: { id: 'rejected', label: 'Rechazado', color: 'bg-rose-50 text-rose-600', activeColor: 'bg-rose-600 text-white', emoji: '❌' }
 };
 
-const INITIAL_PRODUCT_STATE = {
-  name: '',
-  dropiCode: '',
-  supplier: '',
-  description: '',
+const IMPORT_STATUS = {
+  pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '⏳' },
+  approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
+};
+
+// --- ESTADOS INICIALES ---
+const INITIAL_WINNER = {
+  type: 'winner',
+  name: '', dropiCode: '', supplier: '', description: '',
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
-  targetPrice: 0,
-  origin: 'importacion',
-  status: 'pending',
-  rejectionReason: '',
-  image: null,
-  order: 0, 
+  targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
   upsells: [
-    { id: 1, name: '', cost: 0, price: 0, image: null }, 
+    { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
     { id: 3, name: '', cost: 0, price: 0, image: null },
     { id: 4, name: '', cost: 0, price: 0, image: null },
-    { id: 5, name: '', cost: 0, price: 0, image: null },
+    { id: 5, name: '', cost: 0, price: 0, image: null }
   ]
 };
 
+const INITIAL_IMPORT = {
+  type: 'import',
+  name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
+  unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
+  measures: { width: 0, height: 0, length: 0 },
+  purchaseDate: '', advancePayment: 0, buyer: '', estimatedArrival: '',
+  colors: Array(7).fill(0).map((_, i) => ({ id: i+1, color: '', qty: 0 }))
+};
+
+// --- AYUDANTES ---
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
 
-const calculateMetrics = (product) => {
-  const c = product.costs || {};
-  const totalBaseCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
+const calculateWinnerMetrics = (p) => {
+  if (!p) return { totalCost: 0, totalPrice: 0, profit: 0, margin: 0, activeUpsells: 0 };
+  const c = p.costs || {};
+  const baseCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
     (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
-  const basePrice = parseFloat(product.targetPrice) || 0; 
-  const upsellsList = product.upsells || [];
-  const upsellsCostTotal = upsellsList.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
-  const upsellsPriceTotal = upsellsList.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
-  
-  const combinedTotalCost = totalBaseCost + upsellsCostTotal;
-  const combinedTotalPrice = basePrice + upsellsPriceTotal;
-  const finalProfit = combinedTotalPrice - combinedTotalCost;
-  const finalMargin = combinedTotalPrice > 0 ? (finalProfit / combinedTotalPrice) * 100 : 0;
-  
-  return { 
-    totalBaseCost, 
-    basePrice,
-    combinedTotalCost, 
-    combinedTotalPrice, 
-    finalProfit, 
-    finalMargin, 
-    upsellsCount: upsellsList.filter(u => u.name && (u.price > 0 || u.cost > 0)).length 
-  };
+  const basePrice = parseFloat(p.targetPrice) || 0;
+  const upsells = p.upsells || [];
+  const uCost = upsells.reduce((s, u) => s + (parseFloat(u.cost)||0), 0);
+  const uPrice = upsells.reduce((s, u) => s + (parseFloat(u.price)||0), 0);
+  const totalCost = baseCost + uCost;
+  const totalPrice = basePrice + uPrice;
+  const profit = totalPrice - totalCost;
+  const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
+  return { totalCost, totalPrice, profit, margin, activeUpsells: upsells.filter(u => u.name).length };
+};
+
+const calculateImportMetrics = (p) => {
+  if (!p) return { cbmPerCtn: 0, totalCbm: 0, costChinaCOP: 0, nationalizationCOP: 0, totalLandCostCOP: 0, unitCostColombia: 0 };
+  const m = p.measures || { width: 0, height: 0, length: 0 };
+  const cbmPerCtn = (parseFloat(m.width) * parseFloat(m.height) * parseFloat(m.length)) / 1000000;
+  const totalCbm = cbmPerCtn * (parseFloat(p.ctnQty) || 0);
+  const costChinaUSD = ((parseFloat(p.prodCostUSD) || 0) * (parseFloat(p.unitsQty) || 0)) + (parseFloat(p.yiwuFreightUSD) || 0);
+  const costChinaCOP = costChinaUSD * (parseFloat(p.dollarRate) || 0) * 1.03;
+  const nationalizationCOP = totalCbm * (parseFloat(p.cbmCostCOP) || 0);
+  const totalLandCostCOP = costChinaCOP + nationalizationCOP;
+  const unitCostColombia = (parseFloat(p.unitsQty) > 0) ? totalLandCostCOP / parseFloat(p.unitsQty) : 0;
+  return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
 };
 
 export default function App() {
+  const [activeModule, setActiveModule] = useState('winners');
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('pending'); 
-  const [expandedBundles, setExpandedBundles] = useState({});
-  const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
+  const [activeTab, setActiveTab] = useState('pending');
   const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState(INITIAL_PRODUCT_STATE);
+  const [newProduct, setNewProduct] = useState(INITIAL_WINNER);
+  const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
+  const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
 
+  // 1. Auth Automático
   useEffect(() => {
     signInAnonymously(auth).catch(console.error);
     return onAuthStateChanged(auth, setUser);
   }, []);
 
+  // 2. Escuchar Datos
   useEffect(() => {
     if (!user) return;
-    const q = collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products');
+    const colName = activeModule === 'winners' ? 'products' : 'import_products';
+    const q = collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', colName);
+    setLoading(true);
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -102,7 +121,18 @@ export default function App() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user, activeModule]);
+
+  const displayedProducts = useMemo(() => {
+    return products.filter(p => p.status === activeTab);
+  }, [products, activeTab]);
+
+  const handleModuleChange = (mod) => {
+    setActiveModule(mod);
+    setActiveTab('pending');
+    setNewProduct(mod === 'winners' ? INITIAL_WINNER : INITIAL_IMPORT);
+    setIsCreating(false);
+  };
 
   const copyToClipboard = (text) => {
     if (!text) return;
@@ -112,385 +142,436 @@ export default function App() {
     textArea.select();
     try {
       document.execCommand('copy');
-      setNotification(`Código ${text} copiado`);
+      setNotification(`Copiado: ${text}`);
       setTimeout(() => setNotification(''), 2000);
-    } catch (err) {
-      console.error('Error al copiar', err);
-    }
+    } catch (err) { console.error(err); }
     document.body.removeChild(textArea);
   };
 
-  const handleSaveNewProduct = async () => {
+  const handleSave = async () => {
     if (!newProduct.name) return;
-    const timestamp = Date.now();
-    const regNumber = `REG-${(products.length + 1).toString().padStart(3, '0')}`;
+    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
+    const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
     
     try {
-      await addDoc(collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products'), {
-        ...newProduct, 
+      await addDoc(collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col), {
+        ...newProduct,
         regNumber,
-        order: timestamp, 
-        createdAt: serverTimestamp(), 
+        order: Date.now(),
+        createdAt: serverTimestamp(),
         createdBy: user.uid
       });
       setIsCreating(false);
-      setNewProduct(INITIAL_PRODUCT_STATE);
-      setActiveTab('pending');
+      setNewProduct(activeModule === 'winners' ? INITIAL_WINNER : INITIAL_IMPORT);
     } catch (e) { console.error(e); }
   };
 
-  const updateField = async (id, f, v) => {
-    await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id), { [f]: v });
+  const updateDocField = async (id, f, v) => {
+    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, id), { [f]: v });
   };
 
-  const updateCost = async (id, costs, f, v) => {
-    await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id), { 
-      costs: { ...costs, [f]: parseFloat(v) || 0 } 
+  const updateNestedField = async (id, parent, f, v) => {
+    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const item = products.find(x => x.id === id);
+    if (!item) return;
+    await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, id), { 
+      [parent]: { ...item[parent], [f]: v } 
     });
   };
 
   const updateUpsell = async (p, uid, f, v) => {
-    const newUpsells = p.upsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', p.id), { upsells: newUpsells });
-  };
-
-  const resetUpsell = async (product, bundleId) => {
-    const clearedUpsells = product.upsells.map(u => 
-      u.id === bundleId ? { id: bundleId, name: '', cost: 0, price: 0, image: null } : u
-    );
+    const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
+    const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
     try {
-      await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', product.id), { 
-        upsells: clearedUpsells 
-      });
+      await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', p.id), { upsells: newUpsells });
     } catch (e) { console.error(e); }
   };
 
-  const deleteProduct = async (id) => {
-    if (window.confirm('¿Borrar producto permanentemente?')) {
-      try { await deleteDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id)); } catch (e) { console.error(e); }
+  const resetUpsell = async (p, uid) => {
+    const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
+    const clearedUpsells = currentUpsells.map(u => 
+      u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u
+    );
+    try {
+      await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteItem = async (id) => {
+    if (window.confirm('¿Borrar registro permanentemente?')) {
+      const col = activeModule === 'winners' ? 'products' : 'import_products';
+      await deleteDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, id));
     }
   };
 
-  const moveProduct = async (productId, direction) => {
-    const currentTabList = products.filter(p => p.status === activeTab);
-    const index = currentTabList.findIndex(p => p.id === productId);
-    const targetIndex = index + direction;
-
-    if (targetIndex >= 0 && targetIndex < currentTabList.length) {
-      const productA = currentTabList[index];
-      const productB = currentTabList[targetIndex];
-      let orderA = productA.order || (Date.now() - 1000);
-      let orderB = productB.order || Date.now();
-      if (orderA === orderB) orderB = orderA + 1;
-
-      try {
-        await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productA.id), { order: orderB });
-        await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productB.id), { order: orderA });
-      } catch (err) { console.error("Error al mover:", err); }
+  const moveItem = async (id, dir) => {
+    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const list = products.filter(p => p.status === activeTab);
+    const idx = list.findIndex(p => p.id === id);
+    const targetIdx = idx + dir;
+    if (targetIdx >= 0 && targetIdx < list.length) {
+      const a = list[idx], b = list[targetIdx];
+      await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, a.id), { order: b.order || Date.now() });
+      await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, b.id), { order: a.order || Date.now() - 100 });
     }
   };
 
-  const toggleBundles = (id) => {
-    setExpandedBundles(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const handleImage = (e, target = "new", upsellId = null) => {
+  const handleImage = (e, targetId = null, upsellId = null) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (target === "new") {
-          if (upsellId) {
-            const up = newProduct.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
-            setNewProduct({...newProduct, upsells: up});
-          } else {
-            setNewProduct({...newProduct, image: reader.result});
-          }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (!targetId) {
+        if (upsellId) {
+          const up = newProduct.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+          setNewProduct({...newProduct, upsells: up});
         } else {
-          if (upsellId) {
-            const up = target.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
-            updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', target.id), { upsells: up });
-          } else {
-            updateField(target.id, 'image', reader.result);
-          }
+          setNewProduct({...newProduct, image: reader.result});
         }
-      };
-      reader.readAsDataURL(file);
-    }
+      } else {
+        const col = activeModule === 'winners' ? 'products' : 'import_products';
+        const item = products.find(x => x.id === targetId);
+        if (!item) return;
+        if (upsellId) {
+          const currentUpsells = item.upsells || INITIAL_WINNER.upsells;
+          const up = currentUpsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+          updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, targetId), { upsells: up });
+        } else {
+          updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', col, targetId), { image: reader.result });
+        }
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const confirmRejection = async () => {
     if (!rejectModal.productId) return;
     await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', rejectModal.productId), {
-      status: 'rejected',
-      rejectionReason: rejectModal.reason
+      status: 'rejected', rejectionReason: rejectModal.reason
     });
     setRejectModal({ isOpen: false, productId: null, reason: '' });
-    setActiveTab('rejected');
   };
 
-  if (isCreating) {
-    return (
-      <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans animate-in fade-in duration-500">
-        <div className="max-w-4xl mx-auto bg-white shadow-2xl rounded-[1.5rem] md:rounded-[2.5rem] overflow-hidden border border-zinc-200/50">
-          <header className="bg-zinc-900 p-6 md:p-8 text-white flex justify-between items-center">
-            <div>
-              <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white uppercase italic leading-none">Configurar Nuevo Producto</h2>
-              <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-[0.2em]">INTELIGENCIA COMERCIAL</p>
+  const renderCreationForm = () => {
+    if (activeModule === 'winners') {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-zinc-900">
+          <div className="space-y-5">
+            <div className="aspect-square bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group">
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Producto</span>}
+              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <button onClick={() => setIsCreating(false)} className="bg-white/10 hover:bg-white/20 px-5 py-2 rounded-full font-bold text-[10px] transition-all uppercase tracking-widest text-white border border-white/10">CERRAR</button>
-          </header>
-          
-          <div className="p-6 md:p-10 space-y-8 md:space-y-10 text-zinc-900">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
-              <div className="space-y-5">
-                <div className="aspect-square bg-zinc-50 rounded-[1.5rem] md:rounded-[2rem] border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group cursor-pointer">
-                  {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase tracking-tighter">Cargar Fotografía</span>}
-                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, "new")}/>
-                </div>
-                
-                <div className="space-y-4">
-                  <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 transition-colors" placeholder="Nombre Comercial..."/>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[9px] font-black text-zinc-400 uppercase mb-1 block tracking-widest leading-none">Código DROPI</label>
-                      <input value={newProduct.dropiCode} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono outline-none focus:ring-2 focus:ring-zinc-900/5" placeholder="ID-00000"/>
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-black text-zinc-400 uppercase mb-1 block tracking-widest leading-none">Proveedor</label>
-                      <input value={newProduct.supplier} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-zinc-900/5" placeholder="Nombre Prov."/>
-                    </div>
-                  </div>
-
-                  <textarea value={newProduct.description} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl p-4 text-xs resize-none outline-none focus:ring-2 focus:ring-zinc-200 text-zinc-600 leading-relaxed" placeholder="Estrategia de ventas y beneficios clave..."/>
-                </div>
-              </div>
-
-              <div className="space-y-6 md:space-y-8">
-                <div className="bg-zinc-50 p-5 md:p-6 rounded-2xl md:rounded-3xl border border-zinc-100 shadow-sm">
-                  <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 md:mb-6 tracking-[0.2em] border-b border-zinc-200/50 pb-2 leading-none">Estructura Financiera</h3>
-                  <div className="grid grid-cols-2 gap-3 md:gap-4">
-                    {[{k:'base',l:'Producto'}, {k:'cpa',l:'Ads'}, {k:'freight',l:'Flete'}, {k:'fulfillment',l:'Log.'}, {k:'commission',l:'Com.'}, {k:'returns',l:'Dev.'}, {k:'fixed',l:'Fijos'}].map(f=>(
-                      <div key={f.k}>
-                        <label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1 leading-none">{f.l}</label>
-                        <input type="number" onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [f.k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm font-mono outline-none focus:ring-2 focus:ring-zinc-900/5 text-zinc-700" placeholder="0"/>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl md:rounded-3xl text-white shadow-xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                  <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block tracking-widest leading-none relative z-10">PVP Sugerido Base</label>
-                  <div className="flex items-center gap-2 relative z-10">
-                    <span className="text-xl font-medium opacity-40">$</span>
-                    <input type="number" onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white tracking-tighter" placeholder="0"/>
-                  </div>
-                </div>
+            <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Comercial..."/>
+            <div className="grid grid-cols-2 gap-4">
+              <input value={newProduct.dropiCode} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono" placeholder="Código DROPI"/>
+              <input value={newProduct.supplier} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs" placeholder="Proveedor"/>
+            </div>
+            <textarea value={newProduct.description} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl p-4 text-xs resize-none outline-none" placeholder="Descripción estratégica..."/>
+          </div>
+          <div className="space-y-6">
+            <div className="bg-zinc-50 p-6 rounded-3xl border border-zinc-100 shadow-sm">
+              <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 border-b pb-2">Costos Winner (COP)</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
+                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1">{k}</label>
+                  <input type="number" onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm font-mono"/></div>
+                ))}
               </div>
             </div>
-            <button onClick={handleSaveNewProduct} className="w-full bg-zinc-900 hover:bg-black text-white font-bold py-5 md:py-6 rounded-2xl md:rounded-[1.8rem] text-sm md:text-lg shadow-2xl transition-all uppercase tracking-[0.3em] active:scale-[0.98]">Lanzar Estrategia</button>
+            <div className="bg-zinc-900 p-6 rounded-3xl text-white shadow-xl">
+              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block">PVP Sugerido</label>
+              <input type="number" onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-4xl font-bold outline-none"/>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  const displayedProducts = products.filter(p => p.status === activeTab);
+      );
+    } else {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-zinc-900">
+          <div className="space-y-5">
+            <div className="aspect-square bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group">
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Importación</span>}
+              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
+            </div>
+            <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Producto..."/>
+            <div className="grid grid-cols-2 gap-4">
+              <input value={newProduct.chineseSupplier} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs" placeholder="Proveedor Chino"/>
+              <input type="number" onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono" placeholder="Dólar Hoy"/>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="bg-zinc-50 p-5 rounded-2xl border border-zinc-100 grid grid-cols-2 gap-4">
+                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo Prod (USD)</label>
+                <input type="number" onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM (COP)</label>
+                <input type="number" onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Cant. Unidades</label>
+                <input type="number" onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Cant. CTN</label>
+                <input type="number" onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
+                <input type="number" onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+            </div>
+            <div className="bg-zinc-50 p-5 rounded-2xl border border-zinc-100">
+                <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2">Medidas CTN (cm)</h4>
+                <div className="grid grid-cols-3 gap-2">
+                    <input type="number" placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs"/>
+                    <input type="number" placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs"/>
+                    <input type="number" placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs"/>
+                </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#f1f5f9] p-3 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
       
       {notification && (
-        <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-8 py-4 rounded-2xl shadow-2xl z-[200] flex items-center gap-4 font-bold text-xs uppercase tracking-widest border border-zinc-700 animate-in slide-in-from-bottom-10 duration-300">
-          <span>✨ {notification}</span>
+        <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-8 py-4 rounded-2xl shadow-2xl z-[200] font-bold text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10">
+          ✨ {notification}
         </div>
       )}
 
       <div className="max-w-[1400px] mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center mb-6 md:mb-10 gap-4 md:gap-6 bg-white p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] shadow-sm border border-zinc-200/50">
-          <div className="flex items-center gap-4 w-full md:w-auto">
-            <div className="w-10 h-10 md:w-12 md:h-12 bg-zinc-900 rounded-xl md:rounded-2xl flex items-center justify-center text-white text-lg shadow-lg shadow-zinc-200 shrink-0 italic font-black">W</div>
+        
+        <div className="flex justify-center mb-8">
+            <div className="bg-white p-1.5 rounded-[2rem] shadow-xl border border-zinc-200 flex">
+                <button onClick={()=>handleModuleChange('winners')} className={`px-10 py-3 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-2xl scale-105' : 'text-zinc-400 hover:text-zinc-600'}`}>Winner Products</button>
+                <button onClick={()=>handleModuleChange('imports')} className={`px-10 py-3 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-2xl scale-105' : 'text-zinc-400 hover:text-zinc-600'}`}>Importación</button>
+            </div>
+        </div>
+
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-200/50 relative">
+          <div className="flex items-center gap-5">
+            <div className="w-14 h-14 bg-zinc-900 rounded-[1.2rem] flex items-center justify-center text-white text-2xl shadow-xl italic font-black">W</div>
             <div>
-              <h1 className="text-xl md:text-2xl font-black tracking-tighter flex items-center gap-2 uppercase italic text-zinc-900 leading-none">WINNER OS <span className="text-[9px] font-normal bg-zinc-900 text-white px-2 py-0.5 rounded-full not-italic tracking-normal">V13.8</span></h1>
-              <p className="text-[9px] text-zinc-400 mt-1 uppercase font-black tracking-[0.3em]">Master E-commerce Cloud Platform</p>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">
+                {activeModule === 'winners' ? 'Winner Product OS' : 'Productos de Importación'}
+              </h1>
+              <p className="text-[10px] text-zinc-400 mt-2 uppercase font-black tracking-[0.3em]">{loading ? 'Cargando...' : 'Sistema Cloud V14.2'}</p>
             </div>
           </div>
-          <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-8 py-3.5 rounded-xl md:rounded-2xl shadow-xl font-bold text-[10px] md:text-xs transition-all uppercase tracking-widest active:scale-95 group border border-zinc-800">
-            ➕ Nuevo Producto
+          <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white px-10 py-4 rounded-[1.2rem] shadow-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">
+            ➕ Crear Registro
           </button>
         </header>
 
-        <div className="flex flex-wrap gap-2 mb-6 md:mb-10 overflow-x-auto pb-2 no-scrollbar">
-          {Object.values(STATUS_CONFIG).map((config) => (
-            <button 
-              key={config.id} 
-              onClick={() => setActiveTab(config.id)} 
-              className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl md:rounded-2xl font-bold text-[10px] md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 hover:bg-zinc-50 border border-zinc-200/50'}`}
-            >
-              {config.emoji} {config.label} <span className="ml-1 opacity-50">({products.filter(p => p.status === config.id).length})</span>
+        <div className="flex gap-2 mb-10 overflow-x-auto no-scrollbar">
+          {Object.values(activeModule === 'winners' ? WINNER_STATUS : IMPORT_STATUS).map((config) => (
+            <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-8 py-3.5 rounded-[1.2rem] font-black text-[11px] whitespace-nowrap uppercase transition-all tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-2xl scale-105` : 'bg-white text-zinc-400 hover:bg-zinc-50 border border-zinc-200/50 shadow-sm'}`}>
+              {config.emoji} {config.label} <span className="ml-2 opacity-40">({products.filter(p => p.status === config.id).length})</span>
             </button>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:gap-10">
+        <div className="grid grid-cols-1 gap-12">
           {displayedProducts.map((p, idx) => {
-            const st = STATUS_CONFIG[p.status]; 
-            const m = calculateMetrics(p);
-            const isBundlesExpanded = expandedBundles[p.id];
-            
+            const isWinner = activeModule === 'winners';
+            const mWinner = isWinner ? calculateWinnerMetrics(p) : null;
+            const mImport = !isWinner ? calculateImportMetrics(p) : null;
+            const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
+
             return (
-              <div key={p.id} className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-xl group animate-in slide-in-from-bottom-4 duration-500">
-                {p.status === 'rejected' && (
-                  <div className="bg-rose-50/50 p-4 md:p-6 border-b border-rose-100/50">
-                    <label className="text-[8px] font-black text-rose-600 uppercase block mb-1 tracking-widest leading-none italic">Feedback de Rechazo:</label>
-                    <textarea value={p.rejectionReason} onChange={(e)=>updateField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full text-xs md:text-sm bg-white/50 border border-rose-200 rounded-xl md:rounded-2xl p-3 md:p-4 text-rose-900 font-medium outline-none resize-none focus:border-rose-400 shadow-inner" placeholder="Escribe el motivo..."/>
-                  </div>
-                )}
+              <div key={p.id} className="bg-white rounded-[3rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-2xl animate-in slide-in-from-bottom-6 duration-700">
                 
-                <div className={`px-4 md:px-8 py-3 md:py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b gap-3 ${activeTab === st.id ? 'bg-zinc-50/50' : 'bg-zinc-50'}`}>
-                   <div className="flex flex-wrap items-center gap-3 md:gap-6 w-full sm:w-auto">
-                     <div className="bg-zinc-900 text-white px-3 py-1 rounded-lg text-[9px] md:text-[10px] font-black tracking-widest shadow-sm">
-                       {p.regNumber || 'REG-000'}
-                     </div>
-                     <span className="font-bold text-[10px] md:text-[11px] uppercase tracking-[0.1em] md:tracking-[0.2em] text-zinc-600">{st.emoji} {st.label}</span>
-                     
-                     <div className="flex items-center gap-1.5 md:gap-2 bg-white rounded-xl p-1 shadow-inner border border-zinc-100">
-                        <button onClick={() => moveProduct(p.id, -1)} disabled={idx === 0} className={`w-7 h-7 md:w-8 md:h-8 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all ${idx === 0 ? 'opacity-10 cursor-not-allowed' : 'active:scale-75'}`}>
-                            <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg>
-                        </button>
-                        <span className="text-[9px] md:text-[10px] font-black text-zinc-400 px-1 select-none">#{idx + 1}</span>
-                        <button onClick={() => moveProduct(p.id, 1)} disabled={idx === displayedProducts.length - 1} className={`w-7 h-7 md:w-8 md:h-8 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all ${idx === displayedProducts.length - 1 ? 'opacity-10 cursor-not-allowed' : 'active:scale-75'}`}>
-                            <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg>
-                        </button>
+                <div className={`px-10 py-4 flex justify-between items-center border-b bg-zinc-50/20`}>
+                   <div className="flex items-center gap-6">
+                     <div className="bg-zinc-900 text-white px-4 py-1.5 rounded-xl text-[11px] font-black tracking-widest">{p.regNumber}</div>
+                     <span className="font-black text-[11px] uppercase tracking-widest text-zinc-500">{stCfg.emoji} {stCfg.label}</span>
+                     <div className="flex items-center bg-white rounded-2xl p-1 shadow-inner border border-zinc-100">
+                        <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-9 h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-xl transition-all disabled:opacity-10"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7" strokeWidth="3"/></svg></button>
+                        <span className="text-[10px] font-black text-zinc-400 px-3">#{idx + 1}</span>
+                        <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length-1} className="w-9 h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-xl transition-all disabled:opacity-10"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="3"/></svg></button>
                      </div>
                    </div>
-                   <button onClick={() => deleteProduct(p.id)} className="text-zinc-300 hover:text-rose-600 font-bold text-[9px] md:text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 ml-auto sm:ml-0">
-                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                     <span className="hidden sm:inline">Eliminar</span>
-                   </button>
+                   <button onClick={() => deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600 transition-all hover:scale-110"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
                 </div>
 
                 <div className="flex flex-col xl:flex-row">
-                   <div className="w-full xl:w-[25%] p-6 md:p-8 border-r border-zinc-100 bg-zinc-50/20 flex flex-col items-center xl:items-stretch text-center xl:text-left">
-                     <div className="w-full max-w-[240px] aspect-square bg-white rounded-[1.5rem] md:rounded-[2rem] border border-zinc-200 mb-5 md:mb-6 relative flex items-center justify-center overflow-hidden shadow-sm group/img cursor-pointer">
-                       {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-110"/> : <span className="text-3xl md:text-5xl opacity-10 font-bold italic text-zinc-900 tracking-tighter leading-none">STOCK<br/>IMAGE</span>}
-                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold uppercase tracking-widest">Sustituir</div>
-                       <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p)}/>
+                   <div className="w-full xl:w-[25%] p-10 border-r border-zinc-100 bg-zinc-50/10">
+                     <div className="aspect-square bg-white rounded-[2.5rem] border border-zinc-200 mb-8 relative overflow-hidden shadow-sm group cursor-pointer">
+                       {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" alt="Producto"/> : <span className="text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">PREVIEW</span>}
+                       <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
                      </div>
+                     <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-6 py-1 transition-all text-zinc-900" placeholder="Nombre..."/>
                      
-                     <div className="space-y-4 w-full">
-                        <input value={p.name} onChange={(e)=>updateField(p.id,'name',e.target.value)} className="w-full text-lg md:text-xl font-bold bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none py-1 transition-all text-zinc-900 text-center xl:text-left" placeholder="Nombre..."/>
-                        
-                        <div className="grid grid-cols-2 gap-2 w-full">
-                            <div className="bg-white border border-zinc-100 rounded-xl p-2.5 shadow-sm group/dropi transition-all hover:border-blue-200 relative overflow-hidden">
-                                <div className="flex justify-between items-center mb-1">
-                                    <label className="text-[7px] font-black text-zinc-400 uppercase tracking-widest leading-none">Código DROPI</label>
-                                    <button onClick={() => copyToClipboard(p.dropiCode)} className="text-zinc-400 hover:text-blue-600 transition-colors p-0.5" title="Copiar Código">
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                                    </button>
-                                </div>
-                                <input value={p.dropiCode} onChange={(e)=>updateField(p.id, 'dropiCode', e.target.value)} className="w-full text-[10px] font-mono font-bold text-zinc-800 bg-transparent outline-none focus:text-blue-600" placeholder="ID..."/>
+                     <div className="grid grid-cols-2 gap-3 mb-6">
+                        <div className="bg-white border border-zinc-100 p-3 rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(isWinner ? p.dropiCode : p.chineseSupplier)}>
+                            <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">{isWinner ? 'DROPI 📋' : 'PROV CHINO 📋'}</label>
+                            <input value={(isWinner ? p.dropiCode : p.chineseSupplier) || ''} onChange={(e)=>updateDocField(p.id, isWinner ? 'dropiCode' : 'chineseSupplier', e.target.value)} className="text-[11px] font-mono font-bold truncate w-full outline-none bg-transparent"/>
+                        </div>
+                        <div className="bg-white border border-zinc-100 p-3 rounded-2xl shadow-sm">
+                            <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">{isWinner ? 'PROVEEDOR' : 'TRM HOY'}</label>
+                            <input value={(isWinner ? p.supplier : p.dollarRate) || ''} onChange={(e)=>updateDocField(p.id, isWinner ? 'supplier' : 'dollarRate', isWinner ? e.target.value : parseFloat(e.target.value)||0)} className="w-full text-[11px] font-bold outline-none bg-transparent"/>
+                        </div>
+                     </div>
+                     <textarea value={p.description || ''} onChange={(e)=>updateDocField(p.id, 'description', e.target.value)} rows={3} className="w-full text-xs bg-white p-6 rounded-[1.5rem] border border-zinc-100 shadow-inner text-zinc-500 leading-relaxed" placeholder="Estrategia..."/>
+                   </div>
+
+                   <div className="flex-1 p-10 space-y-10 bg-white relative">
+                      {isWinner ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
+                            <div key={k} className="bg-zinc-50/50 p-5 rounded-2xl border border-zinc-100">
+                                <label className="text-[10px] font-black text-zinc-400 uppercase block mb-1">{k}</label>
+                                <input type="number" value={p.costs?.[k] || 0} onChange={(e)=>updateNestedField(p.id, 'costs', k, parseFloat(e.target.value)||0)} className="w-full font-mono text-sm font-bold bg-transparent outline-none text-zinc-700"/>
                             </div>
-                            <div className="bg-white border border-zinc-100 rounded-xl p-2.5 shadow-sm transition-all hover:border-indigo-200">
-                                <label className="text-[7px] font-black text-zinc-400 uppercase mb-1 block tracking-widest leading-none">Proveedor</label>
-                                <input value={p.supplier} onChange={(e)=>updateField(p.id, 'supplier', e.target.value)} className="w-full text-[10px] font-bold text-zinc-800 bg-transparent outline-none focus:text-indigo-600 truncate" placeholder="Nombre..."/>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            {[{k:'prodCostUSD',l:'Costo USD'}, {k:'cbmCostCOP',l:'CBM COP'}, {k:'unitsQty',l:'Unidades'}, {k:'ctnQty',l:'CTN qty'}, {k:'yiwuFreightUSD',l:'Yiwu USD'}].map(f=>(
+                                <div key={f.k} className="bg-zinc-50/50 p-5 rounded-2xl border border-zinc-100">
+                                    <label className="text-[10px] font-black text-zinc-400 uppercase block mb-1">{f.l}</label>
+                                    <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-sm font-bold bg-transparent outline-none"/>
+                                </div>
+                            ))}
+                            <div className="col-span-2 bg-zinc-50 p-5 rounded-2xl border border-zinc-100 shadow-inner">
+                                <label className="text-[10px] font-black text-zinc-400 uppercase block mb-2">Dimensiones CTN (W x H x L cm)</label>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-2 rounded-xl text-xs font-mono w-full"/>
+                                    <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-2 rounded-xl text-xs font-mono w-full"/>
+                                    <input type="number" value={p.measures?.length || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'length', parseFloat(e.target.value)||0)} className="bg-white border p-2 rounded-xl text-xs font-mono w-full"/>
+                                </div>
                             </div>
                         </div>
+                      )}
 
-                        <textarea value={p.description} onChange={(e)=>updateField(p.id,'description',e.target.value)} rows={3} className="w-full text-[10px] md:text-[11px] bg-white p-4 rounded-xl md:rounded-2xl resize-none outline-none border border-zinc-100 shadow-inner text-zinc-500 leading-relaxed focus:ring-4 focus:ring-zinc-100" placeholder="Descripción estratégica..."/>
-                     </div>
-                   </div>
-                   
-                   <div className="flex-1 p-6 md:p-8 bg-white space-y-6 md:space-y-8">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
-                        {[{k:'base',l:'Producto'}, {k:'cpa',l:'Ads'}, {k:'freight',l:'Flete'}, {k:'fulfillment',l:'Log.'}, {k:'commission',l:'Com.'}, {k:'returns',l:'Dev.'}, {k:'fixed',l:'Fijos'}].map(f=>(
-                          <div key={f.k} className="bg-zinc-50/50 p-3 md:p-4 rounded-xl md:rounded-2xl border border-zinc-100 hover:bg-white hover:shadow-md transition-all">
-                            <label className="text-[8px] md:text-[9px] font-black text-zinc-400 uppercase block mb-1 tracking-tighter leading-none">{f.l}</label>
-                            <input type="number" value={p.costs?.[f.k]||''} onChange={(e)=>updateCost(p.id,p.costs,f.k,e.target.value)} className="w-full font-mono text-xs md:text-sm font-bold outline-none text-zinc-800 bg-transparent" placeholder="0"/>
-                          </div>
+                      <div className="bg-zinc-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+                         {isWinner ? (
+                            <div className="relative z-10 space-y-8">
+                                <div className="flex flex-col md:flex-row justify-between items-end border-b border-zinc-800 pb-8 gap-8">
+                                    <div className="flex-1 w-full">
+                                        <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4 block">PVP Sugerido (Bundle)</label>
+                                        <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors"/>
+                                    </div>
+                                    <div className="text-right">
+                                        {/* CORRECCIÓN: "Inversión Logística" -> "Costos" */}
+                                        <p className="text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-2 italic">Costos</p>
+                                        <p className="text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <div className="bg-white/5 p-6 rounded-[1.8rem] border border-white/5 flex-1 shadow-inner">
+                                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Utilidad Estimada</p>
+                                        <p className={`text-5xl font-mono font-bold ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
+                                    </div>
+                                    <div className="text-right ml-10">
+                                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 italic">Margen ROI</p>
+                                        <p className="text-7xl font-black italic tracking-tighter leading-none">{mWinner.margin.toFixed(1)}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                         ) : (
+                            <div className="relative z-10 space-y-8">
+                                <div className="flex flex-col md:flex-row justify-between gap-10 border-b border-zinc-800 pb-8">
+                                    <div>
+                                        <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-3">Mercancía China (x1.03 factor)</p>
+                                        <p className="text-3xl font-bold font-mono">{formatCurrency(mImport.costChinaCOP)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-3">Logística ({mImport.totalCbm.toFixed(3)} CBM)</p>
+                                        <p className="text-3xl font-bold font-mono">{formatCurrency(mImport.nationalizationCOP)}</p>
+                                    </div>
+                                </div>
+                                <div className="bg-emerald-500/10 p-10 rounded-[3rem] border border-emerald-500/20 flex flex-col md:flex-row justify-between items-center gap-10 hover:bg-emerald-500/20 transition-all">
+                                    <div className="flex items-center gap-8">
+                                        <div className="text-6xl">🇨🇴</div>
+                                        <div>
+                                            <p className="text-[12px] font-black text-emerald-400 uppercase tracking-widest mb-2">Costo Producto en Colombia</p>
+                                            <p className="text-7xl font-black text-white">{formatCurrency(mImport.unitCostColombia)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Desembolso Total</p>
+                                        <p className="text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                         )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
+                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-8 py-3.5 rounded-[1.1rem] text-[11px] font-black border-2 uppercase transition-all ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl scale-105` : 'bg-white border-zinc-100 text-zinc-400 hover:bg-zinc-50'}`}>
+                            {s.emoji} {s.label}
+                          </button>
                         ))}
                       </div>
 
-                      <div className="bg-zinc-900 rounded-[1.5rem] md:rounded-[2.2rem] p-5 md:p-8 text-white shadow-xl relative overflow-hidden group/profit border border-zinc-800">
-                         <div className="absolute top-0 right-0 w-32 h-32 md:w-48 md:h-48 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[80px] -mr-16 -mt-16 md:-mr-20 md:-mt-20"></div>
-                         <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-zinc-800 pb-5 md:pb-6 mb-5 md:mb-6 gap-4 md:gap-6 relative z-10">
-                            <div className="flex-1 w-full">
-                              <label className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2 md:mb-3 block leading-none">PVP Total Sugerido (Inc. Bundles)</label>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xl font-bold opacity-30">$</span>
-                                <input type="number" value={p.targetPrice||''} onChange={(e)=>updateField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-bold text-3xl md:text-5xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white" placeholder="0" />
-                              </div>
-                            </div>
-                            <div className="text-left md:text-right">
-                               <p className="text-[8px] md:text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1 leading-none italic">Inversión del Embudo</p>
-                               <p className="text-xl md:text-2xl font-mono font-bold tracking-tight text-rose-50">{formatCurrency(m.combinedTotalCost)}</p>
-                            </div>
-                         </div>
-                         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 md:gap-6 relative z-10">
-                            <div className="bg-white/5 p-4 md:p-5 rounded-xl md:rounded-2xl border border-white/5 w-full sm:flex-1 transition-all group-hover/profit:bg-white/10 text-center sm:text-left shadow-inner">
-                               <p className="text-[8px] md:text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1 leading-none">Beneficio Neto Estimado</p>
-                               <p className={`text-2xl md:text-4xl font-mono font-bold ${m.finalProfit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(m.finalProfit)}</p>
-                            </div>
-                            <div className="text-center sm:text-right w-full sm:w-auto">
-                                <p className="text-[8px] md:text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1 leading-none italic italic">Margen Estratégico</p>
-                                <p className="text-4xl md:text-6xl font-black italic tracking-tighter leading-none text-white">{m.finalMargin.toFixed(1)}%</p>
-                            </div>
-                         </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 pt-2 justify-center md:justify-start">
-                        {Object.values(STATUS_CONFIG).map(s=>(<button key={s.id} onClick={()=>{ if (s.id === 'rejected' && p.status !== 'rejected') { setRejectModal({ isOpen: true, productId: p.id, reason: '' }); } else { updateField(p.id,'status',s.id); } }} className={`px-4 md:px-5 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-bold border-2 uppercase transition-all tracking-wider ${p.status===s.id ? `bg-white ${s.color} border-current shadow-md scale-105 z-10` : 'bg-white border-zinc-100 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600'}`}>{s.emoji} {s.label}</button>))}
-                      </div>
-                   </div>
-
-                   <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-6 md:p-8 flex flex-col border-l border-zinc-100 shadow-inner">
-                     <button 
-                        onClick={() => toggleBundles(p.id)}
-                        className={`w-full flex justify-between items-center p-4 md:p-5 rounded-xl md:rounded-2xl border-2 transition-all duration-300 ${isBundlesExpanded ? 'bg-zinc-900 border-zinc-900 text-white shadow-2xl scale-[1.02]' : 'bg-white border-zinc-100 text-zinc-900 hover:border-zinc-300 shadow-sm'}`}
-                     >
-                        <div className="flex items-center gap-3">
-                            <span className="text-lg">🍱</span>
-                            <div className="text-left">
-                                <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest leading-none">Estrategia Bundles</p>
-                                <p className={`text-[8px] md:text-[9px] font-bold mt-1 opacity-60`}>{m.upsellsCount} Activos</p>
-                            </div>
-                        </div>
-                        <svg className={`w-4 h-4 md:w-5 md:h-5 transition-transform duration-500 ${isBundlesExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M19 9l-7 7-7-7"/></svg>
-                     </button>
-
-                     <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isBundlesExpanded ? 'max-h-[1000px] opacity-100 mt-5 md:mt-6' : 'max-h-0 opacity-0 mt-0'}`}>
-                        <div className="space-y-3 md:space-y-4 pr-1 custom-scrollbar overflow-y-auto max-h-[500px] md:max-h-[600px] no-scrollbar">
-                            {p.upsells.map(u=>(
-                            <div key={u.id} className="bg-white p-3 md:p-4 rounded-2xl md:rounded-3xl border border-zinc-100 flex gap-3 md:gap-4 relative group/bundle transition-all hover:shadow-lg border-l-4 border-l-indigo-500 shadow-sm">
-                                <div className="w-10 h-10 md:w-12 md:h-12 bg-zinc-50 rounded-lg md:rounded-xl relative shrink-0 flex items-center justify-center border border-zinc-100 overflow-hidden shadow-inner cursor-pointer group/up">
-                                {u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-[10px] opacity-20 text-zinc-900 font-black">+</span>}
-                                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p, u.id)}/>
-                                </div>
-                                <div className="flex-1 min-w-0 pr-6 md:pr-4">
-                                <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold bg-transparent border-b border-transparent focus:border-indigo-500 mb-1 outline-none truncate text-zinc-900" placeholder="Nombre Bundle..."/>
-                                <div className="flex gap-2 mt-1">
-                                    <div className="w-1/2">
-                                    <label className="text-[7px] text-zinc-400 uppercase block leading-none mb-1">Costo</label>
-                                    <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-zinc-50 text-[9px] md:text-[10px] p-1 md:p-1.5 rounded-lg font-mono outline-none border border-transparent text-zinc-700 shadow-inner" placeholder="0"/>
+                      {!isWinner && p.status === 'approved' && (
+                        <div className="pt-8 border-t border-zinc-100 animate-in slide-in-from-top-6 duration-700">
+                           <button onClick={()=>setExpandedItems({...expandedItems, [p.id]: !expandedItems[p.id]})} className={`w-full p-8 rounded-[2.5rem] border-2 transition-all flex justify-between items-center ${expandedItems[p.id] ? 'bg-zinc-900 border-zinc-900 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-900'}`}>
+                                <div className="flex items-center gap-5"><span className="text-3xl">📋</span><div className="text-left"><p className="text-sm font-black uppercase tracking-widest">Concepto de Compra y Logística</p></div></div>
+                                <svg className={`w-6 h-6 transition-transform ${expandedItems[p.id] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
+                           </button>
+                           {expandedItems[p.id] && (
+                                <div className="mt-8 p-10 bg-zinc-50 rounded-[3rem] border border-zinc-200 grid grid-cols-1 md:grid-cols-2 gap-10 animate-in fade-in">
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <input type="date" value={p.purchaseDate || ''} onChange={(e)=>updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full p-4 rounded-2xl border text-sm font-mono"/>
+                                            <input type="date" value={p.estimatedArrival || ''} onChange={(e)=>updateDocField(p.id, 'estimatedArrival', e.target.value)} className="w-full p-4 rounded-2xl border text-sm font-mono"/>
+                                        </div>
+                                        <input type="number" value={p.advancePayment || 0} onChange={(e)=>updateDocField(p.id, 'advancePayment', parseFloat(e.target.value)||0)} className="w-full p-4 rounded-2xl border text-sm font-mono font-bold" placeholder="Valor Anticipo..."/>
+                                        <input value={p.buyer || ''} onChange={(e)=>updateDocField(p.id, 'buyer', e.target.value)} className="w-full p-4 rounded-2xl border text-sm font-bold" placeholder="Comprador..."/>
                                     </div>
-                                    <div className="w-1/2">
-                                    <label className="text-[7px] text-indigo-500 uppercase block leading-none mb-1 font-bold">Venta</label>
-                                    <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-indigo-50 text-[9px] md:text-[10px] p-1 md:p-1.5 rounded-lg font-bold text-indigo-600 outline-none border border-transparent shadow-inner" placeholder="0"/>
+                                    <div className="bg-white p-8 rounded-[2.5rem] border">
+                                        <h4 className="text-[11px] font-black text-zinc-400 uppercase mb-6 border-b pb-3">Distribución por Color</h4>
+                                        <div className="space-y-3 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar no-scrollbar">
+                                            {(p.colors || []).map(c => (
+                                                <div key={c.id} className="flex gap-4 items-center bg-zinc-50/50 p-3 rounded-2xl border">
+                                                    <input value={c.color || ''} onChange={(e)=>{
+                                                        const n = p.colors.map(x=>x.id===c.id?{...x, color: e.target.value}:x);
+                                                        updateDocField(p.id, 'colors', n);
+                                                    }} className="flex-1 text-xs font-black bg-transparent outline-none uppercase" placeholder="Color..."/>
+                                                    <input type="number" value={c.qty || 0} onChange={(e)=>{
+                                                        const n = p.colors.map(x=>x.id===c.id?{...x, qty: parseInt(e.target.value)||0}:x);
+                                                        updateDocField(p.id, 'colors', n);
+                                                    }} className="w-24 bg-zinc-900 text-white p-2 rounded-xl text-center text-xs font-mono font-bold" placeholder="Uds"/>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
-                                </div>
-                                <button 
-                                onClick={() => resetUpsell(p, u.id)} 
-                                className="text-zinc-300 opacity-100 sm:opacity-0 group-hover/bundle:opacity-100 transition-all p-1 hover:text-rose-500 absolute right-2 top-2 hover:scale-125 bg-white/50 rounded-full"
-                                >
-                                <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </div>
-                            ))}
+                           )}
                         </div>
-                     </div>
+                      )}
                    </div>
+
+                   {/* BUNDLES */}
+                   {isWinner && (
+                    <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-10 flex flex-col border-l border-zinc-100 shadow-inner">
+                        <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-6 rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
+                           <div className="flex items-center gap-4"><span className="text-2xl">🍱</span><div className="text-left"><p className="text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[9px] font-bold mt-2 opacity-50 uppercase">{mWinner.activeUpsells} Activos</p></div></div>
+                           <svg className={`w-6 h-6 transition-transform duration-500 ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
+                        </button>
+                        <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
+                           <div className="space-y-5 no-scrollbar">
+                               {(p.upsells || INITIAL_WINNER.upsells).map(u=>(
+                                   <div key={u.id} className="bg-white p-5 rounded-[2rem] border border-zinc-200 flex gap-5 relative group hover:shadow-xl border-l-8 border-l-indigo-600 transition-all duration-500">
+                                       <div className="w-16 h-16 bg-zinc-50 rounded-2xl relative shrink-0 flex items-center justify-center border overflow-hidden">
+                                           {u.image ? <img src={u.image} className="w-full h-full object-cover" alt="Upsell"/> : <span className="text-xl opacity-20 font-black">+</span>}
+                                           <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id, u.id)}/>
+                                       </div>
+                                       <div className="flex-1 min-w-0 pr-8">
+                                           <input value={u.name || ''} onChange={(e)=>updateUpsell(p, u.id, 'name', e.target.value)} className="w-full text-xs font-black bg-transparent border-b border-zinc-100 focus:border-indigo-600 mb-2 outline-none truncate" placeholder="Nombre..."/>
+                                           <div className="flex gap-3">
+                                               <input type="number" value={u.cost || ''} onChange={(e)=>updateUpsell(p, u.id, 'cost', parseFloat(e.target.value)||0)} className="w-1/2 bg-zinc-50 text-[10px] p-2 rounded-xl font-mono font-bold outline-none border border-transparent" placeholder="Costo"/>
+                                               <input type="number" value={u.price || ''} onChange={(e)=>updateUpsell(p, u.id, 'price', parseFloat(e.target.value)||0)} className="w-1/2 bg-indigo-50/50 text-[10px] p-2 rounded-xl font-black text-indigo-700 outline-none border border-transparent" placeholder="Venta"/>
+                                           </div>
+                                       </div>
+                                       <button onClick={() => resetUpsell(p, u.id)} className="text-zinc-300 opacity-0 group-hover:opacity-100 transition-all p-2 hover:text-rose-500 absolute right-3 top-3"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2.5"/></svg></button>
+                                   </div>
+                               ))}
+                           </div>
+                        </div>
+                    </div>
+                   )}
                 </div>
               </div>
             );
@@ -498,17 +579,19 @@ export default function App() {
         </div>
       </div>
 
-      {rejectModal.isOpen && (
-        <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-2xl md:rounded-[3rem] shadow-2xl p-6 md:p-10 w-full max-w-md border border-zinc-100 animate-in zoom-in-95 duration-200">
-            <h2 className="text-xl md:text-2xl font-black text-zinc-900 mb-2 uppercase tracking-tighter italic border-b border-zinc-100 pb-4 text-center sm:text-left">Rechazar Producto</h2>
-            <p className="text-[9px] md:text-[10px] text-zinc-400 my-4 md:my-6 font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] leading-relaxed italic text-center sm:text-left">Justifica el descarte para optimizar la toma de decisiones futura...</p>
-            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-zinc-50 border-2 border-slate-100 rounded-xl md:rounded-[1.5rem] p-4 md:p-6 text-sm focus:outline-none focus:border-zinc-900 focus:ring-8 focus:ring-zinc-900/5 mb-6 md:mb-8 transition-all font-medium text-zinc-700 shadow-inner" placeholder="Ej: CPA demasiado costoso, margen bajo 20%..." />
-            <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
-              <button onClick={() => setRejectModal({ isOpen: false, productId: null, reason: '' })} className="order-2 sm:order-1 flex-1 py-4 md:py-5 bg-zinc-100 hover:bg-zinc-200 text-zinc-500 font-black uppercase text-[10px] tracking-[0.1em] md:tracking-[0.2em] rounded-xl md:rounded-2xl transition-all italic">Cancelar</button>
-              <button onClick={confirmRejection} className="order-1 sm:order-2 flex-1 py-4 md:py-5 bg-rose-600 hover:bg-rose-700 text-white font-black uppercase text-[10px] tracking-[0.1em] md:tracking-[0.2em] rounded-xl md:rounded-2xl shadow-xl shadow-rose-200 active:scale-95 transition-all italic">RECHAZAR PRODUCTO</button>
+      {/* MODAL CREACIÓN */}
+      {isCreating && (
+        <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-4">
+            <div className="bg-white rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
+                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-8 border-b flex justify-between items-center z-10">
+                    <h2 className="text-2xl font-black text-zinc-900 uppercase italic">{activeModule === 'winners' ? 'Configurar Winner Product' : 'Calcular Importación'}</h2>
+                    <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-3 rounded-full hover:bg-zinc-200">✕</button>
+                </header>
+                <div className="p-12">
+                    {renderCreationForm()}
+                    <button onClick={handleSave} className="w-full mt-12 bg-zinc-900 hover:bg-black text-white font-black py-7 rounded-[2rem] text-xl shadow-2xl transition-all uppercase tracking-[0.4em] active:scale-[0.98]">Confirmar Registro Cloud</button>
+                </div>
             </div>
-          </div>
         </div>
       )}
     </div>
