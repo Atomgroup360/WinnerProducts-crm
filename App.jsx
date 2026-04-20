@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp 
+  onSnapshot, serverTimestamp, query 
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
@@ -20,7 +20,6 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// --- Constantes de UI ---
 const STATUS_CONFIG = {
   pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '🕒' },
   prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-50 text-blue-600', activeColor: 'bg-blue-600 text-white', emoji: '📦' },
@@ -38,7 +37,7 @@ const INITIAL_PRODUCT_STATE = {
   status: 'pending',
   rejectionReason: '',
   image: null,
-  order: Date.now(), 
+  order: 0, 
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null }, 
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -80,7 +79,7 @@ export default function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending'); 
-  const [expandedBundles, setExpandedBundles] = useState({}); // Mapa de IDs de productos expandidos
+  const [expandedBundles, setExpandedBundles] = useState({});
   const [rejectModal, setRejectModal] = useState({ isOpen: false, productId: null, reason: '' });
   const [isCreating, setIsCreating] = useState(false);
   const [newProduct, setNewProduct] = useState(INITIAL_PRODUCT_STATE);
@@ -95,6 +94,7 @@ export default function App() {
     const q = collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Ordenamiento por el campo order (de menor a mayor)
       loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
       setProducts(loaded);
       setLoading(false);
@@ -104,10 +104,16 @@ export default function App() {
 
   const handleSaveNewProduct = async () => {
     if (!newProduct.name) return;
+    
+    // El orden inicial será el timestamp para que los nuevos aparezcan al final
+    const timestamp = Date.now();
+    const regNumber = `REG-${(products.length + 1).toString().padStart(3, '0')}`;
+    
     try {
       await addDoc(collection(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products'), {
         ...newProduct, 
-        order: Date.now(), 
+        regNumber,
+        order: timestamp, 
         createdAt: serverTimestamp(), 
         createdBy: user.uid
       });
@@ -146,6 +152,35 @@ export default function App() {
   const deleteProduct = async (id) => {
     if (window.confirm('¿Borrar producto permanentemente?')) {
       try { await deleteDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', id)); } catch (e) { console.error(e); }
+    }
+  };
+
+  // FUNCIÓN DE MOVIMIENTO BLINDADA
+  const moveProduct = async (productId, direction) => {
+    const currentTabList = products.filter(p => p.status === activeTab);
+    const index = currentTabList.findIndex(p => p.id === productId);
+    const targetIndex = index + direction;
+
+    if (targetIndex >= 0 && targetIndex < currentTabList.length) {
+      const productA = currentTabList[index];
+      const productB = currentTabList[targetIndex];
+      
+      // Si alguno no tiene order, le asignamos uno basado en su posición actual + tiempo
+      let orderA = productA.order || (Date.now() - 1000);
+      let orderB = productB.order || Date.now();
+
+      // Si son iguales, forzamos una diferencia
+      if (orderA === orderB) {
+        orderB = orderA + 1;
+      }
+
+      // Intercambiamos los valores de orden en Firebase
+      try {
+        await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productA.id), { order: orderB });
+        await updateDoc(doc(db, 'artifacts', 'winnerproduct-crm', 'public', 'data', 'products', productB.id), { order: orderA });
+      } catch (err) {
+        console.error("Error al mover:", err);
+      }
     }
   };
 
@@ -193,19 +228,22 @@ export default function App() {
       <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans animate-in fade-in duration-500">
         <div className="max-w-4xl mx-auto bg-white shadow-2xl rounded-[2.5rem] overflow-hidden border border-zinc-200/50">
           <header className="bg-zinc-900 p-8 text-white flex justify-between items-center">
-            <h2 className="text-2xl font-bold tracking-tight">Nueva Estrategia de Producto</h2>
-            <button onClick={() => setIsCreating(false)} className="bg-white/10 hover:bg-white/20 px-5 py-2 rounded-full font-bold text-xs transition-all uppercase tracking-widest">CANCELAR</button>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-white">Configurar Nuevo Producto</h2>
+              <p className="text-zinc-400 text-xs font-bold mt-1 tracking-widest">SISTEMA DE REGISTRO SECUENCIAL</p>
+            </div>
+            <button onClick={() => setIsCreating(false)} className="bg-white/10 hover:bg-white/20 px-5 py-2 rounded-full font-bold text-xs transition-all uppercase tracking-widest text-white">CANCELAR</button>
           </header>
           
           <div className="p-10 space-y-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 text-zinc-900">
               <div className="space-y-6">
-                <div className="aspect-square bg-zinc-50 rounded-[2rem] border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group">
+                <div className="aspect-square bg-zinc-50 rounded-[2rem] border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group cursor-pointer">
                   {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"/> : <span className="text-zinc-400 font-bold text-xs uppercase">Imagen del Producto</span>}
                   <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, "new")}/>
                 </div>
-                <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-200 pb-2 font-bold text-2xl outline-none focus:border-zinc-900 transition-colors" placeholder="Nombre del producto..."/>
-                <textarea value={newProduct.description} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-zinc-200" placeholder="Descripción estratégica de venta..."/>
+                <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-200 pb-2 font-bold text-2xl outline-none focus:border-zinc-900 transition-colors text-zinc-900" placeholder="Nombre del producto..."/>
+                <textarea value={newProduct.description} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl p-4 text-sm resize-none outline-none focus:ring-2 focus:ring-zinc-200 text-zinc-600" placeholder="Descripción estratégica de venta..."/>
               </div>
 
               <div className="space-y-8">
@@ -215,7 +253,7 @@ export default function App() {
                     {[{k:'base',l:'Producto'}, {k:'cpa',l:'CPA Ads'}, {k:'freight',l:'Flete'}, {k:'fulfillment',l:'Logística'}, {k:'commission',l:'Comisión'}, {k:'returns',l:'Devolución'}, {k:'fixed',l:'Fijos'}].map(f=>(
                       <div key={f.k}>
                         <label className="text-[9px] font-bold text-zinc-500 uppercase block mb-1">{f.l}</label>
-                        <input type="number" onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [f.k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm font-mono outline-none focus:ring-2 focus:ring-zinc-900/5" placeholder="0"/>
+                        <input type="number" onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [f.k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm font-mono outline-none focus:ring-2 focus:ring-zinc-900/5 text-zinc-700" placeholder="0"/>
                       </div>
                     ))}
                   </div>
@@ -224,12 +262,12 @@ export default function App() {
                   <label className="text-[10px] font-bold uppercase text-zinc-400 mb-2 block tracking-widest">Precio de Venta Objetivo</label>
                   <div className="flex items-center gap-2">
                     <span className="text-xl font-medium opacity-40">$</span>
-                    <input type="number" onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-4xl font-bold outline-none" placeholder="0"/>
+                    <input type="number" onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-4xl font-bold outline-none text-white" placeholder="0"/>
                   </div>
                 </div>
               </div>
             </div>
-            <button onClick={handleSaveNewProduct} className="w-full bg-zinc-900 hover:bg-black text-white font-bold py-6 rounded-[1.8rem] text-lg shadow-2xl transition-all uppercase tracking-[0.3em] active:scale-[0.98]">Guardar y Lanzar Estrategia</button>
+            <button onClick={handleSaveNewProduct} className="w-full bg-zinc-900 hover:bg-black text-white font-bold py-6 rounded-[1.8rem] text-lg shadow-2xl transition-all uppercase tracking-[0.3em] active:scale-[0.98]">Guardar y Asignar Registro</button>
           </div>
         </div>
       </div>
@@ -242,19 +280,24 @@ export default function App() {
     <div className="min-h-screen bg-[#f1f5f9] p-4 md:p-8 font-sans text-zinc-900">
       <div className="max-w-[1400px] mx-auto">
         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-200/50">
-          <div>
-            <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 uppercase italic text-zinc-900">WINNER OS <span className="text-[10px] font-normal bg-zinc-900 text-white px-3 py-1 rounded-full not-italic tracking-normal">V13.0</span></h1>
-            <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-[0.3em]">{loading ? 'Estableciendo canal seguro...' : 'Plataforma en la Nube Activa'}</p>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-zinc-900 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg shadow-zinc-200">💎</div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 uppercase italic text-zinc-900">WINNER OS <span className="text-[10px] font-normal bg-zinc-900 text-white px-3 py-1 rounded-full not-italic tracking-normal">V13.5</span></h1>
+              <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-[0.3em]">{loading ? 'Cargando registros...' : 'Base de Datos Sincronizada'}</p>
+            </div>
           </div>
-          <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white px-8 py-3.5 rounded-2xl shadow-xl font-bold text-xs transition-all uppercase tracking-widest active:scale-95">➕ Nuevo Producto</button>
+          <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white px-8 py-3.5 rounded-2xl shadow-xl font-bold text-xs transition-all uppercase tracking-widest active:scale-95 group">
+            <span className="group-hover:mr-2 transition-all">➕</span> Nuevo Producto
+          </button>
         </header>
 
-        <div className="flex flex-wrap gap-2 mb-10">
+        <div className="flex flex-wrap gap-2 mb-10 overflow-x-auto pb-2 scrollbar-hide">
           {Object.values(STATUS_CONFIG).map((config) => (
             <button 
               key={config.id} 
               onClick={() => setActiveTab(config.id)} 
-              className={`px-6 py-3 rounded-2xl font-bold text-[11px] uppercase transition-all tracking-wider ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 hover:bg-zinc-50 border border-zinc-200/50'}`}
+              className={`px-6 py-3 rounded-2xl font-bold text-[11px] whitespace-nowrap uppercase transition-all tracking-wider ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 hover:bg-zinc-50 border border-zinc-200/50'}`}
             >
               {config.emoji} {config.label} ({products.filter(p => p.status === config.id).length})
             </button>
@@ -271,29 +314,43 @@ export default function App() {
               <div key={p.id} className="bg-white rounded-[2.5rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-xl group animate-in slide-in-from-bottom-4 duration-500">
                 {p.status === 'rejected' && (
                   <div className="bg-rose-50/50 p-6 border-b border-rose-100/50">
-                    <label className="text-[9px] font-black text-rose-600 uppercase block mb-1 tracking-widest">Feedback de Rechazo:</label>
+                    <label className="text-[9px] font-black text-rose-600 uppercase block mb-1 tracking-widest leading-none">Feedback de Rechazo:</label>
                     <textarea value={p.rejectionReason} onChange={(e)=>updateField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full text-sm bg-white/50 border border-rose-200 rounded-2xl p-4 text-rose-900 font-medium outline-none resize-none focus:border-rose-400 shadow-inner" placeholder="Escribe el motivo..."/>
                   </div>
                 )}
                 
-                <div className={`px-8 py-3 flex justify-between items-center border-b ${activeTab === st.id ? st.color : 'bg-zinc-50'}`}>
+                <div className={`px-8 py-4 flex justify-between items-center border-b ${activeTab === st.id ? 'bg-zinc-50/50' : 'bg-zinc-50'}`}>
                    <div className="flex items-center gap-6">
+                     <div className="bg-zinc-900 text-white px-4 py-1.5 rounded-xl text-[10px] font-black tracking-widest shadow-sm">
+                       {p.regNumber || 'REG-000'}
+                     </div>
                      <span className="font-bold text-[11px] uppercase tracking-[0.2em] text-zinc-600">{st.emoji} {st.label}</span>
-                     <div className="flex items-center gap-1 bg-white/50 rounded-xl p-1 border border-black/5">
-                        <button onClick={() => moveProduct(p.id, -1)} disabled={idx === 0} className={`p-1 hover:bg-white rounded-lg transition-all ${idx === 0 ? 'opacity-10 cursor-not-allowed' : 'active:scale-75'}`}><svg className="w-4 h-4 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg></button>
-                        <button onClick={() => moveProduct(p.id, 1)} disabled={idx === displayedProducts.length - 1} className={`p-1 hover:bg-white rounded-lg transition-all ${idx === displayedProducts.length - 1 ? 'opacity-10 cursor-not-allowed' : 'active:scale-75'}`}><svg className="w-4 h-4 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg></button>
+                     
+                     {/* POSICIONAMIENTO EN TIEMPO REAL */}
+                     <div className="flex items-center gap-2 bg-white rounded-2xl p-1 shadow-inner border border-zinc-100">
+                        <button onClick={() => moveProduct(p.id, -1)} disabled={idx === 0} className={`w-8 h-8 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-xl transition-all ${idx === 0 ? 'opacity-10' : 'active:scale-75'}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg>
+                        </button>
+                        <span className="text-[10px] font-black text-zinc-400 px-2 select-none">POS {idx + 1}</span>
+                        <button onClick={() => moveProduct(p.id, 1)} disabled={idx === displayedProducts.length - 1} className={`w-8 h-8 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-xl transition-all ${idx === displayedProducts.length - 1 ? 'opacity-10' : 'active:scale-75'}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg>
+                        </button>
                      </div>
                    </div>
-                   <button onClick={() => deleteProduct(p.id)} className="text-zinc-300 hover:text-rose-600 font-bold px-4 text-[10px] uppercase tracking-widest transition-colors">🗑️ Borrar</button>
+                   <button onClick={() => deleteProduct(p.id)} className="text-zinc-300 hover:text-rose-600 font-bold px-4 text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2">
+                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                     Eliminar
+                   </button>
                 </div>
 
                 <div className="flex flex-col xl:flex-row">
                    <div className="w-full xl:w-[25%] p-8 border-r border-zinc-100 bg-zinc-50/20">
-                     <div className="aspect-square bg-white rounded-[2rem] border border-zinc-200 mb-6 relative flex items-center justify-center overflow-hidden shadow-sm group/img">
-                       {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-110"/> : <span className="text-5xl opacity-10 font-bold italic">IMG</span>}
+                     <div className="aspect-square bg-white rounded-[2rem] border border-zinc-200 mb-6 relative flex items-center justify-center overflow-hidden shadow-sm group/img cursor-pointer">
+                       {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-110"/> : <span className="text-5xl opacity-10 font-bold italic text-zinc-900">IMG</span>}
+                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold uppercase tracking-widest">Cambiar Imagen</div>
                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p)}/>
                      </div>
-                     <input value={p.name} onChange={(e)=>updateField(p.id,'name',e.target.value)} className="w-full text-xl font-bold bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-3 py-1 transition-all" placeholder="Nombre..."/>
+                     <input value={p.name} onChange={(e)=>updateField(p.id,'name',e.target.value)} className="w-full text-xl font-bold bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-3 py-1 transition-all text-zinc-900" placeholder="Nombre..."/>
                      <textarea value={p.description} onChange={(e)=>updateField(p.id,'description',e.target.value)} rows={3} className="w-full text-[11px] bg-white p-4 rounded-2xl resize-none outline-none border border-zinc-100 shadow-inner text-zinc-500 leading-relaxed focus:ring-4 focus:ring-zinc-100" placeholder="Estrategia comercial..."/>
                    </div>
                    
@@ -301,35 +358,35 @@ export default function App() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[{k:'base',l:'Prod'}, {k:'cpa',l:'Ads'}, {k:'freight',l:'Flete'}, {k:'fulfillment',l:'Log'}, {k:'commission',l:'Com'}, {k:'returns',l:'Dev'}, {k:'fixed',l:'Fijos'}].map(f=>(
                           <div key={f.k} className="bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100 hover:bg-white hover:shadow-md transition-all">
-                            <label className="text-[9px] font-black text-zinc-400 uppercase block mb-1 tracking-tighter">{f.l}</label>
+                            <label className="text-[9px] font-black text-zinc-400 uppercase block mb-1 tracking-tighter leading-none">{f.l}</label>
                             <input type="number" value={p.costs?.[f.k]||''} onChange={(e)=>updateCost(p.id,p.costs,f.k,e.target.value)} className="w-full font-mono text-sm font-bold outline-none text-zinc-800 bg-transparent" placeholder="0"/>
                           </div>
                         ))}
                       </div>
 
-                      <div className="bg-zinc-900 rounded-[2.2rem] p-8 text-white shadow-xl relative overflow-hidden">
+                      <div className="bg-zinc-900 rounded-[2.2rem] p-8 text-white shadow-xl relative overflow-hidden group/profit">
                          <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/10 rounded-full blur-[80px] -mr-20 -mt-20"></div>
                          <div className="flex flex-col md:flex-row justify-between items-end border-b border-zinc-800 pb-6 mb-6 gap-6 relative z-10">
                             <div className="flex-1 w-full">
-                              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mb-3 block">Venta Total Final (Inc. Bundles)</label>
+                              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] mb-3 block leading-none">PVP Total Sugerido (Inc. Bundles)</label>
                               <div className="flex items-center gap-2">
                                 <span className="text-xl font-bold opacity-30">$</span>
-                                <input type="number" value={p.targetPrice||''} onChange={(e)=>updateField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-bold text-5xl outline-none w-full tracking-tighter focus:text-blue-400 transition-colors" placeholder="0" />
+                                <input type="number" value={p.targetPrice||''} onChange={(e)=>updateField(p.id,'targetPrice',e.target.value)} className="bg-transparent font-bold text-5xl outline-none w-full tracking-tighter focus:text-blue-400 transition-colors text-white" placeholder="0" />
                               </div>
                             </div>
                             <div className="text-right">
-                               <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1 leading-none">Costo Combinado</p>
-                               <p className="text-2xl font-mono font-bold tracking-tight">{formatCurrency(m.combinedTotalCost)}</p>
+                               <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1 leading-none italic">Inversión Combinada</p>
+                               <p className="text-2xl font-mono font-bold tracking-tight text-rose-50">{formatCurrency(m.combinedTotalCost)}</p>
                             </div>
                          </div>
                          <div className="flex justify-between items-center gap-6 relative z-10">
-                            <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex-1">
-                               <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Utilidad Neto Estratégico</p>
+                            <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex-1 transition-all group-hover/profit:bg-white/10">
+                               <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1 leading-none">Utilidad Neta del Embudo</p>
                                <p className={`text-4xl font-mono font-bold ${m.finalProfit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(m.finalProfit)}</p>
                             </div>
                             <div className="text-right">
-                                <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Margen Final Real</p>
-                                <p className="text-6xl font-black italic tracking-tighter leading-none">{m.finalMargin.toFixed(1)}%</p>
+                                <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1 leading-none">Margen de Rentabilidad</p>
+                                <p className="text-6xl font-black italic tracking-tighter leading-none text-white">{m.finalMargin.toFixed(1)}%</p>
                             </div>
                          </div>
                       </div>
@@ -339,49 +396,48 @@ export default function App() {
                       </div>
                    </div>
 
-                   {/* ESTRATEGIA DE BUNDLES (UPSELLS) DESPLEGABLE */}
-                   <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-8 flex flex-col border-l border-zinc-100">
+                   <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-8 flex flex-col border-l border-zinc-100 shadow-inner">
                      <button 
                         onClick={() => toggleBundles(p.id)}
-                        className={`w-full flex justify-between items-center p-4 rounded-2xl border-2 transition-all duration-300 ${isBundlesExpanded ? 'bg-zinc-900 border-zinc-900 text-white shadow-xl' : 'bg-white border-zinc-100 text-zinc-900 hover:border-zinc-300 shadow-sm'}`}
+                        className={`w-full flex justify-between items-center p-5 rounded-2xl border-2 transition-all duration-300 ${isBundlesExpanded ? 'bg-zinc-900 border-zinc-900 text-white shadow-2xl' : 'bg-white border-zinc-100 text-zinc-900 hover:border-zinc-300 shadow-sm'}`}
                      >
                         <div className="flex items-center gap-3">
                             <span className="text-lg">🍱</span>
                             <div className="text-left">
-                                <p className="text-[10px] font-black uppercase tracking-widest leading-none">Gestionar Bundles</p>
-                                <p className={`text-[9px] font-bold mt-1 ${isBundlesExpanded ? 'text-zinc-400' : 'text-zinc-400'}`}>{m.upsellsCount} slots ocupados de 5</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest leading-none">Estrategia Bundles</p>
+                                <p className={`text-[9px] font-bold mt-1 opacity-60`}>{m.upsellsCount} slots configurados</p>
                             </div>
                         </div>
-                        <svg className={`w-5 h-5 transition-transform duration-500 ${isBundlesExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"/></svg>
+                        <svg className={`w-5 h-5 transition-transform duration-500 ${isBundlesExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M19 9l-7 7-7-7"/></svg>
                      </button>
 
-                     <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isBundlesExpanded ? 'max-h-[800px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}`}>
-                        <div className="space-y-3 pr-2 custom-scrollbar overflow-y-auto max-h-[700px]">
+                     <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isBundlesExpanded ? 'max-h-[1000px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0'}`}>
+                        <div className="space-y-4 pr-1 custom-scrollbar overflow-y-auto max-h-[600px]">
                             {p.upsells.map(u=>(
-                            <div key={u.id} className="bg-white p-4 rounded-3xl border border-zinc-100 flex gap-4 relative group/bundle transition-all hover:shadow-lg hover:scale-[1.02] border-l-4 border-l-blue-500">
-                                <div className="w-12 h-12 bg-zinc-50 rounded-xl relative shrink-0 flex items-center justify-center border border-zinc-100 overflow-hidden shadow-inner">
-                                {u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs opacity-20">➕</span>}
+                            <div key={u.id} className="bg-white p-4 rounded-3xl border border-zinc-100 flex gap-4 relative group/bundle transition-all hover:shadow-lg hover:border-zinc-200 border-l-4 border-l-blue-500">
+                                <div className="w-12 h-12 bg-zinc-50 rounded-xl relative shrink-0 flex items-center justify-center border border-zinc-100 overflow-hidden shadow-inner cursor-pointer group/up">
+                                {u.image ? <img src={u.image} className="w-full h-full object-cover"/> : <span className="text-xs opacity-20 text-zinc-900">➕</span>}
                                 <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p, u.id)}/>
                                 </div>
                                 <div className="flex-1 min-w-0 pr-4">
-                                <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-[11px] font-bold bg-transparent border-b border-transparent focus:border-blue-500 mb-1 outline-none truncate" placeholder="Nombre..."/>
-                                <div className="flex gap-2">
+                                <input value={u.name} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} className="w-full text-[11px] font-bold bg-transparent border-b border-transparent focus:border-blue-500 mb-1 outline-none truncate text-zinc-900" placeholder="Nombre..."/>
+                                <div className="flex gap-2 mt-1">
                                     <div className="w-1/2">
-                                    <label className="text-[7px] text-zinc-400 uppercase block leading-none">Costo</label>
-                                    <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-zinc-50 text-[10px] p-1.5 rounded-lg font-mono outline-none border border-transparent focus:border-rose-200" placeholder="0"/>
+                                    <label className="text-[7px] text-zinc-400 uppercase block leading-none mb-1">Costo</label>
+                                    <input type="number" value={u.cost||''} onChange={(e)=>updateUpsell(p,u.id,'cost',e.target.value)} className="w-full bg-zinc-50 text-[10px] p-1.5 rounded-lg font-mono outline-none border border-transparent focus:border-rose-200 text-zinc-700" placeholder="0"/>
                                     </div>
                                     <div className="w-1/2">
-                                    <label className="text-[7px] text-blue-500 uppercase block leading-none">Venta</label>
-                                    <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-50 text-[10px] p-1.5 rounded-lg font-bold text-blue-600 outline-none border border-transparent focus:border-blue-200" placeholder="0"/>
+                                    <label className="text-[7px] text-blue-500 uppercase block leading-none mb-1 font-bold">Venta</label>
+                                    <input type="number" value={u.price||''} onChange={(e)=>updateUpsell(p,u.id,'price',e.target.value)} className="w-full bg-blue-50 text-[10px] p-1.5 rounded-lg font-bold text-blue-600 outline-none border border-transparent focus:border-blue-200 text-blue-700" placeholder="0"/>
                                     </div>
                                 </div>
                                 </div>
                                 <button 
                                 onClick={() => resetUpsell(p, u.id)} 
-                                className="text-zinc-300 opacity-0 group-hover/bundle:opacity-100 transition-all p-1 hover:text-rose-500 absolute right-2 top-2"
+                                className="text-zinc-300 opacity-0 group-hover/bundle:opacity-100 transition-all p-1 hover:text-rose-500 absolute right-2 top-2 hover:scale-125"
                                 title="Resetear Bundle"
                                 >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                 </button>
                             </div>
                             ))}
@@ -400,7 +456,7 @@ export default function App() {
           <div className="bg-white rounded-[3rem] shadow-2xl p-10 w-full max-w-md border border-zinc-100 animate-in zoom-in-95 duration-200">
             <h2 className="text-2xl font-black text-zinc-900 mb-2 uppercase tracking-tighter italic border-b border-zinc-100 pb-4">Rechazar Producto</h2>
             <p className="text-[10px] text-zinc-400 my-6 font-bold uppercase tracking-[0.2em] leading-relaxed italic">Explica los motivos técnicos del descarte para el registro histórico...</p>
-            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-[1.5rem] p-6 text-sm focus:outline-none focus:border-zinc-900 focus:ring-8 focus:ring-zinc-900/5 mb-8 transition-all font-medium text-zinc-700 shadow-inner" placeholder="Ej: Flete demasiado costoso, margen bajo 20%..." />
+            <textarea autoFocus rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} className="w-full bg-zinc-50 border-2 border-slate-100 rounded-[1.5rem] p-6 text-sm focus:outline-none focus:border-zinc-900 focus:ring-8 focus:ring-zinc-900/5 mb-8 transition-all font-medium text-zinc-700 shadow-inner" placeholder="Ej: CPA demasiado costoso, margen bajo 20%..." />
             <div className="flex gap-4">
               <button onClick={() => setRejectModal({ isOpen: false, productId: null, reason: '' })} className="flex-1 py-5 bg-zinc-100 hover:bg-zinc-200 text-slate-500 font-black uppercase text-[10px] tracking-[0.2em] rounded-2xl transition-all">Cancelar</button>
               <button onClick={confirmRejection} className="flex-1 py-5 bg-rose-600 hover:bg-rose-700 text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-2xl shadow-xl shadow-rose-200 active:scale-95 transition-all">RECHAZAR</button>
