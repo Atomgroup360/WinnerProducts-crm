@@ -225,7 +225,7 @@ export default function App() {
     reader.onloadend = () => {
       if (!targetId) {
         if (upsellId) {
-          const up = newProduct.upsells.map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: reader.result} : u);
           setNewProduct({...newProduct, upsells: up});
         } else {
           setNewProduct({...newProduct, image: reader.result});
@@ -260,15 +260,15 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900">
           <div className="space-y-4 md:space-y-5">
             <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Producto</span>}
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Producto</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Comercial..."/>
+            <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Comercial..."/>
             <div className="grid grid-cols-2 gap-4">
-              <input value={newProduct.dropiCode} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono w-full" placeholder="Cod. DROPI"/>
-              <input value={newProduct.supplier} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full" placeholder="Proveedor"/>
+              <input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono w-full" placeholder="Código DROPI"/>
+              <input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full" placeholder="Proveedor"/>
             </div>
-            <textarea value={newProduct.description} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl md:rounded-2xl p-4 text-xs resize-none outline-none" placeholder="Estrategia estratégica..."/>
+            <textarea value={newProduct.description || ''} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl md:rounded-2xl p-4 text-xs resize-none outline-none" placeholder="Estrategia estratégica..."/>
           </div>
           <div className="space-y-6">
             <div className="bg-zinc-50 p-4 md:p-6 rounded-2xl md:rounded-3xl border border-zinc-100 shadow-sm">
@@ -276,13 +276,13 @@ export default function App() {
               <div className="grid grid-cols-2 gap-3">
                 {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
                   <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1">{k}</label>
-                  <input type="number" onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm font-mono"/></div>
+                  <input type="number" value={newProduct.costs?.[k] || ''} onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm font-mono"/></div>
                 ))}
               </div>
             </div>
             <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl md:rounded-3xl text-white shadow-xl">
               <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block">PVP Sugerido</label>
-              <input type="number" onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none"/>
+              <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none"/>
             </div>
           </div>
         </div>
@@ -292,34 +292,34 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900">
           <div className="space-y-4 md:space-y-5">
             <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Importación</span>}
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Importación</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <input value={newProduct.name} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Producto..."/>
+            <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900" placeholder="Nombre Producto..."/>
             <div className="grid grid-cols-2 gap-4">
-              <input value={newProduct.chineseSupplier} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full" placeholder="Prov. Chino"/>
-              <input type="number" onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono w-full" placeholder="Dólar Hoy"/>
+              <input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full" placeholder="Proveedor Chino"/>
+              <input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono w-full" placeholder="Dólar Hoy"/>
             </div>
           </div>
           <div className="space-y-4">
             <div className="bg-zinc-50 p-4 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4">
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label>
-                <input type="number" onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">CBM COP</label>
-                <input type="number" onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label>
-                <input type="number" onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label>
-                <input type="number" onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
                 <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
-                <input type="number" onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
+                <input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm"/></div>
             </div>
             <div className="bg-zinc-50 p-4 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100">
                 <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2">Medidas CTN (cm)</h4>
                 <div className="grid grid-cols-3 gap-2">
-                    <input type="number" placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
-                    <input type="number" placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
-                    <input type="number" placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
+                    <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
+                    <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
+                    <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border p-2 rounded text-xs w-full"/>
                 </div>
             </div>
           </div>
@@ -352,7 +352,7 @@ export default function App() {
             <div className="w-10 h-10 md:w-14 md:h-14 bg-zinc-900 rounded-xl md:rounded-[1.2rem] flex items-center justify-center text-white text-xl md:text-2xl shadow-xl italic font-black shrink-0">W</div>
             <div>
               <h1 className="text-lg md:text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">
-                {activeModule === 'winners' ? 'Winner OS' : 'Importación'}
+                {activeModule === 'winners' ? 'Winner Product OS' : 'Importación'}
               </h1>
               <p className="text-[8px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">{loading ? 'Cargando...' : 'Sistema Cloud V14.5'}</p>
             </div>
@@ -379,7 +379,7 @@ export default function App() {
             const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
 
             return (
-              <div key={p.id} className="bg-white rounded-[1.5rem] md:rounded-[3rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-xl animate-in slide-in-from-bottom-6 duration-700">
+              <div key={p.id} className="bg-white rounded-[1.5rem] md:rounded-[3rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-2xl animate-in slide-in-from-bottom-4 duration-500">
                 
                 <div className={`px-4 md:px-10 py-3 md:py-4 flex justify-between items-center border-b bg-zinc-50/20`}>
                    <div className="flex items-center gap-3 md:gap-6 flex-wrap">
@@ -388,7 +388,7 @@ export default function App() {
                      <div className="flex items-center bg-white rounded-xl md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100">
                         <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg></button>
                         <span className="text-[8px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
-                        <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length-1} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg></button>
+                        <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length - 1} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg></button>
                      </div>
                    </div>
                    <button onClick={() => deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600 transition-all hover:scale-110 shrink-0"><svg className="w-5 md:w-6 h-5 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
@@ -404,16 +404,33 @@ export default function App() {
                      <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-xl md:text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-4 py-1 transition-all text-zinc-900 text-center md:text-left" placeholder="Nombre..."/>
                      
                      <div className="grid grid-cols-2 gap-2 md:gap-3 mb-6">
-                        <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(isWinner ? p.dropiCode : p.chineseSupplier)}>
-                            <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">ID 📋</label>
-                            <input value={(isWinner ? p.dropiCode : p.chineseSupplier) || ''} onChange={(e)=>updateDocField(p.id, isWinner ? 'dropiCode' : 'chineseSupplier', e.target.value)} className="text-[10px] md:text-[11px] font-mono font-bold truncate w-full outline-none bg-transparent"/>
-                        </div>
-                        <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
-                            <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">PROV</label>
-                            <input value={(isWinner ? p.supplier : p.dollarRate) || ''} onChange={(e)=>updateDocField(p.id, isWinner ? 'supplier' : 'dollarRate', isWinner ? e.target.value : parseFloat(e.target.value)||0)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent"/>
-                        </div>
+                        {isWinner ? (
+                          <>
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(p.dropiCode)}>
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">CÓDIGO DROPI 📋</label>
+                                <input value={p.dropiCode || ''} onChange={(e)=>updateDocField(p.id, 'dropiCode', e.target.value)} className="text-[10px] md:text-[11px] font-mono font-bold truncate w-full outline-none bg-transparent"/>
+                            </div>
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">PROVEEDOR</label>
+                                <input value={p.supplier || ''} onChange={(e)=>updateDocField(p.id, 'supplier', e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent"/>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">PROVEEDOR CHINO</label>
+                                <input value={p.chineseSupplier || ''} onChange={(e)=>updateDocField(p.id, 'chineseSupplier', e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent"/>
+                            </div>
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1">TRM HOY</label>
+                                <input type="number" value={p.dollarRate || 0} onChange={(e)=>updateDocField(p.id, 'dollarRate', parseFloat(e.target.value)||0)} className="w-full text-[10px] md:text-[11px] font-mono font-bold outline-none bg-transparent"/>
+                            </div>
+                          </>
+                        )}
                      </div>
-                     <textarea value={p.description || ''} onChange={(e)=>updateDocField(p.id, 'description', e.target.value)} rows={3} className="w-full text-[10px] md:text-xs bg-white p-4 md:p-6 rounded-xl md:rounded-[1.5rem] border border-zinc-100 shadow-inner text-zinc-500" placeholder="Estrategia..."/>
+                     {isWinner && (
+                       <textarea value={p.description || ''} onChange={(e)=>updateDocField(p.id, 'description', e.target.value)} rows={3} className="w-full text-[10px] md:text-xs bg-white p-4 md:p-6 rounded-xl md:rounded-[1.5rem] border border-zinc-100 shadow-inner text-zinc-500" placeholder="Estrategia..."/>
+                     )}
                    </div>
 
                    <div className="flex-1 p-5 md:p-10 space-y-6 md:space-y-10 bg-white relative">
@@ -428,14 +445,14 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
-                            {[{k:'prodCostUSD',l:'USD'}, {k:'cbmCostCOP',l:'CBM'}, {k:'unitsQty',l:'Uds'}, {k:'ctnQty',l:'CTN'}, {k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
+                            {[{k:'prodCostUSD',l:'Costo USD'}, {k:'cbmCostCOP',l:'Costo CBM'}, {k:'unitsQty',l:'Unidades'}, {k:'ctnQty',l:'CTN qty'}, {k:'yiwuFreightUSD',l:'Flete YIWU'}].map(f=>(
                                 <div key={f.k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100">
                                     <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1">{f.l}</label>
                                     <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none"/>
                                 </div>
                             ))}
                             <div className="col-span-2 bg-zinc-50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100">
-                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-2">Medidas (cm)</label>
+                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-2">Medidas CTN (cm)</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded-lg text-xs font-mono w-full"/>
                                     <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded-lg text-xs font-mono w-full"/>
@@ -478,11 +495,11 @@ export default function App() {
                             <div className="relative z-10 space-y-6 md:space-y-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-10 border-b border-zinc-800 pb-5 md:pb-8">
                                     <div className="text-center md:text-left">
-                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3">China (x1.03 factor)</p>
+                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3">Mercancía China (x1.03 factor)</p>
                                         <p className="text-xl md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.costChinaCOP)}</p>
                                     </div>
                                     <div className="text-center md:text-right">
-                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3">Logística ({mImport.totalCbm.toFixed(2)} CBM)</p>
+                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3">Nacionalización ({mImport.totalCbm.toFixed(2)} CBM)</p>
                                         <p className="text-xl md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.nationalizationCOP)}</p>
                                     </div>
                                 </div>
@@ -490,12 +507,12 @@ export default function App() {
                                     <div className="flex items-center gap-4 md:gap-8 flex-col md:flex-row text-center md:text-left">
                                         <div className="text-4xl md:text-6xl shrink-0">🇨🇴</div>
                                         <div>
-                                            <p className="text-[10px] md:text-[12px] font-black text-emerald-400 uppercase tracking-widest mb-1 md:mb-2">Producto en Colombia</p>
+                                            <p className="text-[10px] md:text-[12px] font-black text-emerald-400 uppercase tracking-widest mb-1 md:mb-2">Costo Producto en Colombia</p>
                                             <p className="text-4xl md:text-7xl font-black text-white">{formatCurrency(mImport.unitCostColombia)}</p>
                                         </div>
                                     </div>
                                     <div className="text-center md:text-right w-full md:w-auto">
-                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1">Total</p>
+                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1">Inversión Total</p>
                                         <p className="text-lg md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
                                     </div>
                                 </div>
@@ -514,21 +531,33 @@ export default function App() {
                       {!isWinner && p.status === 'approved' && (
                         <div className="pt-6 md:pt-8 border-t border-zinc-100">
                            <button onClick={()=>setExpandedItems({...expandedItems, [p.id]: !expandedItems[p.id]})} className={`w-full p-4 md:p-8 rounded-xl md:rounded-[2.5rem] border-2 transition-all flex justify-between items-center ${expandedItems[p.id] ? 'bg-zinc-900 border-zinc-900 text-white shadow-xl' : 'bg-zinc-50 border-zinc-200 text-zinc-900'}`}>
-                                <div className="flex items-center gap-3 md:gap-5"><span className="text-xl md:text-3xl">📋</span><div className="text-left"><p className="text-[10px] md:text-sm font-black uppercase tracking-widest">Logística y Colores</p></div></div>
+                                <div className="flex items-center gap-3 md:gap-5"><span className="text-xl md:text-3xl">📋</span><div className="text-left"><p className="text-[10px] md:text-sm font-black uppercase tracking-widest">Concepto de Compra y Logística</p></div></div>
                                 <svg className={`w-4 md:w-6 h-4 md:h-6 transition-transform ${expandedItems[p.id] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                            </button>
                            {expandedItems[p.id] && (
                                 <div className="mt-4 md:mt-8 p-5 md:p-10 bg-zinc-50 rounded-2xl md:rounded-[3rem] border border-zinc-200 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 animate-in fade-in">
                                     <div className="space-y-4 md:space-y-6">
                                         <div className="grid grid-cols-2 gap-4">
-                                            <input type="date" value={p.purchaseDate || ''} onChange={(e)=>updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono"/>
-                                            <input type="date" value={p.estimatedArrival || ''} onChange={(e)=>updateDocField(p.id, 'estimatedArrival', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono"/>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-[9px] font-bold text-zinc-400 uppercase">Fecha Compra</label>
+                                              <input type="date" value={p.purchaseDate || ''} onChange={(e)=>updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono"/>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-[9px] font-bold text-zinc-400 uppercase">Fecha Est. Llegada</label>
+                                              <input type="date" value={p.estimatedArrival || ''} onChange={(e)=>updateDocField(p.id, 'estimatedArrival', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono"/>
+                                            </div>
                                         </div>
-                                        <input type="number" value={p.advancePayment || 0} onChange={(e)=>updateDocField(p.id, 'advancePayment', parseFloat(e.target.value)||0)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono font-bold" placeholder="Anticipo..."/>
-                                        <input value={p.buyer || ''} onChange={(e)=>updateDocField(p.id, 'buyer', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-bold" placeholder="Comprador..."/>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-[9px] font-bold text-zinc-400 uppercase">Valor Anticipo</label>
+                                          <input type="number" value={p.advancePayment || 0} onChange={(e)=>updateDocField(p.id, 'advancePayment', parseFloat(e.target.value)||0)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-mono font-bold" placeholder="Anticipo..."/>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-[9px] font-bold text-zinc-400 uppercase">Comprador</label>
+                                          <input value={p.buyer || ''} onChange={(e)=>updateDocField(p.id, 'buyer', e.target.value)} className="w-full p-3 md:p-4 rounded-xl md:rounded-2xl border text-[10px] md:text-sm font-bold" placeholder="Comprador..."/>
+                                        </div>
                                     </div>
                                     <div className="bg-white p-4 md:p-8 rounded-2xl md:rounded-[2.5rem] border shadow-sm">
-                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase mb-4 border-b pb-2">Distribución</h4>
+                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase mb-4 border-b pb-2">Distribución por Color</h4>
                                         <div className="space-y-2 overflow-y-auto max-h-[250px] pr-2 no-scrollbar">
                                             {(p.colors || []).map(c => (
                                                 <div key={c.id} className="flex gap-2 md:gap-4 items-center bg-zinc-50/50 p-2 md:p-3 rounded-xl border">
@@ -554,7 +583,7 @@ export default function App() {
                    {isWinner && (
                     <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-5 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                         <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-4 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
-                           <div className="flex items-center gap-3 md:gap-4"><span className="text-xl md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50">{mWinner.activeUpsells} Activos</p></div></div>
+                           <div className="flex items-center gap-3 md:gap-4"><span className="text-xl md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase">{mWinner.activeUpsells} Activos</p></div></div>
                            <svg className={`w-5 md:w-6 h-5 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                         </button>
                         <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-6 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
@@ -592,7 +621,7 @@ export default function App() {
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
                 <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 md:p-8 border-b flex justify-between items-center z-10">
                     <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic">Registro Cloud</h2>
-                    <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200">✕</button>
+                    <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 text-zinc-600">✕</button>
                 </header>
                 <div className="p-5 md:p-12">
                     {renderCreationForm()}
