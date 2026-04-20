@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp, query 
+  onSnapshot, serverTimestamp 
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -42,8 +42,8 @@ const IMPORT_STATUS = {
   approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
 };
 
-// --- ESTADOS INICIALES ---
-const INITIAL_WINNER = {
+// --- FABRICANTES DE ESTADO INICIAL (Clonación segura para evitar mutación de memoria) ---
+const getInitialWinner = () => ({
   type: 'winner',
   name: '', dropiCode: '', supplier: '', description: '',
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
@@ -55,16 +55,16 @@ const INITIAL_WINNER = {
     { id: 4, name: '', cost: 0, price: 0, image: null },
     { id: 5, name: '', cost: 0, price: 0, image: null }
   ]
-};
+});
 
-const INITIAL_IMPORT = {
+const getInitialImport = () => ({
   type: 'import',
   name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
   measures: { width: 0, height: 0, length: 0 },
   purchaseDate: '', advancePayment: 0, buyer: '', estimatedArrival: '',
   colors: Array(7).fill(0).map((_, i) => ({ id: i+1, color: '', qty: 0 }))
-};
+});
 
 // --- AYUDANTES ---
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
@@ -96,6 +96,39 @@ const calculateImportMetrics = (p) => {
   const totalLandCostCOP = costChinaCOP + nationalizationCOP;
   const unitCostColombia = (parseFloat(p.unitsQty) > 0) ? totalLandCostCOP / parseFloat(p.unitsQty) : 0;
   return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
+};
+
+// --- COMPRESOR DE IMÁGENES (Previene errores por Payload Too Large) ---
+const compressImage = (base64Str) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 800;
+      const MAX_HEIGHT = 800;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width = Math.round((width * MAX_HEIGHT) / height);
+          height = MAX_HEIGHT;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      // Reduce calidad a JPEG 70% para aligerar la base de datos
+      resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+    };
+  });
 };
 
 // --- COMPONENTE LOGIN ---
@@ -157,7 +190,7 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
   const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState(INITIAL_WINNER);
+  const [newProduct, setNewProduct] = useState(getInitialWinner());
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
 
@@ -183,6 +216,7 @@ export default function App() {
     }, (error) => {
       console.error("Firestore Error:", error);
       setNotification(`Error de acceso: No tienes permisos.`);
+      setTimeout(() => setNotification(''), 4000);
     });
     return () => unsubscribe();
   }, [user, activeModule]);
@@ -194,7 +228,7 @@ export default function App() {
   const handleModuleChange = (mod) => {
     setActiveModule(mod);
     setActiveTab('pending');
-    setNewProduct(mod === 'winners' ? INITIAL_WINNER : INITIAL_IMPORT);
+    setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     setIsCreating(false);
   };
 
@@ -210,9 +244,11 @@ export default function App() {
     document.body.removeChild(textArea);
   };
 
+  // --- MOTOR DE GUARDADO SANITIZADO ---
   const handleSave = async () => {
-    if (!newProduct.name) {
-      setNotification('El nombre es obligatorio');
+    if (!newProduct.name || newProduct.name.trim() === '') {
+      setNotification('⚠️ El nombre del producto es obligatorio');
+      setTimeout(() => setNotification(''), 4000);
       return;
     }
     
@@ -222,25 +258,38 @@ export default function App() {
     const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
     
     try {
-      if (!auth.currentUser) throw new Error("Debes iniciar sesión");
+      if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
 
-      // Guardado en la ruta EXACTA que permiten las reglas de Firestore
-      await addDoc(collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName), {
+      // 1. Preparamos los datos base
+      const payloadRaw = {
         ...newProduct,
         regNumber,
         order: Date.now(),
-        createdAt: serverTimestamp(),
         createdBy: auth.currentUser.uid
-      });
+      };
+
+      // 2. SANITIZACIÓN: Convertir a JSON ida y vuelta elimina los 'undefined' invisibles
+      const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
       
+      // 3. Insertar el Timestamp de Firebase solo al final (es un objeto complejo)
+      cleanPayload.createdAt = serverTimestamp();
+
+      // Guardado estricto en la ruta permitida por las reglas de Firestore
+      await addDoc(collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName), cleanPayload);
+      
+      // Éxito: Limpiamos formulario, reseteamos con clonación y cambiamos de tab
       setIsCreating(false);
-      setNewProduct(activeModule === 'winners' ? INITIAL_WINNER : INITIAL_IMPORT);
+      setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
       setActiveTab('pending'); 
-      setNotification('¡Registro creado con éxito! ✨');
+      
+      setNotification('¡Registro guardado en la Nube! ✨');
       setTimeout(() => setNotification(''), 3000);
+
     } catch (e) { 
-      console.error("Save Error:", e); 
-      setNotification(`Error al guardar: ${e.message}`);
+      console.error("Firebase Save Error:", e); 
+      // Si falla, el error se quedará 6 segundos en pantalla para que puedas leerlo
+      setNotification(`⚠️ Error Firestore: ${e.message}`);
+      setTimeout(() => setNotification(''), 6000);
     } finally {
       setIsSaving(false);
     }
@@ -265,7 +314,7 @@ export default function App() {
   };
 
   const updateUpsell = async (p, uid, f, v) => {
-    const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
+    const currentUpsells = p.upsells || getInitialWinner().upsells;
     const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
     try {
         await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: newUpsells });
@@ -273,7 +322,7 @@ export default function App() {
   };
 
   const resetUpsell = async (p, uid) => {
-    const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
+    const currentUpsells = p.upsells || getInitialWinner().upsells;
     const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
     try {
         await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
@@ -281,7 +330,7 @@ export default function App() {
   };
 
   const deleteItem = async (id) => {
-    if (window.confirm('¿Borrar registro permanentemente?')) {
+    if (window.confirm('¿Estás seguro de borrar este registro de la base de datos?')) {
       const colName = activeModule === 'winners' ? 'products' : 'import_products';
       try {
           await deleteDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id));
@@ -306,24 +355,36 @@ export default function App() {
   const handleImage = (e, targetId = null, upsellId = null) => {
     const file = e.target.files[0];
     if (!file) return;
+    
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
+      let result = reader.result;
+      
+      // SANITIZACIÓN IMAGEN: Si el archivo pesa más de 500 KB, lo comprimimos forzosamente
+      if (file.size > 500 * 1024) {
+        try {
+          result = await compressImage(reader.result);
+        } catch(err) {
+          console.error("Error comprimiendo:", err);
+        }
+      }
+
       if (!targetId) {
         if (upsellId) {
-          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u);
           setNewProduct({...newProduct, upsells: up});
         } else {
-          setNewProduct({...newProduct, image: reader.result});
+          setNewProduct({...newProduct, image: result});
         }
       } else {
         const colName = activeModule === 'winners' ? 'products' : 'import_products';
         const item = products.find(x => x.id === targetId);
         if (!item) return;
         if (upsellId) {
-          const up = (item.upsells || INITIAL_WINNER.upsells).map(u => u.id === upsellId ? {...u, image: reader.result} : u);
+          const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
           updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { upsells: up });
         } else {
-          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { image: reader.result });
+          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { image: result });
         }
       }
     };
@@ -385,18 +446,18 @@ export default function App() {
             </div>
             <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b border-zinc-100 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900" placeholder="Nombre Producto..."/>
             <div className="grid grid-cols-2 gap-4">
-              <div>
+              <div className="text-left">
                 <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label>
                 <input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
               </div>
-              <div>
+              <div className="text-left">
                 <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label>
                 <input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/>
               </div>
             </div>
           </div>
           <div className="space-y-4">
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4">
+            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4 text-left">
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label>
                 <input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm text-zinc-800 outline-none"/></div>
                 <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label>
@@ -408,7 +469,7 @@ export default function App() {
                 <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
                 <input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm text-zinc-800 outline-none"/></div>
             </div>
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
+            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 text-left">
                 <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
                 <div className="grid grid-cols-3 gap-2 px-1">
                     <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-xs w-full text-zinc-800 outline-none"/>
@@ -427,7 +488,7 @@ export default function App() {
       
       {notification && (
         <div className="fixed bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl z-[200] font-bold text-[10px] md:text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10 w-[90%] md:w-auto text-center leading-tight">
-          ✨ {notification}
+          {notification}
         </div>
       )}
 
@@ -492,7 +553,7 @@ export default function App() {
                      </div>
                      <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-xl md:text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-4 py-1 transition-all text-zinc-900 text-center md:text-left bg-transparent" placeholder="Nombre..."/>
                      
-                     <div className="grid grid-cols-2 gap-2 md:gap-3 mb-6">
+                     <div className="grid grid-cols-2 gap-2 md:gap-3 mb-6 text-left">
                         {isWinner ? (
                           <>
                             <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(p.dropiCode)}>
@@ -708,7 +769,7 @@ export default function App() {
       {isCreating && (
         <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
-                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 border-b flex justify-between items-center z-10">
+                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 md:p-8 border-b flex justify-between items-center z-10">
                     <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic">Registro Cloud</h2>
                     <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
                 </header>
