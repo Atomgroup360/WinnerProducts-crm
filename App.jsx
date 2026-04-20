@@ -22,9 +22,11 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 const auth = getAuth(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'winnerproduct-crm';
+const db = getFirestore(app);
+
+// IMPORTANTE: Forzamos el ID que definimos en las Reglas de Firebase
+const DB_PATH_ID = 'winnerproduct-crm';
 
 // --- CONFIGURACIÓN DE ESTADOS ---
 const WINNER_STATUS = {
@@ -97,7 +99,7 @@ const calculateImportMetrics = (p) => {
 };
 
 // --- COMPONENTE LOGIN ---
-function LoginScreen() {
+function LoginScreen({ setErrorExt }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -110,7 +112,11 @@ function LoginScreen() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      setError('Credenciales inválidas. Revisa tu correo y contraseña.');
+      console.error(err);
+      let msg = 'Credenciales inválidas.';
+      if (err.code === 'auth/network-request-failed') msg = 'Error de red o API restringida.';
+      setError(msg);
+      setErrorExt(msg);
     } finally {
       setLoading(false);
     }
@@ -121,18 +127,18 @@ function LoginScreen() {
       <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-zinc-200/50 animate-in zoom-in-95 duration-300 text-center">
         <div className="w-20 h-20 bg-zinc-900 rounded-[1.5rem] flex items-center justify-center text-white text-4xl shadow-xl italic font-black mx-auto mb-6">W</div>
         <h1 className="text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">Winner OS</h1>
-        <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-widest uppercase mb-10">Cloud Management System</p>
+        <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-widest uppercase mb-10 text-center w-full">Cloud Management System</p>
         
         <form onSubmit={handleLogin} className="space-y-6 text-left">
           <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Correo Electrónico</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-sm focus:outline-none focus:border-zinc-900 transition-all text-zinc-700" placeholder="admin@winneros.com"/>
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Correo Electrónico</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-sm focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="admin@winneros.com"/>
           </div>
           <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Contraseña</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-sm focus:outline-none focus:border-zinc-900 transition-all text-zinc-700" placeholder="••••••••"/>
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Contraseña</label>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-sm focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="••••••••"/>
           </div>
-          {error && <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl text-rose-600 text-[11px] font-bold uppercase text-center">⚠️ {error}</div>}
+          {error && <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl text-rose-600 text-[11px] font-bold uppercase text-center leading-tight">⚠️ {error}</div>}
           <button type="submit" disabled={loading} className="w-full bg-zinc-900 hover:bg-black text-white font-black py-5 rounded-2xl text-xs shadow-2xl transition-all uppercase tracking-[0.2em] active:scale-[0.98] disabled:opacity-50">
             {loading ? 'Validando...' : 'Entrar al Sistema'}
           </button>
@@ -159,26 +165,24 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (!currentUser) setLoading(false);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Escuchar Firestore
+  // 2. Escuchar Firestore (Ruta Corregida para coincidir con Reglas)
   useEffect(() => {
     if (!user) return;
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
-    setLoading(true);
+    const q = collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName);
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
+      loaded.sort((a, b) => (b.order || 0) - (a.order || 0));
       setProducts(loaded);
-      setLoading(false);
     }, (error) => {
-      console.error(error);
-      setLoading(false);
-      setNotification(`Error de conexión: ${error.message}`);
+      console.error("Firestore Error:", error);
+      setNotification(`Error de acceso: No tienes permisos.`);
     });
     return () => unsubscribe();
   }, [user, activeModule]);
@@ -213,14 +217,15 @@ export default function App() {
     }
     
     setIsSaving(true);
-    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
     const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
     
     try {
-      if (!auth.currentUser) throw new Error("Sesión expirada");
+      if (!auth.currentUser) throw new Error("Debes iniciar sesión");
 
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', col), {
+      // Guardado en la ruta EXACTA que permiten las reglas de Firestore
+      await addDoc(collection(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName), {
         ...newProduct,
         regNumber,
         order: Date.now(),
@@ -231,10 +236,10 @@ export default function App() {
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? INITIAL_WINNER : INITIAL_IMPORT);
       setActiveTab('pending'); 
-      setNotification('Registro guardado con éxito ✨');
+      setNotification('¡Registro creado con éxito! ✨');
       setTimeout(() => setNotification(''), 3000);
     } catch (e) { 
-      console.error(e); 
+      console.error("Save Error:", e); 
       setNotification(`Error al guardar: ${e.message}`);
     } finally {
       setIsSaving(false);
@@ -242,47 +247,59 @@ export default function App() {
   };
 
   const updateDocField = async (id, f, v) => {
-    const col = activeModule === 'winners' ? 'products' : 'import_products';
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id), { [f]: v });
+    const colName = activeModule === 'winners' ? 'products' : 'import_products';
+    try {
+        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id), { [f]: v });
+    } catch (e) { console.error(e); }
   };
 
   const updateNestedField = async (id, parent, f, v) => {
-    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const item = products.find(x => x.id === id);
     if (!item) return;
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id), { 
-      [parent]: { ...item[parent], [f]: v } 
-    });
+    try {
+        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id), { 
+          [parent]: { ...item[parent], [f]: v } 
+        });
+    } catch (e) { console.error(e); }
   };
 
   const updateUpsell = async (p, uid, f, v) => {
     const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
     const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells });
+    try {
+        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: newUpsells });
+    } catch (e) { console.error(e); }
   };
 
   const resetUpsell = async (p, uid) => {
     const currentUpsells = p.upsells || INITIAL_WINNER.upsells;
     const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
+    try {
+        await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', 'products', p.id), { upsells: clearedUpsells });
+    } catch (e) { console.error(e); }
   };
 
   const deleteItem = async (id) => {
     if (window.confirm('¿Borrar registro permanentemente?')) {
-      const col = activeModule === 'winners' ? 'products' : 'import_products';
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+      const colName = activeModule === 'winners' ? 'products' : 'import_products';
+      try {
+          await deleteDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, id));
+      } catch (e) { console.error(e); }
     }
   };
 
   const moveItem = async (id, dir) => {
-    const col = activeModule === 'winners' ? 'products' : 'import_products';
+    const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const list = products.filter(p => p.status === activeTab);
     const idx = list.findIndex(p => p.id === id);
     const targetIdx = idx + dir;
     if (targetIdx >= 0 && targetIdx < list.length) {
       const a = list[idx], b = list[targetIdx];
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, a.id), { order: b.order || Date.now() });
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, b.id), { order: a.order || Date.now() - 100 });
+      try {
+          await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
+          await updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
+      } catch (e) { console.error(e); }
     }
   };
 
@@ -299,22 +316,22 @@ export default function App() {
           setNewProduct({...newProduct, image: reader.result});
         }
       } else {
-        const col = activeModule === 'winners' ? 'products' : 'import_products';
+        const colName = activeModule === 'winners' ? 'products' : 'import_products';
         const item = products.find(x => x.id === targetId);
         if (!item) return;
         if (upsellId) {
           const up = (item.upsells || INITIAL_WINNER.upsells).map(u => u.id === upsellId ? {...u, image: reader.result} : u);
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, targetId), { upsells: up });
+          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { upsells: up });
         } else {
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', col, targetId), { image: reader.result });
+          updateDoc(doc(db, 'artifacts', DB_PATH_ID, 'public', 'data', colName, targetId), { image: reader.result });
         }
       }
     };
     reader.readAsDataURL(file);
   };
 
-  if (loading && !user) return <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center font-bold text-zinc-400 animate-pulse uppercase tracking-[0.3em]">Cargando Sistema...</div>;
-  if (!user) return <LoginScreen />;
+  if (loading) return <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center font-bold text-zinc-400 animate-pulse uppercase tracking-[0.3em]">Cargando Sistema...</div>;
+  if (!user) return <LoginScreen setErrorExt={setNotification} />;
 
   const renderCreationForm = () => {
     if (activeModule === 'winners') {
@@ -336,20 +353,20 @@ export default function App() {
                 <input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-xs w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
               </div>
             </div>
-            <textarea value={newProduct.description || ''} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl p-4 text-xs resize-none outline-none text-zinc-600" placeholder="Estrategia comercial y beneficios..."/>
+            <textarea value={newProduct.description || ''} onChange={(e)=>setNewProduct({...newProduct, description: e.target.value})} rows={3} className="w-full bg-zinc-50 border border-zinc-100 rounded-xl p-4 text-xs resize-none outline-none text-zinc-600" placeholder="Estrategia estratégica..."/>
           </div>
           <div className="space-y-6">
             <div className="bg-zinc-50 p-4 md:p-6 rounded-2xl border border-zinc-100 shadow-sm">
               <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 border-b pb-2">Costos Winner (COP)</h3>
               <div className="grid grid-cols-2 gap-3">
                 {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1">{k}</label>
+                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1 leading-none">{k}</label>
                   <input type="number" value={newProduct.costs?.[k] || ''} onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-sm font-mono text-zinc-800 outline-none"/></div>
                 ))}
               </div>
             </div>
             <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl text-white shadow-xl">
-              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block">PVP Sugerido</label>
+              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block leading-none">PVP Sugerido</label>
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-bold opacity-30">$</span>
                 <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/>
@@ -409,7 +426,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f1f5f9] p-3 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
       
       {notification && (
-        <div className="fixed bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl z-[200] font-bold text-[10px] md:text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10 w-[90%] md:w-auto text-center">
+        <div className="fixed bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl z-[200] font-bold text-[10px] md:text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10 w-[90%] md:w-auto text-center leading-tight">
           ✨ {notification}
         </div>
       )}
@@ -419,10 +436,10 @@ export default function App() {
         {/* NAVEGACIÓN */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 md:mb-8 gap-4">
             <div className="bg-white p-1 rounded-2xl md:rounded-[2rem] shadow-xl border border-zinc-200 flex w-full md:w-auto">
-                <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-[1.5rem] text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg' : 'text-zinc-400'}`}>Winners</button>
-                <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-[1.5rem] text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg' : 'text-zinc-400'}`}>Importación</button>
+                <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-[1.5rem] text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg scale-105' : 'text-zinc-400'}`}>Winners</button>
+                <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-10 py-2.5 md:py-3 rounded-xl md:rounded-[1.5rem] text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg scale-105' : 'text-zinc-400'}`}>Importación</button>
             </div>
-            <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-colors">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+            <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
         </div>
 
         <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 md:p-6 rounded-2xl md:rounded-[2rem] shadow-sm border border-zinc-200/50 relative">
@@ -430,7 +447,7 @@ export default function App() {
             <div className="w-10 h-10 md:w-14 md:h-14 bg-zinc-900 rounded-xl md:rounded-[1.2rem] flex items-center justify-center text-white text-xl md:text-2xl shadow-xl italic font-black shrink-0">W</div>
             <div className="text-left">
               <h1 className="text-lg md:text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">{activeModule === 'winners' ? 'Winner OS' : 'Importación'}</h1>
-              <p className="text-[8px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">{loading ? 'Cargando...' : 'Cloud Real-Time'}</p>
+              <p className="text-[8px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">Sincronizado Cloud</p>
             </div>
           </div>
           <button onClick={() => setIsCreating(true)} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
@@ -444,7 +461,7 @@ export default function App() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:gap-12">
+        <div className="grid grid-cols-1 gap-6 md:gap-12 pb-20">
           {displayedProducts.map((p, idx) => {
             const isWinner = activeModule === 'winners';
             const mWinner = isWinner ? calculateWinnerMetrics(p) : null;
@@ -455,7 +472,7 @@ export default function App() {
               <div key={p.id} className="bg-white rounded-[1.5rem] md:rounded-[3rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-xl animate-in slide-in-from-bottom-4 duration-500">
                 
                 <div className={`px-4 md:px-10 py-3 md:py-4 flex justify-between items-center border-b bg-zinc-50/20`}>
-                   <div className="flex items-center gap-3 md:gap-6 flex-wrap">
+                   <div className="flex items-center gap-3 md:gap-6 flex-wrap text-left">
                      <div className="bg-zinc-900 text-white px-2 md:px-4 py-1 rounded-lg text-[9px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
                      <span className="font-black text-[9px] md:text-[11px] uppercase tracking-widest text-zinc-500 whitespace-nowrap">{stCfg.emoji} {stCfg.label}</span>
                      <div className="flex items-center bg-white rounded-xl md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100">
@@ -468,14 +485,14 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col xl:flex-row">
-                   <div className="w-full xl:w-[25%] p-5 md:p-10 border-r border-zinc-100 bg-zinc-50/10">
+                   <div className="w-full xl:w-[25%] p-5 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
                      <div className="aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer max-w-[300px] mx-auto w-full text-center">
                        {p.image ? <img src={p.image} className="w-full h-full object-cover" alt="Producto"/> : <span className="text-2xl md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
                      </div>
                      <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-xl md:text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none mb-4 py-1 transition-all text-zinc-900 text-center md:text-left bg-transparent" placeholder="Nombre..."/>
                      
-                     <div className="grid grid-cols-2 gap-2 md:gap-3 mb-6 text-left">
+                     <div className="grid grid-cols-2 gap-2 md:gap-3 mb-6">
                         {isWinner ? (
                           <>
                             <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(p.dropiCode)}>
@@ -483,17 +500,17 @@ export default function App() {
                                 <input value={p.dropiCode || ''} onChange={(e)=>updateDocField(p.id, 'dropiCode', e.target.value)} className="text-[10px] md:text-[11px] font-mono font-bold truncate w-full outline-none bg-transparent text-zinc-800"/>
                             </div>
                             <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
-                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1 leading-none">PROVEEDOR</label>
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1 leading-none text-left">PROVEEDOR</label>
                                 <input value={p.supplier || ''} onChange={(e)=>updateDocField(p.id, 'supplier', e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent text-zinc-800"/>
                             </div>
                           </>
                         ) : (
                           <>
-                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
-                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1 leading-none">CHINESE PROV</label>
-                                <input value={p.chineseSupplier || ''} onChange={(e)=>updateDocField(p.id, 'chineseSupplier', e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent text-zinc-800"/>
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm text-left">
+                                <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1 leading-none">PROVEEDOR CHINO</label>
+                                <input value={p.chineseSupplier || ''} onChange={(e)=>updateDocField(p.id, 'chineseSupplier', e.target.value)} className="w-full text-[10px] md:text-[11px] font-bold outline-none bg-transparent text-zinc-800 truncate"/>
                             </div>
-                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm">
+                            <div className="bg-white border border-zinc-100 p-2 md:p-3 rounded-xl md:rounded-2xl shadow-sm text-left">
                                 <label className="text-[7px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-1 leading-none">TRM HOY</label>
                                 <input type="number" value={p.dollarRate || 0} onChange={(e)=>updateDocField(p.id, 'dollarRate', parseFloat(e.target.value)||0)} className="w-full text-[10px] md:text-[11px] font-mono font-bold outline-none bg-transparent text-zinc-800"/>
                             </div>
@@ -509,8 +526,8 @@ export default function App() {
                       {isWinner ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                           {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                            <div key={k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 transition-all hover:bg-white">
-                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1">{k}</label>
+                            <div key={k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 transition-all hover:bg-white text-left">
+                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">{k}</label>
                                 <input type="number" value={p.costs?.[k] || 0} onChange={(e)=>updateNestedField(p.id, 'costs', k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none text-zinc-700"/>
                             </div>
                           ))}
@@ -518,13 +535,13 @@ export default function App() {
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                             {[{k:'prodCostUSD',l:'USD'}, {k:'cbmCostCOP',l:'CBM'}, {k:'unitsQty',l:'Uds'}, {k:'ctnQty',l:'CTN'}, {k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
-                                <div key={f.k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100">
-                                    <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1">{f.l}</label>
-                                    <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none text-zinc-800"/>
+                                <div key={f.k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 text-left">
+                                    <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">{f.l}</label>
+                                    <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none text-zinc-800 leading-none"/>
                                 </div>
                             ))}
-                            <div className="col-span-2 bg-zinc-50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100">
-                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-2 px-1">Medidas (W x H x L cm)</label>
+                            <div className="col-span-2 bg-zinc-50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 text-left">
+                                <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-2 px-1 leading-none">Medidas (cm)</label>
                                 <div className="grid grid-cols-3 gap-2 px-1">
                                     <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded-lg text-xs font-mono w-full text-zinc-800 outline-none"/>
                                     <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded-lg text-xs font-mono w-full text-zinc-800 outline-none"/>
@@ -541,21 +558,21 @@ export default function App() {
                             <div className="relative z-10 space-y-6 md:space-y-8">
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-zinc-800 pb-5 md:pb-8 gap-4 md:gap-8">
                                     <div className="flex-1 w-full text-left">
-                                        <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2 md:mb-4 block">PVP Sugerido</label>
+                                        <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2 md:mb-4 block leading-none">PVP Sugerido</label>
                                         <div className="flex items-center gap-2">
                                             <span className="text-xl md:text-3xl font-bold opacity-20">$</span>
                                             <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-3xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
                                         </div>
                                     </div>
                                     <div className="text-left md:text-right w-full md:w-auto shrink-0">
-                                        <p className="text-[9px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 italic">Costos</p>
+                                        <p className="text-[9px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 italic leading-none">Costos</p>
                                         <p className="text-xl md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
                                     </div>
                                 </div>
                                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 md:gap-0">
                                     <div className="bg-white/5 p-4 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 w-full md:flex-1 shadow-inner text-center md:text-left">
-                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 md:mb-2 text-left px-1">Utilidad Estimada</p>
-                                        <p className={`text-2xl md:text-5xl font-mono font-bold px-1 ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
+                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 md:mb-2 text-left px-1 leading-none">Utilidad Estimada</p>
+                                        <p className={`text-2xl md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
                                     </div>
                                     <div className="text-center md:text-right md:ml-10">
                                         <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 md:mb-2 italic leading-none text-right">Margen ROI</p>
@@ -565,7 +582,7 @@ export default function App() {
                             </div>
                          ) : (
                             <div className="relative z-10 space-y-6 md:space-y-8">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-10 border-b border-zinc-800 pb-5 md:pb-8">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-10 border-b border-zinc-800 pb-5 md:pb-8 text-left">
                                     <div className="text-left">
                                         <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3 leading-none italic px-1">China (x1.03 factor)</p>
                                         <p className="text-xl md:text-3xl font-bold font-mono tracking-tight px-1">{formatCurrency(mImport.costChinaCOP)}</p>
@@ -584,7 +601,7 @@ export default function App() {
                                         </div>
                                     </div>
                                     <div className="text-left md:text-right w-full md:w-auto px-1">
-                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1">Inversión Total</p>
+                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1 leading-none leading-none">Inversión Total</p>
                                         <p className="text-lg md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
                                     </div>
                                 </div>
@@ -603,7 +620,7 @@ export default function App() {
                       {!isWinner && p.status === 'approved' && (
                         <div className="pt-6 md:pt-8 border-t border-zinc-100">
                            <button onClick={()=>setExpandedItems({...expandedItems, [p.id]: !expandedItems[p.id]})} className={`w-full p-4 md:p-8 rounded-xl md:rounded-[2.5rem] border-2 transition-all flex justify-between items-center ${expandedItems[p.id] ? 'bg-zinc-900 border-zinc-900 text-white shadow-xl' : 'bg-zinc-50 border-zinc-200 text-zinc-900'}`}>
-                                <div className="flex items-center gap-3 md:gap-5"><span className="text-xl md:text-3xl">📋</span><div className="text-left"><p className="text-[10px] md:text-sm font-black uppercase tracking-widest leading-none">Concepto Compra / Logística</p></div></div>
+                                <div className="flex items-center gap-3 md:gap-5 text-left leading-tight"><span className="text-xl md:text-3xl">📋</span><div className="text-left"><p className="text-[10px] md:text-sm font-black uppercase tracking-widest leading-none">Concepto Compra / Logística</p></div></div>
                                 <svg className={`w-4 md:w-6 h-4 md:h-6 transition-transform ${expandedItems[p.id] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                            </button>
                            {expandedItems[p.id] && (
@@ -611,36 +628,36 @@ export default function App() {
                                     <div className="space-y-4 text-left">
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="flex flex-col gap-1">
-                                                <label className="text-[9px] font-bold text-zinc-400 uppercase px-1">Fecha Compra</label>
-                                                <input type="date" value={p.purchaseDate || ''} onChange={(e)=>updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono focus:border-zinc-900 outline-none text-zinc-800"/>
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase px-1 leading-none">Fecha Compra</label>
+                                                <input type="date" value={p.purchaseDate || ''} onChange={(e)=>updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono focus:border-zinc-900 outline-none text-zinc-800 leading-none"/>
                                             </div>
-                                            <div className="flex flex-col gap-1">
-                                                <label className="text-[9px] font-bold text-zinc-400 uppercase px-1">Est. Llegada</label>
-                                                <input type="date" value={p.estimatedArrival || ''} onChange={(e)=>updateDocField(p.id, 'estimatedArrival', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono focus:border-zinc-900 outline-none text-zinc-800"/>
+                                            <div className="flex flex-col gap-1 text-left">
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase px-1 leading-none">Est. Llegada</label>
+                                                <input type="date" value={p.estimatedArrival || ''} onChange={(e)=>updateDocField(p.id, 'estimatedArrival', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono focus:border-zinc-900 outline-none text-zinc-800 leading-none"/>
                                             </div>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[9px] font-bold text-zinc-400 uppercase px-1">Valor Anticipo</label>
-                                            <input type="number" value={p.advancePayment || 0} onChange={(e)=>updateDocField(p.id, 'advancePayment', parseFloat(e.target.value)||0)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono font-bold outline-none text-zinc-800"/>
+                                        <div className="flex flex-col gap-1 text-left">
+                                            <label className="text-[9px] font-bold text-zinc-400 uppercase px-1 leading-none">Valor Anticipo</label>
+                                            <input type="number" value={p.advancePayment || 0} onChange={(e)=>updateDocField(p.id, 'advancePayment', parseFloat(e.target.value)||0)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-mono font-bold outline-none text-zinc-800 leading-none"/>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-[9px] font-bold text-zinc-400 uppercase px-1">Comprador</label>
-                                            <input value={p.buyer || ''} onChange={(e)=>updateDocField(p.id, 'buyer', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-bold outline-none text-zinc-800" placeholder="Nombre..."/>
+                                        <div className="flex flex-col gap-1 text-left">
+                                            <label className="text-[9px] font-bold text-zinc-400 uppercase px-1 leading-none">Comprador</label>
+                                            <input value={p.buyer || ''} onChange={(e)=>updateDocField(p.id, 'buyer', e.target.value)} className="w-full p-3 rounded-xl border text-[10px] md:text-sm font-bold outline-none text-zinc-800 leading-none" placeholder="Nombre..."/>
                                         </div>
                                     </div>
                                     <div className="bg-white p-4 md:p-8 rounded-2xl border shadow-sm text-left">
-                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase mb-4 border-b pb-2 px-1">Distribución por Color</h4>
+                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase mb-4 border-b pb-2 px-1 text-left leading-none">Distribución por Color</h4>
                                         <div className="space-y-2 overflow-y-auto max-h-[250px] pr-2 no-scrollbar">
                                             {(p.colors || []).map(c => (
                                                 <div key={c.id} className="flex gap-2 md:gap-4 items-center bg-zinc-50/50 p-2 rounded-xl border">
                                                     <input value={c.color || ''} onChange={(e)=>{
                                                         const n = p.colors.map(x=>x.id===c.id?{...x, color: e.target.value}:x);
                                                         updateDocField(p.id, 'colors', n);
-                                                    }} className="flex-1 text-[10px] md:text-xs font-black bg-transparent outline-none uppercase text-zinc-800" placeholder="Color..."/>
+                                                    }} className="flex-1 text-[10px] md:text-xs font-black bg-transparent outline-none uppercase text-zinc-800 leading-none" placeholder="Color..."/>
                                                     <input type="number" value={c.qty || 0} onChange={(e)=>{
                                                         const n = p.colors.map(x=>x.id===c.id?{...x, qty: parseInt(e.target.value)||0}:x);
                                                         updateDocField(p.id, 'colors', n);
-                                                    }} className="w-16 md:w-24 bg-zinc-900 text-white p-1.5 md:p-2 rounded-lg text-center text-[10px] md:text-xs font-mono shadow-sm"/>
+                                                    }} className="w-16 md:w-24 bg-zinc-900 text-white p-1.5 md:p-2 rounded-lg text-center text-[10px] md:text-xs font-mono shadow-sm leading-none"/>
                                                 </div>
                                             ))}
                                         </div>
@@ -655,22 +672,22 @@ export default function App() {
                    {isWinner && (
                     <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-5 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                         <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-4 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
-                           <div className="flex items-center gap-3 md:gap-4"><span className="text-xl md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase">{mWinner.activeUpsells} Activos</p></div></div>
+                           <div className="flex items-center gap-3 md:gap-4 text-left leading-none"><span className="text-xl md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase leading-none">{mWinner.activeUpsells} Activos</p></div></div>
                            <svg className={`w-4 md:w-6 h-4 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                         </button>
                         <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-6 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
                            <div className="space-y-4 no-scrollbar text-left px-1">
                                {(p.upsells || INITIAL_WINNER.upsells).map(u=>(
-                                   <div key={u.id} className="bg-white p-4 rounded-2xl border border-zinc-200 flex gap-4 relative group border-l-8 border-l-indigo-600 transition-all">
+                                   <div key={u.id} className="bg-white p-4 rounded-2xl border border-zinc-200 flex gap-4 relative group border-l-8 border-l-indigo-600 transition-all text-left">
                                        <div className="w-12 h-12 md:w-16 bg-zinc-50 rounded-xl md:rounded-2xl relative shrink-0 flex items-center justify-center border overflow-hidden shadow-inner">
                                            {u.image ? <img src={u.image} className="w-full h-full object-cover" alt="Upsell"/> : <span className="text-lg opacity-20 font-black">+</span>}
                                            <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id, u.id)}/>
                                        </div>
-                                       <div className="flex-1 min-w-0 pr-6">
-                                           <input value={u.name || ''} onChange={(e)=>updateUpsell(p, u.id, 'name', e.target.value)} className="w-full text-[10px] md:text-xs font-black bg-transparent border-b border-zinc-100 focus:border-indigo-600 mb-2 outline-none truncate text-zinc-800" placeholder="Nombre..."/>
+                                       <div className="flex-1 min-w-0 pr-6 text-left leading-none">
+                                           <input value={u.name || ''} onChange={(e)=>updateUpsell(p, u.id, 'name', e.target.value)} className="w-full text-[10px] md:text-xs font-black bg-transparent border-b border-zinc-100 focus:border-indigo-600 mb-2 outline-none truncate text-zinc-800 leading-none" placeholder="Nombre..."/>
                                            <div className="flex gap-2">
-                                               <input type="number" value={u.cost || ''} onChange={(e)=>updateUpsell(p, u.id, 'cost', parseFloat(e.target.value)||0)} className="w-1/2 bg-zinc-50 text-[9px] p-1.5 rounded-lg font-mono outline-none border border-transparent shadow-inner text-zinc-700" placeholder="Costo"/>
-                                               <input type="number" value={u.price || ''} onChange={(e)=>updateUpsell(p, u.id, 'price', parseFloat(e.target.value)||0)} className="w-1/2 bg-indigo-50/50 text-[9px] p-1.5 rounded-lg font-black text-indigo-700 outline-none border border-transparent shadow-inner" placeholder="Venta"/>
+                                               <input type="number" value={u.cost || ''} onChange={(e)=>updateUpsell(p, u.id, 'cost', parseFloat(e.target.value)||0)} className="w-1/2 bg-zinc-50 text-[9px] p-1.5 rounded-lg font-mono outline-none border border-transparent shadow-inner text-zinc-700 leading-none" placeholder="Costo"/>
+                                               <input type="number" value={u.price || ''} onChange={(e)=>updateUpsell(p, u.id, 'price', parseFloat(e.target.value)||0)} className="w-1/2 bg-indigo-50/50 text-[9px] p-1.5 rounded-lg font-black text-indigo-700 outline-none border border-transparent shadow-inner leading-none" placeholder="Venta"/>
                                            </div>
                                        </div>
                                        <button onClick={() => resetUpsell(p, u.id)} className="text-zinc-300 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all p-1 hover:text-rose-500 absolute right-1 md:right-3 top-1 md:top-3"><svg className="w-4 md:w-5 h-4 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2.5"/></svg></button>
@@ -691,7 +708,7 @@ export default function App() {
       {isCreating && (
         <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
-                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 md:p-8 border-b flex justify-between items-center z-10">
+                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-6 border-b flex justify-between items-center z-10">
                     <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic">Registro Cloud</h2>
                     <button onClick={()=>setIsCreating(false)} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
                 </header>
@@ -702,7 +719,7 @@ export default function App() {
                       disabled={isSaving}
                       className="w-full mt-8 bg-zinc-900 hover:bg-black text-white font-black py-5 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
                     >
-                        {isSaving ? 'Guardando...' : 'Confirmar Registro'}
+                        {isSaving ? 'Guardando en la Nube...' : 'Confirmar Registro'}
                     </button>
                 </div>
             </div>
