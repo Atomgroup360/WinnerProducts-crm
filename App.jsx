@@ -186,8 +186,6 @@ export default function App() {
   const [newProduct, setNewProduct] = useState(getInitialWinner());
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
-  
-  // NUEVO: Estado para mostrar errores directamente dentro del modal de creación
   const [formError, setFormError] = useState('');
 
   // 1. Escuchar Auth
@@ -221,7 +219,9 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
+  // CORRECCIÓN CRÍTICA: Limpiar el array de productos temporalmente evita el choque de memoria al cambiar de pestaña
   const handleModuleChange = (mod) => {
+    setProducts([]); // Evita renderizado cruzado (White Screen of Death)
     setActiveModule(mod);
     setActiveTab('pending');
     setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
@@ -241,14 +241,12 @@ export default function App() {
     document.body.removeChild(textArea);
   };
 
-  // --- MOTOR DE GUARDADO SANITIZADO ---
   const handleSave = async () => {
-    setFormError(''); // Limpiamos errores previos
+    setFormError('');
 
-    // Validación estricta con feedback visual dentro del modal
     if (!newProduct.name || newProduct.name.trim() === '') {
       setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
-      return; // Detiene la función aquí, por eso el botón parecía inservible
+      return; 
     }
     
     setIsSaving(true);
@@ -281,7 +279,6 @@ export default function App() {
 
     } catch (e) { 
       console.error("Firebase Save Error:", e); 
-      // Mostramos el error devuelto por Firebase directamente en el formulario
       setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
     } finally {
       setIsSaving(false);
@@ -357,6 +354,7 @@ export default function App() {
         const item = products.find(x => x.id === targetId);
         if (!item) return;
         if (upsellId) {
+          // CORRECCIÓN: Reemplazado INITIAL_WINNER por getInitialWinner()
           const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
           updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
         } else {
@@ -718,7 +716,7 @@ export default function App() {
                         </button>
                         <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-6 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
                            <div className="space-y-4 no-scrollbar text-left px-1">
-                               {(p.upsells || INITIAL_WINNER.upsells).map(u=>(
+                               {(p.upsells || getInitialWinner().upsells).map(u=>(
                                    <div key={u.id} className="bg-white p-4 rounded-2xl border border-zinc-200 flex gap-4 relative group border-l-8 border-l-indigo-600 transition-all text-left">
                                        <div className="w-12 h-12 md:w-16 bg-zinc-50 rounded-xl md:rounded-2xl relative shrink-0 flex items-center justify-center border overflow-hidden shadow-inner">
                                            {u.image ? <img src={u.image} className="w-full h-full object-cover" alt="Upsell"/> : <span className="text-lg opacity-20 font-black">+</span>}
