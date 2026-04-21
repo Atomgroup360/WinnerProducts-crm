@@ -48,6 +48,7 @@ const getInitialWinner = () => ({
   name: '', dropiCode: '', supplier: '', description: '',
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
+  isWorking: false, // Propiedad para el interruptor
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -61,6 +62,7 @@ const getInitialImport = () => ({
   type: 'import',
   name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
+  isWorking: false, // Propiedad para el interruptor
   measures: { width: 0, height: 0, length: 0 },
   purchaseDate: '', advancePayment: 0, buyer: '', estimatedArrival: '',
   colors: Array(7).fill(0).map((_, i) => ({ id: i+1, color: '', qty: 0 }))
@@ -76,8 +78,8 @@ const calculateWinnerMetrics = (p) => {
     (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
   const basePrice = parseFloat(p.targetPrice) || 0;
   const upsells = p.upsells || [];
-  const uCost = upsells.reduce((s, u) => s + (parseFloat(u.cost)||0), 0);
-  const uPrice = upsells.reduce((s, u) => s + (parseFloat(u.price)||0), 0);
+  const uCost = upsells.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
+  const uPrice = upsells.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
   const totalCost = baseCost + uCost;
   const totalPrice = basePrice + uPrice;
   const profit = totalPrice - totalCost;
@@ -205,7 +207,7 @@ export default function App() {
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (b.order || 0) - (a.order || 0));
+      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
       setProducts(loaded);
     }, (error) => {
       console.error("Firestore Error:", error);
@@ -219,9 +221,8 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
-  // CORRECCIÓN CRÍTICA: Limpiar el array de productos temporalmente evita el choque de memoria al cambiar de pestaña
   const handleModuleChange = (mod) => {
-    setProducts([]); // Evita renderizado cruzado (White Screen of Death)
+    setProducts([]);
     setActiveModule(mod);
     setActiveTab('pending');
     setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
@@ -354,7 +355,6 @@ export default function App() {
         const item = products.find(x => x.id === targetId);
         if (!item) return;
         if (upsellId) {
-          // CORRECCIÓN: Reemplazado INITIAL_WINNER por getInitialWinner()
           const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
           updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
         } else {
@@ -508,11 +508,23 @@ export default function App() {
             const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
 
             return (
-              <div key={p.id} className="bg-white rounded-[1.5rem] md:rounded-[3rem] shadow-sm border border-zinc-200/50 overflow-hidden transition-all hover:shadow-xl animate-in slide-in-from-bottom-4 duration-500">
+              <div 
+                key={p.id} 
+                className={`rounded-[1.5rem] md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${p.isWorking ? 'bg-amber-50 border-amber-500 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50'}`}
+              >
                 
-                <div className={`px-4 md:px-10 py-3 md:py-4 flex justify-between items-center border-b bg-zinc-50/20`}>
+                <div className={`px-4 md:px-10 py-3 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
                    <div className="flex items-center gap-3 md:gap-6 flex-wrap text-left">
                      <div className="bg-zinc-900 text-white px-2 md:px-4 py-1 rounded-lg text-[9px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
+                     
+                     {/* INTERRUPTOR EN PROCESO - VISIBLE Y FUNCIONAL */}
+                     <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-zinc-200 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => updateDocField(p.id, 'isWorking', !p.isWorking)}>
+                        <span className={`text-[9px] font-black uppercase tracking-tighter ${p.isWorking ? 'text-amber-600' : 'text-zinc-400'}`}>EN PROCESO</span>
+                        <div className={`w-9 h-5 rounded-full relative transition-colors ${p.isWorking ? 'bg-amber-500' : 'bg-zinc-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${p.isWorking ? 'left-[1.2rem]' : 'left-0.5'}`} />
+                        </div>
+                     </div>
+
                      <span className="font-black text-[9px] md:text-[11px] uppercase tracking-widest text-zinc-500 whitespace-nowrap">{stCfg.emoji} {stCfg.label}</span>
                      <div className="flex items-center bg-white rounded-xl md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100">
                         <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg></button>
@@ -524,7 +536,7 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col xl:flex-row">
-                   <div className="w-full xl:w-[25%] p-5 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
+                   <div className="w-full xl:w-[25%] p-5 md:p-10 border-r border-zinc-100 text-left">
                      <div className="aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer max-w-[300px] mx-auto w-full text-center">
                        {p.image ? <img src={p.image} className="w-full h-full object-cover" alt="Producto"/> : <span className="text-2xl md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
@@ -561,11 +573,11 @@ export default function App() {
                      )}
                    </div>
 
-                   <div className="flex-1 p-5 md:p-10 space-y-6 md:space-y-10 bg-white relative text-left">
+                   <div className="flex-1 p-5 md:p-10 space-y-6 md:space-y-10 relative text-left">
                       {isWinner ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                           {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                            <div key={k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 transition-all hover:bg-white text-left">
+                            <div key={k} className={`p-3 md:p-5 rounded-xl md:rounded-2xl border transition-all hover:bg-white text-left ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
                                 <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">{k}</label>
                                 <input type="number" value={p.costs?.[k] || 0} onChange={(e)=>updateNestedField(p.id, 'costs', k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none text-zinc-700"/>
                             </div>
@@ -574,12 +586,12 @@ export default function App() {
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                             {[{k:'prodCostUSD',l:'USD'}, {k:'cbmCostCOP',l:'CBM'}, {k:'unitsQty',l:'Uds'}, {k:'ctnQty',l:'CTN'}, {k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
-                                <div key={f.k} className="bg-zinc-50/50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 text-left">
+                                <div key={f.k} className={`p-3 md:p-5 rounded-xl md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
                                     <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">{f.l}</label>
                                     <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-xs md:text-sm font-bold bg-transparent outline-none text-zinc-800 leading-none"/>
                                 </div>
                             ))}
-                            <div className="col-span-2 bg-zinc-50 p-3 md:p-5 rounded-xl md:rounded-2xl border border-zinc-100 text-left">
+                            <div className={`col-span-2 p-3 md:p-5 rounded-xl md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
                                 <label className="text-[8px] md:text-[10px] font-black text-zinc-400 uppercase block mb-2 px-1 leading-none">Medidas (cm)</label>
                                 <div className="grid grid-cols-3 gap-2 px-1">
                                     <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded-lg text-xs font-mono w-full text-zinc-800 outline-none"/>
@@ -650,7 +662,7 @@ export default function App() {
 
                       <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start pb-2">
                         {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
-                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-2 md:py-3.5 rounded-xl text-[9px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
+                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-2 md:py-3.5 rounded-xl text-[9px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
                             {s.emoji} {s.label}
                           </button>
                         ))}
