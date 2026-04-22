@@ -69,9 +69,9 @@ const getInitialImport = () => ({
 });
 
 const getInitialProjection = () => ({
-  price: 0, productCost: 0, freight: 0, fulfillment: 0, commission: 0,
-  adSpend: 0, cpm: 0, ctr: 0, loadSpeed: 0, conversionRate: 0,
-  effectiveness: 0, returnRate: 0, fixedExpenses: 0, activeCampaigns: 1
+  price: '', productCost: '', freight: '', fulfillment: '', commission: '',
+  adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
+  effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
 });
 
 // --- AYUDANTES ---
@@ -130,6 +130,41 @@ const compressImage = (base64Str) => {
       resolve(canvas.toDataURL('image/jpeg', 0.7)); 
     };
   });
+};
+
+// --- COMPONENTES P&G INDEPENDIENTES (Evita la pérdida de foco al escribir) ---
+const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => (
+  <div className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-zinc-100 focus-within:border-indigo-400 transition-colors shadow-sm">
+    <label className="text-[9px] md:text-[11px] font-black text-indigo-500 uppercase block mb-1 md:mb-2">{label} ✎</label>
+    <div className="flex items-center gap-1">
+      {prefix && <span className="text-zinc-400 font-bold">{prefix}</span>}
+      <input 
+        type={type} 
+        value={value} 
+        onChange={onChange}
+        className="w-full bg-transparent text-sm md:text-base font-bold text-zinc-900 outline-none font-mono"
+        placeholder="0"
+      />
+      {suffix && <span className="text-zinc-400 font-bold">{suffix}</span>}
+    </div>
+  </div>
+);
+
+const OutputP = ({ label, value, type="currency", decimals=2, highlight=false }) => {
+  let displayValue = 0;
+  const numValue = parseFloat(value) || 0;
+  if (type === "currency") displayValue = formatCurrency(numValue);
+  else if (type === "number") displayValue = numValue.toFixed(decimals);
+  else if (type === "percent") displayValue = `${numValue.toFixed(decimals)}%`;
+
+  return (
+    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner'}`}>
+      <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${highlight ? 'text-zinc-400' : 'text-zinc-500'}`}>{label}</label>
+      <div className={`font-mono text-sm md:text-lg font-black truncate ${highlight ? 'text-white' : 'text-zinc-800'}`}>
+        {displayValue}
+      </div>
+    </div>
+  );
 };
 
 // --- COMPONENTE LOGIN ---
@@ -213,7 +248,7 @@ export default function App() {
 
   // 2. Escuchar Firestore
   useEffect(() => {
-    if (!user || activeModule === 'projection') return; // No necesitamos Firestore para la proyección
+    if (!user || activeModule === 'projection') return; 
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     
@@ -421,71 +456,42 @@ export default function App() {
 
   // --- MÓDULO: PROYECCIÓN P&G ---
   const renderProjectionModule = () => {
+    // Función segura para leer datos y evitar problemas de escritura con campos vacíos
+    const val = (key) => parseFloat(proj[key]) || 0;
+    const handleChange = (key) => (e) => setProj({...proj, [key]: e.target.value});
+
     // Fórmulas Análisis de Métricas
-    const impressions = proj.cpm > 0 ? (proj.adSpend / proj.cpm) * 1000 : 0;
-    const costPerImpression = impressions > 0 ? proj.adSpend / impressions : 0;
-    const linkClicks = impressions * (proj.ctr / 100);
-    const cpc = linkClicks > 0 ? proj.adSpend / linkClicks : 0;
-    const pageVisits = linkClicks * (proj.loadSpeed / 100);
-    const costPerVisit = pageVisits > 0 ? proj.adSpend / pageVisits : 0;
-    const salesCol1 = pageVisits * (proj.conversionRate / 100); // Pedidos (Ventas)
-    const salesCol2 = salesCol1 * proj.price; // Ingresos FB (Ventas $)
-    const cpaFb = salesCol1 > 0 ? proj.adSpend / salesCol1 : 0;
-    const dispatchedOrders = salesCol1 * (proj.effectiveness / 100);
-    const costPerDispatched = dispatchedOrders > 0 ? proj.adSpend / dispatchedOrders : 0;
-    const returns = dispatchedOrders * (proj.returnRate / 100);
+    const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
+    const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
+    const linkClicks = impressions * (val('ctr') / 100);
+    const cpc = linkClicks > 0 ? val('adSpend') / linkClicks : 0;
+    const pageVisits = linkClicks * (val('loadSpeed') / 100);
+    const costPerVisit = pageVisits > 0 ? val('adSpend') / pageVisits : 0;
+    const salesCol1 = pageVisits * (val('conversionRate') / 100); // Pedidos (Ventas)
+    const salesCol2 = salesCol1 * val('price'); // Ingresos FB (Ventas $)
+    const cpaFb = salesCol1 > 0 ? val('adSpend') / salesCol1 : 0;
+    const dispatchedOrders = salesCol1 * (val('effectiveness') / 100);
+    const costPerDispatched = dispatchedOrders > 0 ? val('adSpend') / dispatchedOrders : 0;
+    const returns = dispatchedOrders * (val('returnRate') / 100);
     const effectiveDeliveries = dispatchedOrders - returns;
-    const realRevenue = effectiveDeliveries * proj.price;
-    const cpaReal = effectiveDeliveries > 0 ? proj.adSpend / effectiveDeliveries : 0;
-    const roasFb = proj.adSpend > 0 ? salesCol2 / proj.adSpend : 0;
-    const roasReal = proj.adSpend > 0 ? realRevenue / proj.adSpend : 0;
+    const realRevenue = effectiveDeliveries * val('price');
+    const cpaReal = effectiveDeliveries > 0 ? val('adSpend') / effectiveDeliveries : 0;
+    const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
+    const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
 
     // Fórmulas Pérdidas y Ganancias
-    const totalProductCost = effectiveDeliveries * proj.productCost;
-    const totalFreightCost = proj.freight * dispatchedOrders;
-    const totalReturnCost = proj.freight * returns;
-    const totalFulfillmentCost = proj.fulfillment * dispatchedOrders;
-    const totalCommissionCost = proj.commission * effectiveDeliveries;
+    const totalProductCost = effectiveDeliveries * val('productCost');
+    const totalFreightCost = val('freight') * dispatchedOrders;
+    const totalReturnCost = val('freight') * returns;
+    const totalFulfillmentCost = val('fulfillment') * dispatchedOrders;
+    const totalCommissionCost = val('commission') * effectiveDeliveries;
     
     const intermediationCosts = totalProductCost + totalFreightCost + totalReturnCost + totalFulfillmentCost + totalCommissionCost;
-    const grossProfit = realRevenue - intermediationCosts - proj.adSpend;
-    const prorateCampaign = proj.activeCampaigns > 0 ? proj.fixedExpenses / proj.activeCampaigns : 0;
+    const grossProfit = realRevenue - intermediationCosts - val('adSpend');
+    const prorateCampaign = val('activeCampaigns') > 0 ? val('fixedExpenses') / val('activeCampaigns') : 0;
     const netProfit = grossProfit - prorateCampaign;
     const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
     const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
-
-    const InputP = ({ label, valueKey, type="number", prefix="", suffix="" }) => (
-      <div className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-zinc-100 focus-within:border-indigo-400 transition-colors shadow-sm">
-        <label className="text-[9px] md:text-[11px] font-black text-indigo-500 uppercase block mb-1 md:mb-2">{label} ✎</label>
-        <div className="flex items-center gap-1">
-          {prefix && <span className="text-zinc-400 font-bold">{prefix}</span>}
-          <input 
-            type={type} 
-            value={proj[valueKey] || ''} 
-            onChange={(e) => setProj({...proj, [valueKey]: parseFloat(e.target.value) || 0})}
-            className="w-full bg-transparent text-sm md:text-base font-bold text-zinc-900 outline-none font-mono"
-            placeholder="0"
-          />
-          {suffix && <span className="text-zinc-400 font-bold">{suffix}</span>}
-        </div>
-      </div>
-    );
-
-    const OutputP = ({ label, value, type="currency", decimals=2, highlight=false }) => {
-      let displayValue = 0;
-      if (type === "currency") displayValue = formatCurrency(value);
-      else if (type === "number") displayValue = Number(value).toFixed(decimals);
-      else if (type === "percent") displayValue = `${Number(value).toFixed(decimals)}%`;
-
-      return (
-        <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner'}`}>
-          <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${highlight ? 'text-zinc-400' : 'text-zinc-500'}`}>{label}</label>
-          <div className={`font-mono text-sm md:text-lg font-black truncate ${highlight ? 'text-white' : 'text-zinc-800'}`}>
-            {displayValue}
-          </div>
-        </div>
-      );
-    };
 
     return (
       <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
@@ -493,11 +499,11 @@ export default function App() {
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
-            <InputP label="Precio Venta" valueKey="price" prefix="$" />
-            <InputP label="Costo Producto" valueKey="productCost" prefix="$" />
-            <InputP label="Flete" valueKey="freight" prefix="$" />
-            <InputP label="Fulfillment" valueKey="fulfillment" prefix="$" />
-            <InputP label="Comisión + Fijos" valueKey="commission" prefix="$" />
+            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} prefix="$" />
+            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} prefix="$" />
+            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} prefix="$" />
+            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} prefix="$" />
+            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} prefix="$" />
           </div>
         </div>
 
@@ -505,29 +511,29 @@ export default function App() {
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            <InputP label="Inv. Facebook" valueKey="adSpend" prefix="$" />
-            <InputP label="CPM" valueKey="cpm" prefix="$" />
+            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} prefix="$" />
+            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} prefix="$" />
             <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
             <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
 
-            <InputP label="CTR" valueKey="ctr" suffix="%" />
+            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} suffix="%" />
             <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
             <OutputP label="Costo por Clic" value={cpc} type="currency" />
             
-            <InputP label="Vel. de Carga" valueKey="loadSpeed" suffix="%" />
+            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} suffix="%" />
             <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
             <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
             
-            <InputP label="Conversión" valueKey="conversionRate" suffix="%" />
+            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} suffix="%" />
             <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
             <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
             <OutputP label="CPA Facebook" value={cpaFb} type="currency" />
 
-            <InputP label="% Efectividad" valueKey="effectiveness" suffix="%" />
+            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} suffix="%" />
             <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
             <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
             
-            <InputP label="% Devolución" valueKey="returnRate" suffix="%" />
+            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} suffix="%" />
             <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
             <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
             <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
@@ -566,8 +572,8 @@ export default function App() {
 
             {/* Beneficio y Gastos Fijos */}
             <div className="space-y-3">
-              <InputP label="Gastos Fijos (Globales)" valueKey="fixedExpenses" prefix="$" />
-              <InputP label="Campañas Activas" valueKey="activeCampaigns" />
+              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} prefix="$" />
+              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} />
               <OutputP label="Prorrateo x Campaña" value={prorateCampaign} type="currency" />
               <div className="mt-6">
                 <div className="bg-emerald-500 rounded-[1.5rem] p-5 shadow-lg text-white">
