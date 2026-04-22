@@ -190,9 +190,9 @@ export default function App() {
   const [notification, setNotification] = useState('');
   const [formError, setFormError] = useState('');
 
-  // NUEVO: Estados para Filtros y Ordenamiento
+  // Estados para Filtros y Ordenamiento
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState('recent'); // 'recent', 'roi-desc', 'roi-asc'
+  const [sortOrder, setSortOrder] = useState('manual'); // Default 'manual' para que las flechas funcionen
   const [supplierFilter, setSupplierFilter] = useState('all');
 
   // 1. Escuchar Auth
@@ -212,7 +212,7 @@ export default function App() {
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
+      // No ordenamos aquí para que useMemo maneje la lógica de "EN PROCESO"
       setProducts(loaded);
     }, (error) => {
       console.error("Firestore Error:", error);
@@ -243,9 +243,16 @@ export default function App() {
       return matchesTab && matchesSearch && matchesSupplier;
     });
 
-    // Aplicar Ordenamiento
+    // APLICAR ORDENAMIENTO COMPLEJO
     return [...result].sort((a, b) => {
-      if (sortOrder === 'recent') return (b.order || 0) - (a.order || 0);
+      // REGLA 1: "EN PROCESO" siempre primero
+      if (a.isWorking && !b.isWorking) return -1;
+      if (!a.isWorking && b.isWorking) return 1;
+
+      // REGLA 2: Si ambos tienen el mismo estado de proceso, aplicar el filtro seleccionado
+      if (sortOrder === 'manual' || sortOrder === 'recent') {
+        return (a.order || 0) - (b.order || 0);
+      }
       
       const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
       const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
@@ -264,7 +271,7 @@ export default function App() {
     setActiveTab('pending');
     setSearchTerm('');
     setSupplierFilter('all');
-    setSortOrder('recent');
+    setSortOrder('manual');
     setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     setIsCreating(false);
     setFormError('');
@@ -359,7 +366,7 @@ export default function App() {
 
   const moveItem = async (id, dir) => {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const list = products.filter(p => p.status === activeTab);
+    const list = displayedProducts; // Usamos displayedProducts para que el movimiento respete el filtro visual
     const idx = list.findIndex(p => p.id === id);
     const targetIdx = idx + dir;
     if (targetIdx >= 0 && targetIdx < list.length) {
@@ -551,9 +558,10 @@ export default function App() {
                     onChange={(e) => setSortOrder(e.target.value)}
                     className="w-full bg-white border-2 border-zinc-100 rounded-2xl p-4 text-sm font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
                 >
-                    <option value="recent">MÁS RECIENTES</option>
+                    <option value="manual">ORDEN MANUAL (FLECHAS)</option>
                     <option value="roi-desc">MAYOR MARGEN ROI</option>
                     <option value="roi-asc">MENOR MARGEN ROI</option>
+                    <option value="recent">MÁS RECIENTES</option>
                 </select>
             </div>
         </div>
@@ -602,7 +610,9 @@ export default function App() {
                      </div>
 
                      <span className="font-black text-[9px] md:text-[11px] uppercase tracking-widest text-zinc-500 whitespace-nowrap">{stCfg.emoji} {stCfg.label}</span>
-                     <div className="flex items-center bg-white rounded-xl md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100">
+                     
+                     {/* FLECHAS: Solo visibles cuando el orden es Manual */}
+                     <div className={`flex items-center bg-white rounded-xl md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100 transition-opacity ${sortOrder === 'manual' ? 'opacity-100' : 'opacity-20 pointer-events-none'}`}>
                         <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M5 15l7-7 7 7"/></svg></button>
                         <span className="text-[8px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
                         <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length - 1} className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-lg md:rounded-xl transition-all disabled:opacity-10"><svg className="w-3 md:w-4 h-3 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path d="M19 9l-7 7-7-7"/></svg></button>
