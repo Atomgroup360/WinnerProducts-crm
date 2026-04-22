@@ -48,7 +48,7 @@ const getInitialWinner = () => ({
   name: '', dropiCode: '', supplier: '', description: '',
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
-  isWorking: false, // Propiedad para el interruptor
+  isWorking: false,
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -62,7 +62,7 @@ const getInitialImport = () => ({
   type: 'import',
   name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
-  isWorking: false, // Propiedad para el interruptor
+  isWorking: false,
   measures: { width: 0, height: 0, length: 0 },
   purchaseDate: '', advancePayment: 0, buyer: '', estimatedArrival: '',
   colors: Array(7).fill(0).map((_, i) => ({ id: i+1, color: '', qty: 0 }))
@@ -190,6 +190,11 @@ export default function App() {
   const [notification, setNotification] = useState('');
   const [formError, setFormError] = useState('');
 
+  // NUEVO: Estados para Filtros y Ordenamiento
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState('recent'); // 'recent', 'roi-desc', 'roi-asc'
+  const [supplierFilter, setSupplierFilter] = useState('all');
+
   // 1. Escuchar Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -217,14 +222,49 @@ export default function App() {
     return () => unsubscribe();
   }, [user, activeModule]);
 
-  const displayedProducts = useMemo(() => products.filter(p => p.status === activeTab), [products, activeTab]);
+  // Obtener lista única de proveedores para el filtro
+  const uniqueSuppliers = useMemo(() => {
+    const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
+    const list = products.map(p => p[field]).filter(Boolean);
+    return ['all', ...new Set(list)];
+  }, [products, activeModule]);
+
+  // Lógica de Filtrado y Ordenamiento Combinada
+  const displayedProducts = useMemo(() => {
+    let result = products.filter(p => {
+      const matchesTab = p.status === activeTab;
+      const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           p.dropiCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           p.chineseSupplier?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const supplierField = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
+      const matchesSupplier = supplierFilter === 'all' || p[supplierField] === supplierFilter;
+
+      return matchesTab && matchesSearch && matchesSupplier;
+    });
+
+    // Aplicar Ordenamiento
+    return [...result].sort((a, b) => {
+      if (sortOrder === 'recent') return (b.order || 0) - (a.order || 0);
+      
+      const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
+      const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
+
+      if (sortOrder === 'roi-desc') return valB - valA;
+      if (sortOrder === 'roi-asc') return valA - valB;
+      return 0;
+    });
+  }, [products, activeTab, searchTerm, supplierFilter, sortOrder, activeModule]);
 
   const handleLogout = () => signOut(auth);
 
   const handleModuleChange = (mod) => {
-    setProducts([]);
+    setProducts([]); 
     setActiveModule(mod);
     setActiveTab('pending');
+    setSearchTerm('');
+    setSupplierFilter('all');
+    setSortOrder('recent');
     setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     setIsCreating(false);
     setFormError('');
@@ -481,6 +521,43 @@ export default function App() {
             <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
         </div>
 
+        {/* ÁREA DE FILTROS Y BÚSQUEDA */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="md:col-span-2 relative">
+                <input 
+                    type="text" 
+                    placeholder="Buscar por nombre o código..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white border-2 border-zinc-100 rounded-2xl p-4 text-sm focus:border-zinc-900 outline-none transition-all shadow-sm"
+                />
+                <span className="absolute right-4 top-1/2 transform -translate-y-1/2 opacity-20">🔍</span>
+            </div>
+            <div>
+                <select 
+                    value={supplierFilter}
+                    onChange={(e) => setSupplierFilter(e.target.value)}
+                    className="w-full bg-white border-2 border-zinc-100 rounded-2xl p-4 text-sm font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
+                >
+                    <option value="all">TODOS LOS PROVEEDORES</option>
+                    {uniqueSuppliers.filter(s => s !== 'all').map(s => (
+                        <option key={s} value={s}>{s.toUpperCase()}</option>
+                    ))}
+                </select>
+            </div>
+            <div>
+                <select 
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    className="w-full bg-white border-2 border-zinc-100 rounded-2xl p-4 text-sm font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
+                >
+                    <option value="recent">MÁS RECIENTES</option>
+                    <option value="roi-desc">MAYOR MARGEN ROI</option>
+                    <option value="roi-asc">MENOR MARGEN ROI</option>
+                </select>
+            </div>
+        </div>
+
         <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white p-4 md:p-6 rounded-2xl md:rounded-[2rem] shadow-sm border border-zinc-200/50 relative">
           <div className="flex items-center gap-3 md:gap-5 w-full md:w-auto">
             <div className="w-10 h-10 md:w-14 md:h-14 bg-zinc-900 rounded-xl md:rounded-[1.2rem] flex items-center justify-center text-white text-xl md:text-2xl shadow-xl italic font-black shrink-0">W</div>
@@ -517,7 +594,6 @@ export default function App() {
                    <div className="flex items-center gap-3 md:gap-6 flex-wrap text-left">
                      <div className="bg-zinc-900 text-white px-2 md:px-4 py-1 rounded-lg text-[9px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
                      
-                     {/* INTERRUPTOR EN PROCESO - VISIBLE Y FUNCIONAL */}
                      <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-zinc-200 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => updateDocField(p.id, 'isWorking', !p.isWorking)}>
                         <span className={`text-[9px] font-black uppercase tracking-tighter ${p.isWorking ? 'text-amber-600' : 'text-zinc-400'}`}>EN PROCESO</span>
                         <div className={`w-9 h-5 rounded-full relative transition-colors ${p.isWorking ? 'bg-amber-500' : 'bg-zinc-200'}`}>
