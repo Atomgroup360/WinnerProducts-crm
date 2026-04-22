@@ -416,8 +416,8 @@ export default function App() {
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
           <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Winner</span>}
+            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
             <div className="relative">
@@ -458,8 +458,8 @@ export default function App() {
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
           <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-zinc-300 font-bold text-[10px] uppercase">Foto Importación</span>}
+            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
+              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
             <div className="relative">
@@ -570,9 +570,10 @@ export default function App() {
           <button onClick={() => { setIsCreating(true); setFormError(''); }} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
         </header>
 
+        {/* TABS DE ESTADO - MEJORA MÓVIL: MÁS GRANDES */}
         <div className="flex gap-2 mb-4 md:mb-10 overflow-x-auto no-scrollbar pb-2">
           {Object.values(activeModule === 'winners' ? WINNER_STATUS : IMPORT_STATUS).map((config) => (
-            <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-4 md:px-8 py-2 md:py-3.5 rounded-lg md:rounded-[1.2rem] font-black text-[9px] md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
+            <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-5 md:px-8 py-3.5 md:py-3.5 rounded-xl md:rounded-[1.2rem] font-black text-xs md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
               {config.emoji} {config.label} <span className="ml-1 opacity-40">({products.filter(p => p.status === config.id).length})</span>
             </button>
           ))}
@@ -588,7 +589,7 @@ export default function App() {
             return (
               <div 
                 key={p.id} 
-                className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${p.isWorking ? 'bg-amber-50 border-amber-500 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50'}`}
+                className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50'}`}
               >
                 
                 <div className={`px-3 md:px-10 py-2 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
@@ -702,76 +703,78 @@ export default function App() {
                         </div>
                       )}
 
-                      <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-4 md:p-10 text-white shadow-2xl relative overflow-hidden">
+                      {/* CUADRO NEGRO DE RESULTADOS - MEJORADO EN MÓVIL (TEXTOS MÁS GRANDES) */}
+                      <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-5 md:p-10 text-white shadow-2xl relative overflow-hidden">
                          <div className="absolute top-0 right-0 w-32 md:w-80 h-32 md:h-80 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[120px] -mr-16 md:-mr-40 -mt-16 md:-mt-40"></div>
                          
                          {isWinner ? (
-                            <div className="relative z-10 space-y-4 md:space-y-8">
-                                <div className="flex justify-between items-end border-b border-zinc-800 pb-3 md:pb-8 gap-4 text-left">
+                            <div className="relative z-10 space-y-5 md:space-y-8">
+                                <div className="flex justify-between items-end border-b border-zinc-800 pb-4 md:pb-8 gap-4 text-left">
                                     <div className="flex-1">
-                                        <label className="text-[7px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1 md:mb-4 block leading-none">PVP Sugerido</label>
+                                        <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-4 block leading-none">PVP Sugerido</label>
                                         <div className="flex items-center gap-1 md:gap-2">
-                                            <span className="text-sm md:text-3xl font-bold opacity-20">$</span>
-                                            <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
+                                            <span className="text-xl md:text-3xl font-bold opacity-20">$</span>
+                                            <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-3xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <p className="text-[7px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-0.5 md:mb-1 italic leading-none">Costos</p>
-                                        <p className="text-sm md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
+                                        <p className="text-[10px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 md:mb-1 italic leading-none">Costos</p>
+                                        <p className="text-xl md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
                                     </div>
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <div className="bg-white/5 p-2 md:p-6 rounded-lg md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
-                                        <p className="text-[6px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 text-left px-1 leading-none">Utilidad</p>
-                                        <p className={`text-sm md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
+                                <div className="flex justify-between items-center gap-4">
+                                    <div className="bg-white/5 p-3 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
+                                        <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 text-left px-1 leading-none">Utilidad Neta</p>
+                                        <p className={`text-2xl md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
                                     </div>
-                                    <div className="text-right ml-4 md:ml-10">
-                                        <p className="text-[7px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 italic leading-none text-right">Margen</p>
-                                        <p className="text-2xl md:text-7xl font-black italic tracking-tighter leading-none">{mWinner.margin.toFixed(1)}%</p>
+                                    <div className="text-right shrink-0">
+                                        <p className="text-[10px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 italic leading-none text-right">Margen ROI</p>
+                                        <p className="text-4xl md:text-7xl font-black italic tracking-tighter leading-none">{mWinner.margin.toFixed(1)}%</p>
                                     </div>
                                 </div>
                             </div>
                          ) : (
-                            <div className="relative z-10 space-y-4 md:space-y-8">
-                                <div className="grid grid-cols-2 gap-4 border-b border-zinc-800 pb-3 md:pb-8 text-left">
+                            <div className="relative z-10 space-y-5 md:space-y-8">
+                                <div className="grid grid-cols-2 gap-6 border-b border-zinc-800 pb-4 md:pb-8 text-left">
                                     <div className="text-left">
-                                        <p className="text-[7px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3 leading-none italic">China (1.03x)</p>
-                                        <p className="text-sm md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.costChinaCOP)}</p>
+                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">China (1.03x)</p>
+                                        <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.costChinaCOP)}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-[7px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-3 leading-none italic">Logística</p>
-                                        <p className="text-sm md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.nationalizationCOP)}</p>
+                                        <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">Logística</p>
+                                        <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.nationalizationCOP)}</p>
                                     </div>
                                 </div>
-                                <div className="bg-emerald-500/10 p-3 md:p-10 rounded-xl md:rounded-[3rem] border border-emerald-500/20 flex justify-between items-center gap-4 transition-all hover:bg-emerald-500/20">
-                                    <div className="text-left">
-                                        <p className="text-[7px] md:text-[12px] font-black text-emerald-400 uppercase tracking-[0.1em] mb-1 leading-none">Costo Prod. Colombia</p>
-                                        <p className="text-xl md:text-7xl font-black text-white leading-none tracking-tighter">{formatCurrency(mImport.unitCostColombia)}</p>
+                                <div className="bg-emerald-500/10 p-4 md:p-10 rounded-xl md:rounded-[3rem] border border-emerald-500/20 flex flex-col md:flex-row justify-between items-center gap-3 transition-all hover:bg-emerald-500/20">
+                                    <div className="text-left w-full md:w-auto">
+                                        <p className="text-[9px] md:text-[12px] font-black text-emerald-400 uppercase tracking-[0.1em] mb-1.5 leading-none">Costo Prod. Colombia</p>
+                                        <p className="text-3xl md:text-7xl font-black text-white leading-none tracking-tighter">{formatCurrency(mImport.unitCostColombia)}</p>
                                     </div>
-                                    <div className="text-right shrink-0">
-                                        <p className="text-[6px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1 leading-none">Inversión Total</p>
-                                        <p className="text-[9px] md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
+                                    <div className="text-left md:text-right w-full md:w-auto">
+                                        <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1 leading-none">Inversión Total</p>
+                                        <p className="text-sm md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
                                     </div>
                                 </div>
                             </div>
                          )}
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5 md:gap-3 justify-center md:justify-start">
+                      {/* BOTONES DE ESTADO - MEJORADOS EN MÓVIL (MÁS GRANDES) */}
+                      <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start">
                         {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
-                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-2 md:px-8 py-1.5 md:py-3.5 rounded-md md:rounded-xl text-[7px] md:text-[11px] font-black border uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
+                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-lg md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
                             {s.emoji} {s.label}
                           </button>
                         ))}
                       </div>
                    </div>
 
-                   {/* BUNDLES: COMPACTOS */}
+                   {/* BUNDLES: COMPACTOS PERO LEGIBLES */}
                    {isWinner && (
                     <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-3 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                         <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-3 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
-                           <div className="flex items-center gap-2 md:gap-4 text-left leading-none"><span className="text-sm md:text-2xl">🍱</span><div className="text-left"><p className="text-[9px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[7px] font-bold mt-1 opacity-50 uppercase leading-none">{mWinner.activeUpsells} Activos</p></div></div>
-                           <svg className={`w-3 h-3 md:w-4 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
+                           <div className="flex items-center gap-2 md:gap-4 text-left leading-none"><span className="text-sm md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase leading-none">{mWinner.activeUpsells} Activos</p></div></div>
+                           <svg className={`w-4 h-4 md:w-6 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                         </button>
                         <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-4 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
                            <div className="space-y-2 md:space-y-4 no-scrollbar text-left px-1">
@@ -813,14 +816,14 @@ export default function App() {
                 <div className="p-4 md:p-12">
                     {renderCreationForm()}
                     {formError && (
-                      <div className="w-full bg-rose-100 border-2 border-rose-500 text-rose-700 font-bold p-3 rounded-xl mt-6 text-center text-[10px] md:text-sm animate-in fade-in">
+                      <div className="w-full bg-rose-100 border-2 border-rose-500 text-rose-700 font-bold p-3 rounded-xl mt-6 text-center text-[11px] md:text-sm animate-in fade-in">
                         {formError}
                       </div>
                     )}
                     <button 
                       onClick={handleSave} 
                       disabled={isSaving}
-                      className="w-full mt-6 bg-zinc-900 hover:bg-black text-white font-black py-4 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
+                      className="w-full mt-6 bg-zinc-900 hover:bg-black text-white font-black py-5 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
                     >
                         {isSaving ? 'Guardando...' : 'Confirmar Registro'}
                     </button>
