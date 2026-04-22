@@ -515,12 +515,79 @@ export default function App() {
     const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
     const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
 
+    // Función para generar y descargar el reporte .txt
+    const downloadReport = () => {
+        const productName = proj.name || 'Sin Nombre';
+        
+        const reportContent = `======================================
+📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
+======================================
+
+🎯 MÉTRICAS DE MARKETING:
+- Inversión Facebook:     ${formatCurrency(val('adSpend'))}
+- CPM:                    ${formatCurrency(val('cpm'))}
+- Impresiones:            ${impressions.toFixed(0)}
+- CTR:                    ${val('ctr').toFixed(2)}%
+- Clics en Enlace:        ${linkClicks.toFixed(0)}
+- Costo por Clic (CPC):   ${formatCurrency(cpc)}
+- Velocidad de Carga:     ${val('loadSpeed').toFixed(2)}%
+- Visitas a la Página:    ${pageVisits.toFixed(0)}
+- Costo por Visita:       ${formatCurrency(costPerVisit)}
+- % Conversión:           ${val('conversionRate').toFixed(2)}%
+
+📦 EMBUDO DE VENTAS Y ENTREGAS:
+- Ventas Generadas (Col1): ${salesCol1.toFixed(2)} pedidos
+- % Efectividad:          ${val('effectiveness').toFixed(2)}%
+- Pedidos Despachados:    ${dispatchedOrders.toFixed(2)} pedidos
+- % Devolución:           ${val('returnRate').toFixed(2)}%
+- Total Devoluciones:     ${returns.toFixed(2)} pedidos
+- ENTREGAS EFECTIVAS:     ${effectiveDeliveries.toFixed(2)} pedidos
+
+💳 ANÁLISIS DE ADQUISICIÓN (CPA & ROAS):
+- CPA Facebook:           ${formatCurrency(cpaFb)}
+- CPA Real:               ${formatCurrency(cpaReal)}
+- ROAS Facebook:          ${roasFb.toFixed(2)}
+- ROAS Real ⭐:            ${roasReal.toFixed(2)}
+
+💰 FINANZAS Y COSTOS DE OPERACIÓN:
+- Precio de Venta:        ${formatCurrency(val('price'))}
+- Costo de Producto:      ${formatCurrency(val('productCost'))}
+- Flete por envío:        ${formatCurrency(val('freight'))}
+- Costo Fulfillment:      ${formatCurrency(val('fulfillment'))}
+- Comisión + Fijos:       ${formatCurrency(val('commission'))}
+
+- Facturado Tienda Web:   ${formatCurrency(salesCol2)}
+- Ingresos Reales ⭐:      ${formatCurrency(realRevenue)}
+- Total Intermediación:   ${formatCurrency(intermediationCosts)}
+- Gastos Fijos (Prorrateo): ${formatCurrency(prorateCampaign)}
+
+🏆 RESULTADOS FINALES:
+- Profit Bruto:           ${formatCurrency(grossProfit)}
+- Profit Neto Real:       ${formatCurrency(netProfit)}
+- Margen Bruto:           ${grossMargin.toFixed(2)}%
+- Margen Neto:            ${netMargin.toFixed(2)}%
+
+======================================
+Reporte generado por WinnerProduct OS
+======================================`;
+
+        const blob = new Blob([reportContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
       <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
         
-        {/* NUEVO: NOMBRE DEL PRODUCTO Y BOTÓN BORRAR */}
+        {/* NOMBRE DEL PRODUCTO Y BOTONES DE ACCIÓN */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
-            <div className="w-full md:w-2/3">
+            <div className="w-full md:flex-1">
                 <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
                 <input 
                     type="text" 
@@ -530,13 +597,21 @@ export default function App() {
                     placeholder="Ej. Nombre del producto..."
                 />
             </div>
-            <button 
-                onClick={resetProjection}
-                className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
-            >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                Limpiar Datos
-            </button>
+            <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
+                <button 
+                    onClick={downloadReport}
+                    className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0"
+                >
+                    📄 Descargar Informe
+                </button>
+                <button 
+                    onClick={resetProjection}
+                    className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Limpiar Datos
+                </button>
+            </div>
         </div>
 
         {/* SECCIÓN 1: OPERACIÓN Y COSTOS */}
