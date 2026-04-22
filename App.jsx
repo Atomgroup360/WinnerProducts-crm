@@ -570,10 +570,10 @@ export default function App() {
           <button onClick={() => { setIsCreating(true); setFormError(''); }} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
         </header>
 
-        {/* TABS DE ESTADO - MEJORA MÓVIL: MÁS GRANDES */}
-        <div className="flex gap-2 mb-4 md:mb-10 overflow-x-auto no-scrollbar pb-2">
+        {/* TABS DE ESTADO - MEJORADO: CENTRADO EN ESCRITORIO Y TAMAÑO EQUILIBRADO */}
+        <div className="flex md:justify-center gap-1.5 md:gap-2 mb-4 md:mb-10 overflow-x-auto no-scrollbar pb-2">
           {Object.values(activeModule === 'winners' ? WINNER_STATUS : IMPORT_STATUS).map((config) => (
-            <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-5 md:px-8 py-3.5 md:py-3.5 rounded-xl md:rounded-[1.2rem] font-black text-xs md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
+            <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-3 md:px-6 py-2 md:py-3.5 rounded-lg md:rounded-[1.2rem] font-black text-[10px] md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
               {config.emoji} {config.label} <span className="ml-1 opacity-40">({products.filter(p => p.status === config.id).length})</span>
             </button>
           ))}
@@ -607,7 +607,7 @@ export default function App() {
                      
                      <div className={`flex items-center bg-white rounded-lg md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100 transition-opacity ${sortOrder === 'manual' ? 'opacity-100' : 'opacity-20 pointer-events-none'}`}>
                         <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 15l7-7 7 7"/></svg></button>
-                        <span className="text-[8px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
+                        <span className="text-[7px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
                         <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length - 1} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M19 9l-7 7-7-7"/></svg></button>
                      </div>
                    </div>
@@ -615,14 +615,15 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col xl:flex-row">
-                   <div className="w-full xl:w-[25%] p-3 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
-                     <div className="flex xl:flex-col items-center gap-4 xl:gap-0">
-                       <div className="w-20 h-20 md:w-auto aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 md:mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer shrink-0">
+                   {/* SECCIÓN IZQUIERDA: IMAGEN MÁS GRANDE Y NOMBRE EQUILIBRADO */}
+                   <div className="w-full xl:w-[35%] p-3 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
+                     <div className="flex flex-col items-center">
+                       <div className="w-20 h-20 md:w-64 md:h-64 aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 md:mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer shrink-0">
                          {p.image ? <img src={p.image} className="w-full h-full object-cover" alt="Producto"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
                          <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
                        </div>
-                       <div className="flex-1 w-full">
-                         <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-sm md:text-2xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none md:mb-4 py-1 transition-all text-zinc-900 md:text-left" placeholder="Nombre..."/>
+                       <div className="w-full text-center md:text-left mt-3 md:mt-0">
+                         <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-sm md:text-xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none md:mb-4 py-1 transition-all text-zinc-900 truncate" placeholder="Nombre..."/>
                          
                          <div className="grid grid-cols-2 gap-2 mt-2 md:mt-0 md:mb-6">
                             {isWinner ? (
@@ -703,27 +704,27 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* CUADRO NEGRO DE RESULTADOS - MEJORADO EN MÓVIL (TEXTOS MÁS GRANDES) */}
+                      {/* DASHBOARD DE RESULTADOS: MAXIMIZADO PARA MÓVIL */}
                       <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-5 md:p-10 text-white shadow-2xl relative overflow-hidden">
                          <div className="absolute top-0 right-0 w-32 md:w-80 h-32 md:h-80 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[120px] -mr-16 md:-mr-40 -mt-16 md:-mt-40"></div>
                          
                          {isWinner ? (
-                            <div className="relative z-10 space-y-5 md:space-y-8">
+                            <div className="relative z-10 space-y-6 md:space-y-8">
                                 <div className="flex justify-between items-end border-b border-zinc-800 pb-4 md:pb-8 gap-4 text-left">
                                     <div className="flex-1">
                                         <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-4 block leading-none">PVP Sugerido</label>
                                         <div className="flex items-center gap-1 md:gap-2">
                                             <span className="text-xl md:text-3xl font-bold opacity-20">$</span>
-                                            <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-3xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
+                                            <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-2xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <p className="text-[10px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 md:mb-1 italic leading-none">Costos</p>
-                                        <p className="text-xl md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
+                                        <p className="text-[10px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 italic leading-none">Costos</p>
+                                        <p className="text-lg md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
                                     </div>
                                 </div>
                                 <div className="flex justify-between items-center gap-4">
-                                    <div className="bg-white/5 p-3 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
+                                    <div className="bg-white/5 p-4 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
                                         <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 text-left px-1 leading-none">Utilidad Neta</p>
                                         <p className={`text-2xl md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
                                     </div>
@@ -759,22 +760,22 @@ export default function App() {
                          )}
                       </div>
 
-                      {/* BOTONES DE ESTADO - MEJORADOS EN MÓVIL (MÁS GRANDES) */}
-                      <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start">
+                      {/* BOTONES DE ESTADO TÁCTILES */}
+                      <div className="flex flex-wrap gap-2.5 md:gap-3 justify-center md:justify-start">
                         {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
-                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-lg md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
+                          <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
                             {s.emoji} {s.label}
                           </button>
                         ))}
                       </div>
                    </div>
 
-                   {/* BUNDLES: COMPACTOS PERO LEGIBLES */}
+                   {/* BUNDLES */}
                    {isWinner && (
                     <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-3 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                         <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-3 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
                            <div className="flex items-center gap-2 md:gap-4 text-left leading-none"><span className="text-sm md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase leading-none">{mWinner.activeUpsells} Activos</p></div></div>
-                           <svg className={`w-4 h-4 md:w-6 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
+                           <svg className={`w-3 h-3 md:w-4 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
                         </button>
                         <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-4 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
                            <div className="space-y-2 md:space-y-4 no-scrollbar text-left px-1">
