@@ -133,34 +133,57 @@ const compressImage = (base64Str) => {
 };
 
 // --- COMPONENTES P&G INDEPENDIENTES (Evita la pérdida de foco al escribir) ---
-const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => (
-  <div className="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-zinc-100 focus-within:border-indigo-400 transition-colors shadow-sm">
-    <label className="text-[9px] md:text-[11px] font-black text-indigo-500 uppercase block mb-1 md:mb-2">{label} ✎</label>
-    <div className="flex items-center gap-1">
-      {prefix && <span className="text-zinc-400 font-bold">{prefix}</span>}
-      <input 
-        type={type} 
-        value={value} 
-        onChange={onChange}
-        className="w-full bg-transparent text-sm md:text-base font-bold text-zinc-900 outline-none font-mono"
-        placeholder="0"
-      />
-      {suffix && <span className="text-zinc-400 font-bold">{suffix}</span>}
-    </div>
-  </div>
-);
+const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
+  let displayVal = value;
+  
+  // Si el tipo es "currency", le aplicamos formato de miles sin decimales para mostrarlo
+  if (type === 'currency') {
+     displayVal = value ? new Intl.NumberFormat('es-CO').format(value) : '';
+  }
 
-const OutputP = ({ label, value, type="currency", decimals=2, highlight=false }) => {
+  const handleInput = (e) => {
+     if (type === 'currency') {
+        // Eliminar todo lo que no sea número para enviar el valor puro al estado
+        const numericString = e.target.value.replace(/\D/g, '');
+        onChange(numericString !== '' ? parseFloat(numericString) : '');
+     } else {
+        onChange(e.target.value !== '' ? parseFloat(e.target.value) : '');
+     }
+  };
+
+  return (
+    <div className="bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 focus-within:border-emerald-400 transition-colors shadow-sm">
+      <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} ✎</label>
+      <div className="flex items-center gap-1">
+        {prefix && <span className="text-emerald-600 font-bold">{prefix}</span>}
+        <input 
+          type={type === 'currency' ? 'text' : type} 
+          value={displayVal} 
+          onChange={handleInput}
+          className="w-full bg-transparent text-sm md:text-base font-bold text-emerald-950 outline-none font-mono placeholder:text-emerald-300"
+          placeholder="0"
+        />
+        {suffix && <span className="text-emerald-600 font-bold">{suffix}</span>}
+      </div>
+    </div>
+  );
+};
+
+const OutputP = ({ label, value, type="currency", decimals=2, highlight=false, customBg, customText }) => {
   let displayValue = 0;
   const numValue = parseFloat(value) || 0;
   if (type === "currency") displayValue = formatCurrency(numValue);
   else if (type === "number") displayValue = numValue.toFixed(decimals);
   else if (type === "percent") displayValue = `${numValue.toFixed(decimals)}%`;
 
+  let baseBg = customBg || (highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner');
+  let baseText = customText || (highlight ? 'text-white' : 'text-zinc-800');
+  let labelText = customText ? 'text-white/80' : (highlight ? 'text-zinc-400' : 'text-zinc-500');
+
   return (
-    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner'}`}>
-      <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${highlight ? 'text-zinc-400' : 'text-zinc-500'}`}>{label}</label>
-      <div className={`font-mono text-sm md:text-lg font-black truncate ${highlight ? 'text-white' : 'text-zinc-800'}`}>
+    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${baseBg}`}>
+      <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${labelText}`}>{label}</label>
+      <div className={`font-mono text-sm md:text-lg font-black truncate ${baseText}`}>
         {displayValue}
       </div>
     </div>
@@ -458,7 +481,7 @@ export default function App() {
   const renderProjectionModule = () => {
     // Función segura para leer datos y evitar problemas de escritura con campos vacíos
     const val = (key) => parseFloat(proj[key]) || 0;
-    const handleChange = (key) => (e) => setProj({...proj, [key]: e.target.value});
+    const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
 
     // Fórmulas Análisis de Métricas
     const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
@@ -499,11 +522,11 @@ export default function App() {
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
-            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} prefix="$" />
-            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} prefix="$" />
-            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} prefix="$" />
-            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} prefix="$" />
-            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} prefix="$" />
+            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} type="currency" prefix="$" />
+            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} type="currency" prefix="$" />
+            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} type="currency" prefix="$" />
+            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} type="currency" prefix="$" />
+            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} type="currency" prefix="$" />
           </div>
         </div>
 
@@ -511,33 +534,33 @@ export default function App() {
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} prefix="$" />
-            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} prefix="$" />
+            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} type="currency" prefix="$" />
+            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} type="currency" prefix="$" />
             <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
             <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
 
-            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} suffix="%" />
+            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} type="number" suffix="%" />
             <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
             <OutputP label="Costo por Clic" value={cpc} type="currency" />
             
-            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} suffix="%" />
+            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} type="number" suffix="%" />
             <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
             <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
             
-            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} suffix="%" />
+            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} type="number" suffix="%" />
             <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
             <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
-            <OutputP label="CPA Facebook" value={cpaFb} type="currency" />
+            <OutputP label="CPA Facebook" value={cpaFb} type="currency" customBg="bg-blue-600 border-blue-700 shadow-lg" customText="text-white" />
 
-            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} suffix="%" />
+            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} type="number" suffix="%" />
             <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
             <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
             
-            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} suffix="%" />
+            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} type="number" suffix="%" />
             <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
             <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
             <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
-            <OutputP label="CPA Real" value={cpaReal} type="currency" highlight />
+            <OutputP label="CPA Real" value={cpaReal} type="currency" customBg="bg-orange-500 border-orange-600 shadow-lg" customText="text-white" />
 
             <OutputP label="ROAS FACEBOOK" value={roasFb} type="number" decimals={2} />
             <OutputP label="ROAS REAL ⭐" value={roasReal} type="number" decimals={2} highlight />
@@ -562,7 +585,7 @@ export default function App() {
               <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
               <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
               <OutputP label="Costo Envío Efectivo 🚚" value={totalFreightCost} type="currency" />
-              <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" />
+              <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
               <OutputP label="Costo Fulfillment" value={totalFulfillmentCost} type="currency" />
               <OutputP label="Costo Comisión" value={totalCommissionCost} type="currency" />
               <div className="pt-2">
@@ -572,11 +595,11 @@ export default function App() {
 
             {/* Beneficio y Gastos Fijos */}
             <div className="space-y-3">
-              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} prefix="$" />
-              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} />
+              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
+              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
               <OutputP label="Prorrateo x Campaña" value={prorateCampaign} type="currency" />
               <div className="mt-6">
-                <div className="bg-emerald-500 rounded-[1.5rem] p-5 shadow-lg text-white">
+                <div className={`rounded-[1.5rem] p-5 shadow-lg text-white transition-colors duration-500 ${grossProfit < 0 ? 'bg-rose-600' : 'bg-emerald-500'}`}>
                   <label className="text-[10px] font-black uppercase tracking-widest opacity-80 block mb-1">Profit Bruto ⭐⭐⭐⭐⭐</label>
                   <div className="text-3xl md:text-4xl font-black font-mono">{formatCurrency(grossProfit)}</div>
                 </div>
