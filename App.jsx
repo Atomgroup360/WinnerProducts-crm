@@ -69,6 +69,7 @@ const getInitialImport = () => ({
 });
 
 const getInitialProjection = () => ({
+  name: '', // Añadido para guardar el nombre temporal del análisis
   price: '', productCost: '', freight: '', fulfillment: '', commission: '',
   adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
   effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
@@ -136,14 +137,12 @@ const compressImage = (base64Str) => {
 const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
   let displayVal = value;
   
-  // Si el tipo es "currency", le aplicamos formato de miles sin decimales para mostrarlo
   if (type === 'currency') {
      displayVal = value ? new Intl.NumberFormat('es-CO').format(value) : '';
   }
 
   const handleInput = (e) => {
      if (type === 'currency') {
-        // Eliminar todo lo que no sea número para enviar el valor puro al estado
         const numericString = e.target.value.replace(/\D/g, '');
         onChange(numericString !== '' ? parseFloat(numericString) : '');
      } else {
@@ -479,9 +478,9 @@ export default function App() {
 
   // --- MÓDULO: PROYECCIÓN P&G ---
   const renderProjectionModule = () => {
-    // Función segura para leer datos y evitar problemas de escritura con campos vacíos
     const val = (key) => parseFloat(proj[key]) || 0;
     const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
+    const resetProjection = () => setProj(getInitialProjection());
 
     // Fórmulas Análisis de Métricas
     const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
@@ -518,6 +517,28 @@ export default function App() {
 
     return (
       <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
+        
+        {/* NUEVO: NOMBRE DEL PRODUCTO Y BOTÓN BORRAR */}
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
+            <div className="w-full md:w-2/3">
+                <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
+                <input 
+                    type="text" 
+                    value={proj.name || ''} 
+                    onChange={(e) => setProj({...proj, name: e.target.value})}
+                    className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" 
+                    placeholder="Ej. Nombre del producto..."
+                />
+            </div>
+            <button 
+                onClick={resetProjection}
+                className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
+            >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                Limpiar Datos
+            </button>
+        </div>
+
         {/* SECCIÓN 1: OPERACIÓN Y COSTOS */}
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
@@ -613,7 +634,7 @@ export default function App() {
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
                 <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
                     <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
-                    <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+                    <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
                       {formatCurrency(netProfit)}
                     </p>
                 </div>
@@ -623,7 +644,7 @@ export default function App() {
                 </div>
                 <div className="md:pl-8">
                     <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
-                    <p className={`text-3xl md:text-5xl font-black italic ${netMargin > 0 ? 'text-indigo-400' : 'text-rose-500'}`}>
+                    <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>
                       {netMargin.toFixed(2)}%
                     </p>
                 </div>
@@ -927,6 +948,10 @@ export default function App() {
                                         <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
                                         <input type="number" value={p.measures?.length || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'length', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
                                     </div>
+                                </div>
+                                <div className={`col-span-2 md:col-span-1 p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all flex flex-col justify-center ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-indigo-50/50 border-indigo-100'}`}>
+                                    <label className="text-[6px] md:text-[10px] font-black text-indigo-500 uppercase block mb-1 leading-none">TOTAL CBM</label>
+                                    <div className="w-full font-mono text-[11px] md:text-base font-black text-indigo-700 leading-none">{mImport.totalCbm.toFixed(3)}</div>
                                 </div>
                             </div>
                           )}
