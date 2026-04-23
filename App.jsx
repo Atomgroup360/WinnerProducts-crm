@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
+  getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, doc, 
   onSnapshot, serverTimestamp 
 } from 'firebase/firestore';
 import { 
@@ -69,10 +69,21 @@ const getInitialImport = () => ({
 });
 
 const getInitialProjection = () => ({
-  name: '', // Añadido para guardar el nombre temporal del análisis
+  name: '', 
   price: '', productCost: '', freight: '', fulfillment: '', commission: '',
   adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
   effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
+});
+
+const getInitialSalesConfig = () => ({
+  vendedora: '', productName: '', targetProfit: '', productCost: '', freight: '', 
+  commission: '', returnRate: '', effectiveness: '', fulfillment: '', fixedCosts: '', 
+  fixedAdSpend: false, dailyAdSpend: ''
+});
+
+const getInitialSaleRecord = () => ({
+  date: new Date().toISOString().split('T')[0], configId: '', 
+  orders: '', units: '', revenue: '', adSpend: ''
 });
 
 // --- AYUDANTES ---
@@ -133,8 +144,8 @@ const compressImage = (base64Str) => {
   });
 };
 
-// --- COMPONENTES P&G INDEPENDIENTES (Evita la pérdida de foco al escribir) ---
-const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
+// --- COMPONENTES INPUT/OUTPUT REUTILIZABLES ---
+const InputP = ({ label, value, onChange, type="number", prefix="", suffix="", disabled=false }) => {
   let displayVal = value;
   
   if (type === 'currency') {
@@ -151,15 +162,16 @@ const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" })
   };
 
   return (
-    <div className="bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 focus-within:border-emerald-400 transition-colors shadow-sm">
-      <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} ✎</label>
+    <div className={`bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 transition-colors shadow-sm ${!disabled ? 'focus-within:border-emerald-400' : 'opacity-70 grayscale'}`}>
+      <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} {disabled ? '🔒' : '✎'}</label>
       <div className="flex items-center gap-1">
         {prefix && <span className="text-emerald-600 font-bold">{prefix}</span>}
         <input 
           type={type === 'currency' ? 'text' : type} 
           value={displayVal} 
           onChange={handleInput}
-          className="w-full bg-transparent text-sm md:text-base font-bold text-emerald-950 outline-none font-mono placeholder:text-emerald-300"
+          disabled={disabled}
+          className="w-full bg-transparent text-sm md:text-base font-bold text-emerald-950 outline-none font-mono placeholder:text-emerald-300 disabled:text-emerald-800"
           placeholder="0"
         />
         {suffix && <span className="text-emerald-600 font-bold">{suffix}</span>}
@@ -241,20 +253,41 @@ function LoginScreen({ setErrorExt }) {
 
 // --- COMPONENTE PRINCIPAL ---
 export default function App() {
-  const [activeModule, setActiveModule] = useState('winners'); // 'winners', 'imports', 'projection'
+  const [activeModule, setActiveModule] = useState('winners'); // 'winners', 'imports', 'projection', 'sales'
   const [user, setUser] = useState(null);
+  
+  // Datos Generales
   const [products, setProducts] = useState([]);
+  
+  // Datos Módulo Ventas/Rendimiento
+  const [salesConfigs, setSalesConfigs] = useState([]); 
+  const [salesMonths, setSalesMonths] = useState([]);
+  
+  // UI States
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
   const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState(getInitialWinner());
-  const [proj, setProj] = useState(getInitialProjection()); // Estado aislado para Proyección P&G
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
   const [formError, setFormError] = useState('');
 
-  // Estados para Filtros y Ordenamiento
+  // Formularios
+  const [newProduct, setNewProduct] = useState(getInitialWinner());
+  const [proj, setProj] = useState(getInitialProjection()); 
+  
+  // Sub-estados Módulo Ventas
+  const [salesTab, setSalesTab] = useState('dashboard'); // 'dashboard', 'records', 'config'
+  const [isCreatingSalesConfig, setIsCreatingSalesConfig] = useState(false);
+  const [newSalesConfig, setNewSalesConfig] = useState(getInitialSalesConfig());
+  const [newSaleRecord, setNewSaleRecord] = useState(getInitialSaleRecord());
+  const [salesFilter, setSalesFilter] = useState({
+     startDate: new Date(new Date().setDate(1)).toISOString().split('T')[0], // Inicio de mes por defecto
+     endDate: new Date().toISOString().split('T')[0], // Hoy
+     configId: 'all'
+  });
+
+  // Filtros Main
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('manual');
   const [supplierFilter, setSupplierFilter] = useState('all');
@@ -268,9 +301,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Escuchar Firestore
+  // 2. Escuchar Firestore (Productos)
   useEffect(() => {
-    if (!user || activeModule === 'projection') return; 
+    if (!user || (activeModule !== 'winners' && activeModule !== 'imports')) return; 
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     
@@ -285,17 +318,35 @@ export default function App() {
     return () => unsubscribe();
   }, [user, activeModule]);
 
-  // Obtener lista única de proveedores para el filtro
+  // 3. Escuchar Firestore (Módulo Rendimiento / Ventas)
+  useEffect(() => {
+    if (!user || activeModule !== 'sales') return; 
+    
+    // Escuchar Configuraciones (Fase 1)
+    const qConfigs = collection(db, 'artifacts', appId, 'public', 'data', 'sales_configs');
+    const unsubConfigs = onSnapshot(qConfigs, (snapshot) => {
+      setSalesConfigs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // Escuchar Carpetas Mensuales de Registros (Fase 2 y 3 - Estructura Ahorro de Datos)
+    const qMonths = collection(db, 'artifacts', appId, 'public', 'data', 'sales_months');
+    const unsubMonths = onSnapshot(qMonths, (snapshot) => {
+      setSalesMonths(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => { unsubConfigs(); unsubMonths(); };
+  }, [user, activeModule]);
+
+  // -- Helpers Main Modules --
   const uniqueSuppliers = useMemo(() => {
-    if(activeModule === 'projection') return [];
+    if(activeModule === 'projection' || activeModule === 'sales') return [];
     const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
     const list = products.map(p => p[field]).filter(Boolean);
     return ['all', ...new Set(list)];
   }, [products, activeModule]);
 
-  // Lógica de Filtrado y Ordenamiento Combinada
   const displayedProducts = useMemo(() => {
-    if(activeModule === 'projection') return [];
+    if(activeModule === 'projection' || activeModule === 'sales') return [];
     let result = products.filter(p => {
       const matchesTab = p.status === activeTab;
       const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -312,9 +363,7 @@ export default function App() {
       if (a.isWorking && !b.isWorking) return -1;
       if (!a.isWorking && b.isWorking) return 1;
 
-      if (sortOrder === 'manual' || sortOrder === 'recent') {
-        return (a.order || 0) - (b.order || 0);
-      }
+      if (sortOrder === 'manual' || sortOrder === 'recent') return (a.order || 0) - (b.order || 0);
       
       const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
       const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
@@ -328,15 +377,14 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   const handleModuleChange = (mod) => {
-    setProducts([]); 
+    if (mod === 'winners' || mod === 'imports') setProducts([]); 
     setActiveModule(mod);
     setActiveTab('pending');
     setSearchTerm('');
     setSupplierFilter('all');
     setSortOrder('manual');
-    if (mod !== 'projection') {
-      setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
-    }
+    if (mod === 'winners') setNewProduct(getInitialWinner());
+    if (mod === 'imports') setNewProduct(getInitialImport());
     setIsCreating(false);
     setFormError('');
   };
@@ -353,48 +401,31 @@ export default function App() {
     document.body.removeChild(textArea);
   };
 
+  // --- Guardado Main Modules ---
   const handleSave = async () => {
     setFormError('');
-
     if (!newProduct.name || newProduct.name.trim() === '') {
       setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
       return; 
     }
-    
     setIsSaving(true);
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
     const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
     
     try {
-      if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
-
-      const payloadRaw = {
-        ...newProduct,
-        regNumber,
-        order: Date.now(),
-        createdBy: auth.currentUser.uid
-      };
-
-      const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
+      if (!auth.currentUser) throw new Error("Debes iniciar sesión");
+      const cleanPayload = JSON.parse(JSON.stringify({...newProduct, regNumber, order: Date.now(), createdBy: auth.currentUser.uid}));
       cleanPayload.createdAt = serverTimestamp();
-
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
       
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
-      setActiveTab('pending'); 
-      setFormError('');
-      
       setNotification('¡Registro guardado en la Nube! ✨');
       setTimeout(() => setNotification(''), 3000);
-
     } catch (e) { 
-      console.error("Firebase Save Error:", e); 
       setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
-    } finally {
-      setIsSaving(false);
-    }
+    } finally { setIsSaving(false); }
   };
 
   const updateDocField = async (id, f, v) => {
@@ -411,14 +442,12 @@ export default function App() {
 
   const updateUpsell = async (p, uid, f, v) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells }); } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u) }); } catch (e) { console.error(e); }
   };
 
   const resetUpsell = async (p, uid) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells }); } catch (e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u) }); } catch (e) { console.error(e); }
   };
 
   const deleteItem = async (id) => {
@@ -445,382 +474,479 @@ export default function App() {
   const handleImage = (e, targetId = null, upsellId = null) => {
     const file = e.target.files[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onloadend = async () => {
       let result = reader.result;
-      
-      if (file.size > 500 * 1024) {
-        try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
-      }
-
+      if (file.size > 500 * 1024) try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
       if (!targetId) {
-        if (upsellId) {
-          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u);
-          setNewProduct({...newProduct, upsells: up});
-        } else {
-          setNewProduct({...newProduct, image: result});
-        }
+        if (upsellId) setNewProduct({...newProduct, upsells: (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u)});
+        else setNewProduct({...newProduct, image: result});
       } else {
         const colName = activeModule === 'winners' ? 'products' : 'import_products';
         const item = products.find(x => x.id === targetId);
         if (!item) return;
-        if (upsellId) {
-          const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
-        } else {
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { image: result });
-        }
+        if (upsellId) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u) });
+        else updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { image: result });
       }
     };
     reader.readAsDataURL(file);
   };
 
-  // --- MÓDULO: PROYECCIÓN P&G ---
-  const renderProjectionModule = () => {
-    const val = (key) => parseFloat(proj[key]) || 0;
-    const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
-    const resetProjection = () => setProj(getInitialProjection());
 
-    // Fórmulas Análisis de Métricas
-    const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
-    const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
-    const linkClicks = impressions * (val('ctr') / 100);
-    const cpc = linkClicks > 0 ? val('adSpend') / linkClicks : 0;
-    const pageVisits = linkClicks * (val('loadSpeed') / 100);
-    const costPerVisit = pageVisits > 0 ? val('adSpend') / pageVisits : 0;
-    const salesCol1 = pageVisits * (val('conversionRate') / 100); // Pedidos (Ventas)
-    const salesCol2 = salesCol1 * val('price'); // Ingresos FB (Ventas $)
-    const cpaFb = salesCol1 > 0 ? val('adSpend') / salesCol1 : 0;
-    const dispatchedOrders = salesCol1 * (val('effectiveness') / 100);
-    const costPerDispatched = dispatchedOrders > 0 ? val('adSpend') / dispatchedOrders : 0;
-    const returns = dispatchedOrders * (val('returnRate') / 100);
-    const effectiveDeliveries = dispatchedOrders - returns;
-    const realRevenue = effectiveDeliveries * val('price');
-    const cpaReal = effectiveDeliveries > 0 ? val('adSpend') / effectiveDeliveries : 0;
-    const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
-    const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
+  // --- MÓDULO: RENDIMIENTO DE VENTAS (FASES 1, 2 Y 3) ---
 
-    // Fórmulas Pérdidas y Ganancias
-    const totalProductCost = effectiveDeliveries * val('productCost');
-    const totalFreightCost = val('freight') * dispatchedOrders;
-    const totalReturnCost = val('freight') * returns;
-    const totalFulfillmentCost = val('fulfillment') * dispatchedOrders;
-    const totalCommissionCost = val('commission') * effectiveDeliveries;
+  // Fase 1: Guardar Configuración Vendedora/Producto
+  const handleSaveSalesConfig = async () => {
+    setFormError('');
+    if (!newSalesConfig.vendedora || !newSalesConfig.productName) {
+      setFormError('⚠️ ERROR: Ingresa nombre de Vendedora y Producto.');
+      return; 
+    }
+    setIsSaving(true);
+    try {
+      if (newSalesConfig.id) {
+         // Edición
+         const cleanPayload = JSON.parse(JSON.stringify(newSalesConfig));
+         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sales_configs', newSalesConfig.id), cleanPayload);
+      } else {
+         // Creación
+         const cleanPayload = JSON.parse(JSON.stringify({...newSalesConfig, createdAt: Date.now()}));
+         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sales_configs'), cleanPayload);
+      }
+      setIsCreatingSalesConfig(false);
+      setNewSalesConfig(getInitialSalesConfig());
+      setNotification('Configuración guardada en la nube.');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (e) { 
+      setFormError(`⚠️ Error: ${e.message}`);
+    } finally { setIsSaving(false); }
+  };
+
+  const deleteSalesConfig = async (id) => {
+    if (window.confirm('¿Borrar configuración? Se perderá el enlace con los registros antiguos.')) {
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sales_configs', id)); } catch (e) { console.error(e); }
+    }
+  };
+
+  // Fase 2: Consolidación Mensual de Registros (Ahorro Extremo en Firestore)
+  // Convertimos las carpetas mensuales en un array plano en memoria para que sea fácil trabajar
+  const allSalesRecords = useMemo(() => {
+     return salesMonths.flatMap(monthDoc => monthDoc.records || []);
+  }, [salesMonths]);
+
+  // Al cambiar la configuración en el Form de Cierre Diario, autocompletamos la Inversión FB si es fija
+  const handleRecordConfigSelect = (configId) => {
+      const conf = salesConfigs.find(c => c.id === configId);
+      if (conf && conf.fixedAdSpend) {
+          setNewSaleRecord({...newSaleRecord, configId, adSpend: parseFloat(conf.dailyAdSpend) || 0});
+      } else {
+          setNewSaleRecord({...newSaleRecord, configId, adSpend: ''});
+      }
+  };
+
+  const handleSaveSaleRecord = async () => {
+    setFormError('');
+    if (!newSaleRecord.configId) {
+      setFormError('⚠️ Selecciona una Vendedora/Producto primero.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const monthId = newSaleRecord.date.substring(0, 7); // Genera 'YYYY-MM' de la fecha 'YYYY-MM-DD'
+      const monthRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales_months', monthId);
+      const recordToSave = { ...newSaleRecord, id: Date.now().toString() };
+      
+      const existingMonth = salesMonths.find(m => m.id === monthId);
+      
+      if (existingMonth) {
+          // Agregar al array mensual existente
+          await updateDoc(monthRef, { records: [...existingMonth.records, recordToSave] });
+      } else {
+          // Crear la carpeta del mes por primera vez
+          await setDoc(monthRef, { records: [recordToSave] });
+      }
+      
+      setNewSaleRecord(getInitialSaleRecord());
+      setNotification('Cierre diario consolidado.');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (e) { 
+      setFormError(`⚠️ Error: ${e.message}`);
+    } finally { setIsSaving(false); }
+  };
+
+  const deleteSaleRecord = async (date, recordId) => {
+    if (window.confirm('¿Eliminar este registro diario?')) {
+        const monthId = date.substring(0, 7);
+        const existingMonth = salesMonths.find(m => m.id === monthId);
+        if(existingMonth) {
+            const updatedRecords = existingMonth.records.filter(r => r.id !== recordId);
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sales_months', monthId), { records: updatedRecords }); } 
+            catch(e) { console.error(e); }
+        }
+    }
+  };
+
+  // Fase 3: Dashboard de Rendimiento (Lógica Dinámica en Memoria)
+  const dashboardData = useMemo(() => {
+      // 1. Filtrar registros por Fecha y Vendedora
+      const filtered = allSalesRecords.filter(r => {
+          const rDate = new Date(r.date);
+          const start = new Date(salesFilter.startDate);
+          const end = new Date(salesFilter.endDate);
+          end.setHours(23, 59, 59, 999); // Incluir todo el último día
+          const dateMatch = rDate >= start && rDate <= end;
+          
+          const configMatch = salesFilter.configId === 'all' || r.configId === salesFilter.configId;
+          return dateMatch && configMatch;
+      });
+
+      // 2. Sumatoria y Matemáticas (Usando Facturación y Unidades como pediste)
+      let totalRevenue = 0, totalAdSpend = 0, totalOrders = 0, totalUnits = 0;
+      let totalProductCost = 0, totalLogistics = 0, totalCommissions = 0, totalReturnsCost = 0, totalFixed = 0;
+      let effectiveDeliveriesAccumulator = 0;
+
+      filtered.forEach(record => {
+          const conf = salesConfigs.find(c => c.id === record.configId);
+          if (!conf) return;
+
+          const rRev = parseFloat(record.revenue) || 0;
+          const rAd = parseFloat(record.adSpend) || 0;
+          const rOrd = parseFloat(record.orders) || 0;
+          const rUni = parseFloat(record.units) || 0;
+
+          // Acumulados Base
+          totalRevenue += rRev;
+          totalAdSpend += rAd;
+          totalOrders += rOrd;
+          totalUnits += rUni;
+
+          // Costos Directos
+          totalProductCost += (rUni * (parseFloat(conf.productCost) || 0));
+          totalLogistics += (rOrd * ((parseFloat(conf.freight) || 0) + (parseFloat(conf.fulfillment) || 0)));
+          totalCommissions += (rOrd * (parseFloat(conf.commission) || 0));
+          totalFixed += (rOrd * (parseFloat(conf.fixedCosts) || 0)); // Costo fijo por pedido
+
+          // Devolución: Pérdida logística = Pedidos * % Devolución * (Flete * 2 - ida y vuelta)
+          const pDev = (parseFloat(conf.returnRate) || 0) / 100;
+          totalReturnsCost += (rOrd * pDev * ((parseFloat(conf.freight) || 0) * 2));
+
+          // Entregas Efectivas: Pedidos * % Efectividad (Para CPA Real)
+          const pEff = (parseFloat(conf.effectiveness) || 0) / 100;
+          effectiveDeliveriesAccumulator += (rOrd * pEff);
+      });
+
+      const totalCosts = totalProductCost + totalLogistics + totalCommissions + totalReturnsCost + totalFixed;
+      const netProfit = totalRevenue - totalCosts - totalAdSpend;
+      const roas = totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0;
+      const cpaReal = effectiveDeliveriesAccumulator > 0 ? totalAdSpend / effectiveDeliveriesAccumulator : 0;
+      
+      // Meta y Promedios
+      const activeDays = new Set(filtered.map(r => r.date)).size || 1;
+      const avgDailyRevenue = totalRevenue / activeDays;
+      const projectedMonthlyRevenue = avgDailyRevenue * 30;
+      const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+      return {
+          recordsCount: filtered.length,
+          totalRevenue, totalAdSpend, totalOrders, totalUnits,
+          totalProductCost, totalLogistics, totalCommissions, totalReturnsCost, totalFixed, totalCosts,
+          netProfit, roas, cpaReal, margin, projectedMonthlyRevenue, effectiveDeliveriesAccumulator
+      };
+  }, [allSalesRecords, salesFilter, salesConfigs]);
+
+
+  // RENDERIZADOR: MÓDULO RENDIMIENTO (ERP DE VENTAS)
+  const renderSalesModule = () => {
     
-    const intermediationCosts = totalProductCost + totalFreightCost + totalReturnCost + totalFulfillmentCost + totalCommissionCost;
-    const grossProfit = realRevenue - intermediationCosts - val('adSpend');
-    const prorateCampaign = val('activeCampaigns') > 0 ? val('fixedExpenses') / val('activeCampaigns') : 0;
-    const netProfit = grossProfit - prorateCampaign;
-    const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
-    const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
-
-    // Función para generar y descargar el reporte .txt
-    const downloadReport = () => {
-        const productName = proj.name || 'Sin Nombre';
-        
-        const reportContent = `======================================
-📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
-======================================
-
-🎯 MÉTRICAS DE MARKETING:
-- Inversión Facebook:     ${formatCurrency(val('adSpend'))}
-- CPM:                    ${formatCurrency(val('cpm'))}
-- Impresiones:            ${impressions.toFixed(0)}
-- CTR:                    ${val('ctr').toFixed(2)}%
-- Clics en Enlace:        ${linkClicks.toFixed(0)}
-- Costo por Clic (CPC):   ${formatCurrency(cpc)}
-- Velocidad de Carga:     ${val('loadSpeed').toFixed(2)}%
-- Visitas a la Página:    ${pageVisits.toFixed(0)}
-- Costo por Visita:       ${formatCurrency(costPerVisit)}
-- % Conversión:           ${val('conversionRate').toFixed(2)}%
-
-📦 EMBUDO DE VENTAS Y ENTREGAS:
-- Ventas Generadas (Col1): ${salesCol1.toFixed(2)} pedidos
-- % Efectividad:          ${val('effectiveness').toFixed(2)}%
-- Pedidos Despachados:    ${dispatchedOrders.toFixed(2)} pedidos
-- % Devolución:           ${val('returnRate').toFixed(2)}%
-- Total Devoluciones:     ${returns.toFixed(2)} pedidos
-- ENTREGAS EFECTIVAS:     ${effectiveDeliveries.toFixed(2)} pedidos
-
-💳 ANÁLISIS DE ADQUISICIÓN (CPA & ROAS):
-- CPA Facebook:           ${formatCurrency(cpaFb)}
-- CPA Real:               ${formatCurrency(cpaReal)}
-- ROAS Facebook:          ${roasFb.toFixed(2)}
-- ROAS Real ⭐:            ${roasReal.toFixed(2)}
-
-💰 FINANZAS Y COSTOS DE OPERACIÓN:
-- Precio de Venta:        ${formatCurrency(val('price'))}
-- Costo de Producto:      ${formatCurrency(val('productCost'))}
-- Flete por envío:        ${formatCurrency(val('freight'))}
-- Costo Fulfillment:      ${formatCurrency(val('fulfillment'))}
-- Comisión + Fijos:       ${formatCurrency(val('commission'))}
-
-- Facturado Tienda Web:   ${formatCurrency(salesCol2)}
-- Ingresos Reales ⭐:      ${formatCurrency(realRevenue)}
-- Total Intermediación:   ${formatCurrency(intermediationCosts)}
-- Gastos Fijos (Prorrateo): ${formatCurrency(prorateCampaign)}
-
-🏆 RESULTADOS FINALES:
-- Profit Bruto:           ${formatCurrency(grossProfit)}
-- Profit Neto Real:       ${formatCurrency(netProfit)}
-- Margen Bruto:           ${grossMargin.toFixed(2)}%
-- Margen Neto:            ${netMargin.toFixed(2)}%
-
-======================================
-Reporte generado por WinnerProduct OS
-======================================`;
-
-        const blob = new Blob([reportContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
+    // UI Helpers internos para el Módulo Sales
+    const handleConfInput = (k) => (v) => setNewSalesConfig({...newSalesConfig, [k]: v});
+    const handleRecInput = (k) => (v) => setNewSaleRecord({...newSaleRecord, [k]: v});
 
     return (
-      <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
+      <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
         
-        {/* NOMBRE DEL PRODUCTO Y BOTONES DE ACCIÓN */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
-            <div className="w-full md:flex-1">
-                <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
-                <input 
-                    type="text" 
-                    value={proj.name || ''} 
-                    onChange={(e) => setProj({...proj, name: e.target.value})}
-                    className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" 
-                    placeholder="Ej. Nombre del producto..."
-                />
-            </div>
-            <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-                <button 
-                    onClick={downloadReport}
-                    className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    📄 Descargar Informe
-                </button>
-                <button 
-                    onClick={resetProjection}
-                    className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    Limpiar Datos
-                </button>
-            </div>
+        {/* SUB-NAVEGACIÓN INTERNA */}
+        <div className="bg-white p-2 rounded-2xl shadow-sm border border-zinc-200 inline-flex overflow-x-auto max-w-full no-scrollbar">
+            <button onClick={()=>setSalesTab('dashboard')} className={`px-6 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${salesTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-500 hover:bg-zinc-50'}`}>📊 Dashboard</button>
+            <button onClick={()=>setSalesTab('records')} className={`px-6 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${salesTab === 'records' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-500 hover:bg-zinc-50'}`}>📝 Cierre Diario</button>
+            <button onClick={()=>setSalesTab('config')} className={`px-6 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${salesTab === 'config' ? 'bg-indigo-600 text-white shadow-md' : 'text-zinc-500 hover:bg-zinc-50'}`}>⚙️ Configuración</button>
         </div>
 
-        {/* SECCIÓN 1: OPERACIÓN Y COSTOS */}
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
-            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} type="currency" prefix="$" />
-            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} type="currency" prefix="$" />
-            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} type="currency" prefix="$" />
-            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} type="currency" prefix="$" />
-            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} type="currency" prefix="$" />
-          </div>
-        </div>
-
-        {/* SECCIÓN 2: MÉTRICAS */}
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} type="currency" prefix="$" />
-            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} type="currency" prefix="$" />
-            <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
-            <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
-
-            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} type="number" suffix="%" />
-            <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
-            <OutputP label="Costo por Clic" value={cpc} type="currency" />
-            
-            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} type="number" suffix="%" />
-            <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
-            <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
-            
-            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} type="number" suffix="%" />
-            <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
-            <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
-            <OutputP label="CPA Facebook" value={cpaFb} type="currency" customBg="bg-blue-600 border-blue-700 shadow-lg" customText="text-white" />
-
-            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} type="number" suffix="%" />
-            <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
-            <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
-            
-            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} type="number" suffix="%" />
-            <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
-            <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
-            <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
-            <OutputP label="CPA Real" value={cpaReal} type="currency" customBg="bg-orange-500 border-orange-600 shadow-lg" customText="text-white" />
-
-            <OutputP label="ROAS FACEBOOK" value={roasFb} type="number" decimals={2} />
-            <OutputP label="ROAS REAL ⭐" value={roasReal} type="number" decimals={2} highlight />
-          </div>
-        </div>
-
-        {/* SECCIÓN 3: PÉRDIDAS Y GANANCIAS */}
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Pérdidas y Ganancias</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
-            {/* Resumen Facturación */}
-            <div className="space-y-3">
-              <OutputP label="Facturado Tienda Web" value={salesCol2} type="currency" />
-              <OutputP label="Facturado Real ⭐" value={realRevenue} type="currency" highlight />
-              <OutputP label="Ingresos Totales" value={realRevenue} type="currency" />
-              <OutputP label="Inversión Publicidad" value={proj.adSpend} type="currency" />
-            </div>
-
-            {/* Desglose de Costos */}
-            <div className="space-y-3 p-4 md:p-6 bg-rose-50/50 rounded-[1.5rem] border border-rose-100">
-              <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
-              <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
-              <OutputP label="Costo Envío Efectivo 🚚" value={totalFreightCost} type="currency" />
-              <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
-              <OutputP label="Costo Fulfillment" value={totalFulfillmentCost} type="currency" />
-              <OutputP label="Costo Comisión" value={totalCommissionCost} type="currency" />
-              <div className="pt-2">
-                <OutputP label="Total Costos Intermediación" value={intermediationCosts} type="currency" highlight />
+        {/* === SUB-TAB: DASHBOARD DE RENDIMIENTO === */}
+        {salesTab === 'dashboard' && (
+           <div className="space-y-6">
+              {/* FILTROS DASHBOARD */}
+              <div className="bg-white rounded-[2rem] p-5 shadow-sm border border-zinc-200/50 flex flex-col md:flex-row gap-4 items-end">
+                  <div className="flex-1 w-full flex flex-col sm:flex-row gap-4">
+                      <div className="w-full">
+                          <label className="text-[9px] font-black text-zinc-400 uppercase px-1 mb-1 block">Desde</label>
+                          <input type="date" value={salesFilter.startDate} onChange={e => setSalesFilter({...salesFilter, startDate: e.target.value})} className="w-full p-3 rounded-xl border border-zinc-200 text-sm font-bold text-zinc-700 outline-none focus:border-indigo-400" />
+                      </div>
+                      <div className="w-full">
+                          <label className="text-[9px] font-black text-zinc-400 uppercase px-1 mb-1 block">Hasta</label>
+                          <input type="date" value={salesFilter.endDate} onChange={e => setSalesFilter({...salesFilter, endDate: e.target.value})} className="w-full p-3 rounded-xl border border-zinc-200 text-sm font-bold text-zinc-700 outline-none focus:border-indigo-400" />
+                      </div>
+                      <div className="w-full">
+                          <label className="text-[9px] font-black text-zinc-400 uppercase px-1 mb-1 block">Vendedora / Producto</label>
+                          <select value={salesFilter.configId} onChange={e => setSalesFilter({...salesFilter, configId: e.target.value})} className="w-full p-3 rounded-xl border border-zinc-200 text-[11px] md:text-sm font-bold text-zinc-700 outline-none focus:border-indigo-400">
+                              <option value="all">TODAS LAS VENDEDORAS</option>
+                              {salesConfigs.map(c => <option key={c.id} value={c.id}>{c.vendedora.toUpperCase()} - {c.productName}</option>)}
+                          </select>
+                      </div>
+                  </div>
               </div>
-            </div>
 
-            {/* Beneficio y Gastos Fijos */}
-            <div className="space-y-3">
-              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
-              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
-              <OutputP label="Prorrateo x Campaña" value={prorateCampaign} type="currency" />
-              <div className="mt-6">
-                <div className={`rounded-[1.5rem] p-5 shadow-lg text-white transition-colors duration-500 ${grossProfit < 0 ? 'bg-rose-600' : 'bg-emerald-500'}`}>
-                  <label className="text-[10px] font-black uppercase tracking-widest opacity-80 block mb-1">Profit Bruto ⭐⭐⭐⭐⭐</label>
-                  <div className="text-3xl md:text-4xl font-black font-mono">{formatCurrency(grossProfit)}</div>
-                </div>
+              {/* MÉTRICAS GLOBALES */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                 <div className="bg-white p-5 rounded-2xl md:rounded-[2rem] border border-zinc-200 shadow-sm text-left">
+                    <p className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">Facturación Real</p>
+                    <p className="text-xl md:text-4xl font-black font-mono tracking-tighter text-zinc-900">{formatCurrency(dashboardData.totalRevenue)}</p>
+                 </div>
+                 <div className="bg-white p-5 rounded-2xl md:rounded-[2rem] border border-zinc-200 shadow-sm text-left">
+                    <p className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">Inversión FB</p>
+                    <p className="text-xl md:text-4xl font-black font-mono tracking-tighter text-zinc-900">{formatCurrency(dashboardData.totalAdSpend)}</p>
+                 </div>
+                 <div className="bg-indigo-600 p-5 rounded-2xl md:rounded-[2rem] shadow-xl text-left text-white">
+                    <p className="text-[9px] md:text-[11px] font-black text-indigo-200 uppercase tracking-widest mb-1 leading-none">ROAS Global</p>
+                    <p className="text-3xl md:text-5xl font-black tracking-tighter">{dashboardData.roas.toFixed(2)}</p>
+                 </div>
+                 <div className={`p-5 rounded-2xl md:rounded-[2rem] shadow-xl text-left text-white ${dashboardData.netProfit < 0 ? 'bg-rose-500' : 'bg-emerald-500'}`}>
+                    <p className="text-[9px] md:text-[11px] font-black uppercase tracking-widest mb-1 leading-none opacity-80">Profit Neto Acumulado</p>
+                    <p className="text-2xl md:text-4xl font-black font-mono tracking-tighter">{formatCurrency(dashboardData.netProfit)}</p>
+                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* GRAN RESULTADO FINAL */}
-          <div className="mt-8 bg-zinc-900 rounded-[2.5rem] p-6 md:p-12 text-white shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
-                    <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                      {formatCurrency(netProfit)}
-                    </p>
+              {/* DETALLE Y PROYECCIONES */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+                  {/* Operación */}
+                  <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-sm space-y-4">
+                      <h3 className="text-[11px] font-black text-zinc-900 uppercase tracking-widest border-b pb-2">📦 Operación del Período</h3>
+                      <OutputP label="Pedidos Generados" value={dashboardData.totalOrders} type="number" decimals={0} customBg="bg-zinc-50 border-zinc-100" />
+                      <OutputP label="Unidades Despachadas" value={dashboardData.totalUnits} type="number" decimals={0} customBg="bg-zinc-50 border-zinc-100" />
+                      <OutputP label="Entregas Efectivas Estimadas" value={dashboardData.effectiveDeliveriesAccumulator} type="number" decimals={1} customBg="bg-blue-50 border-blue-100" customText="text-blue-900" />
+                      <OutputP label="CPA Real Promedio" value={dashboardData.cpaReal} type="currency" customBg="bg-zinc-900 border-zinc-900 shadow-lg" customText="text-white" />
+                  </div>
+
+                  {/* Costos Desglosados */}
+                  <div className="bg-white rounded-2xl p-6 border border-zinc-200 shadow-sm space-y-4">
+                      <h3 className="text-[11px] font-black text-rose-500 uppercase tracking-widest border-b pb-2">💳 Desglose de Costos Totales</h3>
+                      <OutputP label="Costo de Productos" value={dashboardData.totalProductCost} type="currency" customBg="bg-rose-50 border-rose-100" customText="text-rose-900" />
+                      <OutputP label="Logística (Flete + Fulfill)" value={dashboardData.totalLogistics} type="currency" customBg="bg-rose-50 border-rose-100" customText="text-rose-900" />
+                      <OutputP label="Comisiones Pagadas" value={dashboardData.totalCommissions} type="currency" customBg="bg-rose-50 border-rose-100" customText="text-rose-900" />
+                      <OutputP label="Pérdidas x Devolución" value={dashboardData.totalReturnsCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
+                  </div>
+
+                  {/* Proyección */}
+                  <div className="bg-zinc-900 rounded-2xl p-6 shadow-2xl space-y-4 text-white relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-[40px] -mr-10 -mt-10"></div>
+                      <h3 className="text-[11px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-800 pb-2 relative z-10">🚀 Proyección de Cierre</h3>
+                      <div className="relative z-10">
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Días Operados en Filtro</p>
+                          <p className="text-xl font-mono mb-4">{new Set(allSalesRecords.filter(r => new Date(r.date) >= new Date(salesFilter.startDate) && new Date(r.date) <= new Date(salesFilter.endDate)).map(r => r.date)).size || 0} días</p>
+                          
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Proyección Ingresos Mensuales</p>
+                          <p className="text-2xl font-mono font-black mb-4">{formatCurrency(dashboardData.projectedMonthlyRevenue)}</p>
+                          
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Margen Neto Real</p>
+                          <p className={`text-4xl font-black italic ${dashboardData.margin > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{dashboardData.margin.toFixed(2)}%</p>
+                      </div>
+                  </div>
+              </div>
+           </div>
+        )}
+
+        {/* === SUB-TAB: REGISTRO DIARIO (Fase 2) === */}
+        {salesTab === 'records' && (
+           <div className="space-y-6 text-left">
+              <div className="bg-indigo-600 rounded-[2rem] p-6 md:p-10 shadow-2xl border border-indigo-500 relative overflow-hidden text-white">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-[80px] -mr-20 -mt-20 pointer-events-none"></div>
+                  <h2 className="text-xl md:text-3xl font-black uppercase tracking-tighter italic mb-2 relative z-10">Panel de Cierre Diario</h2>
+                  <p className="text-[10px] md:text-xs text-indigo-200 mb-8 max-w-xl font-bold relative z-10">Selecciona la vendedora e ingresa los datos agrupados del día. La plataforma calculará los ingresos, unidades vendidas y todos los costos de forma automática basados en el ticket promedio.</p>
+                  
+                  {formError && <div className="bg-rose-500/20 border border-rose-400 text-white p-3 rounded-xl mb-6 text-[11px] font-bold relative z-10">⚠ {formError}</div>}
+
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4 relative z-10">
+                      <div className="md:col-span-1">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Fecha</label>
+                          <input type="date" value={newSaleRecord.date} onChange={e => setNewSaleRecord({...newSaleRecord, date: e.target.value})} className="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-sm font-bold outline-none focus:border-white transition-colors" />
+                      </div>
+                      <div className="md:col-span-2">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Vendedora / Producto</label>
+                          <select value={newSaleRecord.configId} onChange={e => handleRecordConfigSelect(e.target.value)} className="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-[11px] md:text-sm font-bold outline-none focus:border-white transition-colors [&>option]:text-zinc-900">
+                              <option value="" disabled>SELECCIONAR...</option>
+                              {salesConfigs.map(c => <option key={c.id} value={c.id}>{c.vendedora.toUpperCase()} - {c.productName}</option>)}
+                          </select>
+                      </div>
+                      <div className="md:col-span-1">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Inversión FB</label>
+                          <input type="number" value={newSaleRecord.adSpend} onChange={e => setNewSaleRecord({...newSaleRecord, adSpend: parseFloat(e.target.value)||0})} disabled={salesConfigs.find(c => c.id === newSaleRecord.configId)?.fixedAdSpend} className="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-sm font-mono font-bold outline-none focus:border-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors" placeholder="0" />
+                      </div>
+                      <div className="md:col-span-1">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Pedidos D.</label>
+                          <input type="number" value={newSaleRecord.orders} onChange={e => setNewSaleRecord({...newSaleRecord, orders: parseFloat(e.target.value)||0})} className="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-sm font-mono font-bold outline-none focus:border-white transition-colors" placeholder="0" />
+                      </div>
+                      <div className="md:col-span-1">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Unds. Total</label>
+                          <input type="number" value={newSaleRecord.units} onChange={e => setNewSaleRecord({...newSaleRecord, units: parseFloat(e.target.value)||0})} className="w-full bg-white/10 border border-white/20 rounded-xl p-3 text-sm font-mono font-bold outline-none focus:border-white transition-colors" placeholder="0" />
+                      </div>
+                      <div className="md:col-span-2 md:col-start-4">
+                          <label className="text-[9px] font-black text-indigo-200 uppercase px-1 mb-1 block">Facturación Bruta (Ingresos)</label>
+                          <div className="flex items-center gap-2 w-full bg-white/10 border border-white/20 rounded-xl px-3 focus-within:border-white transition-colors">
+                              <span className="font-bold text-indigo-300">$</span>
+                              <input type="text" value={newSaleRecord.revenue ? new Intl.NumberFormat('es-CO').format(newSaleRecord.revenue) : ''} onChange={e => { const val = e.target.value.replace(/\D/g, ''); setNewSaleRecord({...newSaleRecord, revenue: val !== '' ? parseFloat(val) : ''}); }} className="w-full bg-transparent p-3 pl-0 text-sm font-mono font-bold outline-none" placeholder="0" />
+                          </div>
+                      </div>
+                      <div className="md:col-span-1 md:col-start-6 flex items-end">
+                          <button onClick={handleSaveSaleRecord} disabled={isSaving} className="w-full bg-white text-indigo-900 hover:bg-zinc-100 p-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all disabled:opacity-50">
+                             {isSaving ? '⏳...' : 'Guardar'}
+                          </button>
+                      </div>
+                  </div>
+              </div>
+
+              {/* LISTADO DE ÚLTIMOS REGISTROS */}
+              <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                 <div className="p-4 border-b bg-zinc-50 flex justify-between items-center">
+                    <h3 className="text-xs font-black uppercase text-zinc-600 tracking-widest">Últimos Cierres Registrados (Consolidado)</h3>
+                 </div>
+                 <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                       <thead>
+                          <tr className="bg-zinc-50 text-[9px] uppercase tracking-widest text-zinc-400 border-b">
+                             <th className="p-3">Fecha</th>
+                             <th className="p-3">Vendedora / Prod</th>
+                             <th className="p-3">Inversión FB</th>
+                             <th className="p-3">Pedidos</th>
+                             <th className="p-3">Unidades</th>
+                             <th className="p-3">Facturado</th>
+                             <th className="p-3 text-center">Acción</th>
+                          </tr>
+                       </thead>
+                       <tbody>
+                          {allSalesRecords.slice(0, 50).map(r => {
+                             const conf = salesConfigs.find(c => c.id === r.configId);
+                             return (
+                               <tr key={r.id} className="border-b last:border-0 hover:bg-zinc-50 transition-colors text-[11px] md:text-sm font-bold text-zinc-700">
+                                  <td className="p-3 font-mono">{r.date}</td>
+                                  <td className="p-3">{conf ? `${conf.vendedora} - ${conf.productName}` : 'Desconocido'}</td>
+                                  <td className="p-3 font-mono text-zinc-500">{formatCurrency(r.adSpend)}</td>
+                                  <td className="p-3 font-mono">{r.orders}</td>
+                                  <td className="p-3 font-mono text-indigo-600">{r.units}</td>
+                                  <td className="p-3 font-mono text-emerald-600">{formatCurrency(r.revenue)}</td>
+                                  <td className="p-3 text-center">
+                                     <button onClick={()=>deleteSaleRecord(r.date, r.id)} className="text-zinc-300 hover:text-rose-500 transition-colors p-1"><svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                                  </td>
+                               </tr>
+                             );
+                          })}
+                          {allSalesRecords.length === 0 && <tr><td colSpan="7" className="p-8 text-center text-zinc-400 font-bold text-xs uppercase tracking-widest">No hay registros este mes</td></tr>}
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {/* === SUB-TAB: CONFIGURACIÓN (Fase 1) === */}
+        {salesTab === 'config' && (
+           <div className="space-y-6 text-left">
+              <div className="flex justify-between items-center mb-4">
+                 <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic">Vendedoras y Costos</h2>
+                 <button onClick={() => {setIsCreatingSalesConfig(true); setFormError(''); setNewSalesConfig(getInitialSalesConfig());}} className="bg-zinc-900 text-white px-6 py-3 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">➕ Añadir Config</button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                 {salesConfigs.map(c => (
+                    <div key={c.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden relative">
+                       <div className="bg-zinc-900 text-white p-4">
+                          <h3 className="font-black text-lg uppercase truncate">{c.vendedora}</h3>
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest truncate">{c.productName}</p>
+                       </div>
+                       <div className="p-4 grid grid-cols-2 gap-y-3 gap-x-2 text-[10px] font-bold text-zinc-600">
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Costo Prod</span><span className="font-mono">{formatCurrency(c.productCost)}</span></div>
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Flete/Fulfill</span><span className="font-mono">{formatCurrency(c.freight)} / {formatCurrency(c.fulfillment)}</span></div>
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Comisión</span><span className="font-mono">{formatCurrency(c.commission)}</span></div>
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Costos Fijos</span><span className="font-mono">{formatCurrency(c.fixedCosts)}</span></div>
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Devolución</span><span className="font-mono">{c.returnRate}%</span></div>
+                          <div><span className="block text-[8px] text-zinc-400 uppercase tracking-wider">Efectividad</span><span className="font-mono">{c.effectiveness}%</span></div>
+                          <div className="col-span-2 pt-2 border-t mt-1">
+                             <span className="block text-[8px] text-indigo-400 uppercase tracking-wider">Inversión FB</span>
+                             <span className="font-mono text-sm text-indigo-600">{c.fixedAdSpend ? `Fija: ${formatCurrency(c.dailyAdSpend)}` : 'Variable (Manual cada día)'}</span>
+                          </div>
+                       </div>
+                       <button onClick={()=>deleteSalesConfig(c.id)} className="absolute top-4 right-4 text-zinc-400 hover:text-rose-500 transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                       <button onClick={()=>{setNewSalesConfig(c); setIsCreatingSalesConfig(true);}} className="w-full py-3 bg-zinc-50 border-t border-zinc-100 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors">✏️ Editar Costos</button>
+                    </div>
+                 ))}
+                 {salesConfigs.length === 0 && <div className="col-span-full py-20 text-center text-zinc-400 font-bold uppercase tracking-widest text-sm">No hay configuraciones creadas.</div>}
+              </div>
+           </div>
+        )}
+
+        {/* MODAL CONFIGURACIÓN VENDEDORA */}
+        {isCreatingSalesConfig && (
+            <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300 text-left">
+                <div className="bg-white rounded-2xl md:rounded-[3rem] shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
+                    <header className="sticky top-0 bg-white/90 backdrop-blur-md p-5 md:p-8 border-b flex justify-between items-center z-10">
+                        <h2 className="text-sm md:text-2xl font-black text-zinc-900 uppercase italic">Ajustes Vendedora & Costos</h2>
+                        <button onClick={()=>{setIsCreatingSalesConfig(false); setFormError('');}} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
+                    </header>
+                    <div className="p-5 md:p-10 space-y-6">
+                        
+                        {/* Datos Base */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-zinc-100 pb-6">
+                            <div>
+                                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 mb-1 block">Nombre Vendedora</label>
+                                <input type="text" value={newSalesConfig.vendedora} onChange={e=>handleConfInput('vendedora')(e.target.value)} className="w-full border-2 border-zinc-200 rounded-xl p-3 text-sm font-bold text-zinc-800 outline-none focus:border-indigo-400" placeholder="Ej. Maria Lopez" />
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 mb-1 block">Producto (Campaña)</label>
+                                <input type="text" value={newSalesConfig.productName} onChange={e=>handleConfInput('productName')(e.target.value)} className="w-full border-2 border-zinc-200 rounded-xl p-3 text-sm font-bold text-zinc-800 outline-none focus:border-indigo-400" placeholder="Ej. Smartwatch X" />
+                            </div>
+                        </div>
+
+                        {/* Inversión Facebook */}
+                        <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100">
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <h4 className="text-[11px] font-black text-indigo-900 uppercase tracking-widest">Inversión Facebook Fija</h4>
+                                    <p className="text-[9px] font-bold text-indigo-500 mt-1">Activa para usar el mismo ppto. diario automáticamente.</p>
+                                </div>
+                                <button onClick={()=>handleConfInput('fixedAdSpend')(!newSalesConfig.fixedAdSpend)} className={`w-12 h-6 rounded-full relative transition-colors ${newSalesConfig.fixedAdSpend ? 'bg-indigo-600' : 'bg-zinc-300'}`}>
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${newSalesConfig.fixedAdSpend ? 'left-7' : 'left-1'}`} />
+                                </button>
+                            </div>
+                            {newSalesConfig.fixedAdSpend && (
+                                <InputP label="Presupuesto Diario Fijo" value={newSalesConfig.dailyAdSpend} onChange={handleConfInput('dailyAdSpend')} type="currency" prefix="$" />
+                            )}
+                        </div>
+
+                        {/* Costos Unitarios Operativos */}
+                        <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-widest pt-4 border-t border-zinc-100">Costos Operativos Unitarios</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <InputP label="Ganancia Objetivo" value={newSalesConfig.targetProfit} onChange={handleConfInput('targetProfit')} type="currency" prefix="$" />
+                            <InputP label="Costo Producto" value={newSalesConfig.productCost} onChange={handleConfInput('productCost')} type="currency" prefix="$" />
+                            <InputP label="Flete" value={newSalesConfig.freight} onChange={handleConfInput('freight')} type="currency" prefix="$" />
+                            <InputP label="Fulfillment" value={newSalesConfig.fulfillment} onChange={handleConfInput('fulfillment')} type="currency" prefix="$" />
+                            <InputP label="Comisión" value={newSalesConfig.commission} onChange={handleConfInput('commission')} type="currency" prefix="$" />
+                            <InputP label="Costos Fijos" value={newSalesConfig.fixedCosts} onChange={handleConfInput('fixedCosts')} type="currency" prefix="$" />
+                            <InputP label="% Devolución" value={newSalesConfig.returnRate} onChange={handleConfInput('returnRate')} type="number" suffix="%" />
+                            <InputP label="% Efectividad" value={newSalesConfig.effectiveness} onChange={handleConfInput('effectiveness')} type="number" suffix="%" />
+                        </div>
+
+                        {formError && <div className="w-full bg-rose-100 border border-rose-400 text-rose-700 font-bold p-3 rounded-xl text-center text-xs">{formError}</div>}
+
+                        <button onClick={handleSaveSalesConfig} disabled={isSaving} className="w-full bg-zinc-900 text-white hover:bg-black font-black py-4 rounded-2xl text-xs md:text-sm uppercase tracking-widest shadow-xl active:scale-95 transition-all disabled:opacity-50 mt-6">
+                            {isSaving ? 'Guardando...' : 'Guardar Configuración'}
+                        </button>
+                    </div>
                 </div>
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:px-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Bruto</p>
-                    <p className="text-3xl md:text-5xl font-black italic">{grossMargin.toFixed(2)}%</p>
-                </div>
-                <div className="md:pl-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
-                    <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>
-                      {netMargin.toFixed(2)}%
-                    </p>
-                </div>
-             </div>
-          </div>
-        </div>
+            </div>
+        )}
       </div>
     );
   };
 
-  const renderCreationForm = () => {
-    if (activeModule === 'winners') {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label>
-                <input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="ID-000"/>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor</label>
-                <input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-6">
-            <div className="bg-zinc-50 p-4 md:p-6 rounded-2xl border border-zinc-100 shadow-sm">
-              <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 border-b pb-2">Costos Winner (COP)</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1 leading-none">{k}</label>
-                  <input type="number" value={newProduct.costs?.[k] || ''} onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base font-mono text-zinc-800 outline-none"/></div>
-                ))}
-              </div>
-            </div>
-            <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl text-white shadow-xl">
-              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block leading-none">PVP Sugerido</label>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold opacity-30">$</span>
-                <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label>
-                <input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label>
-                <input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4 text-left">
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label>
-                <input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label>
-                <input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label>
-                <input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label>
-                <input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
-                <input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-            </div>
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 text-left">
-                <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
-                <div className="grid grid-cols-3 gap-2 px-1">
-                    <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
@@ -839,12 +965,13 @@ Reporte generado por WinnerProduct OS
                 <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Winners</button>
                 <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Importación</button>
                 <button onClick={()=>handleModuleChange('projection')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'projection' ? 'bg-indigo-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-indigo-400/50 hover:text-indigo-600'}`}>Proyección P&G</button>
+                <button onClick={()=>handleModuleChange('sales')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'sales' ? 'bg-emerald-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-emerald-500/50 hover:text-emerald-600'}`}>Rendimiento</button>
             </div>
             <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
         </div>
 
-        {/* --- MOSTRAR SOLO SI NO ESTAMOS EN PROYECCIÓN --- */}
-        {activeModule !== 'projection' ? (
+        {/* --- ENRUTADOR PRINCIPAL --- */}
+        {activeModule === 'winners' || activeModule === 'imports' ? (
           <>
             {/* ÁREA DE FILTROS Y BÚSQUEDA */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 animate-in fade-in">
@@ -1132,13 +1259,15 @@ Reporte generado por WinnerProduct OS
               })}
             </div>
           </>
-        ) : (
+        ) : activeModule === 'projection' ? (
           renderProjectionModule()
-        )}
+        ) : activeModule === 'sales' ? (
+          renderSalesModule()
+        ) : null}
       </div>
 
       {/* MODAL CREACIÓN (SOLO PARA WINNERS E IMPORTS) */}
-      {isCreating && activeModule !== 'projection' && (
+      {isCreating && activeModule !== 'projection' && activeModule !== 'sales' && (
         <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
                 <header className="sticky top-0 bg-white/90 backdrop-blur-md p-4 md:p-8 border-b flex justify-between items-center z-10">
