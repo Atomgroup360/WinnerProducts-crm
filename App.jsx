@@ -42,6 +42,16 @@ const IMPORT_STATUS = {
   approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
 };
 
+// Lista de estados de importación (para productos aprobados)
+const IMPORT_STATES_LIST = {
+  warehouse: { id: 'warehouse', label: 'EN BODEGA', emoji: '🏭', bgColor: 'bg-slate-100 border-slate-300' },
+  portChina: { id: 'portChina', label: 'EN PUERTO CHINA', emoji: '🚢', bgColor: 'bg-blue-100 border-blue-300' },
+  seaRoute: { id: 'seaRoute', label: 'EN RUTA MARÍTIMA', emoji: '🌊', bgColor: 'bg-cyan-100 border-cyan-300' },
+  portColombia: { id: 'portColombia', label: 'EN PUERTO COLOMBIA', emoji: '⚓', bgColor: 'bg-emerald-100 border-emerald-300' },
+  warehouseColombia: { id: 'warehouseColombia', label: 'EN BODEGA COLOMBIA', emoji: '🏚️', bgColor: 'bg-amber-100 border-amber-300' },
+  delivered: { id: 'delivered', label: 'ENTREGADO', emoji: '✅', bgColor: 'bg-green-100 border-green-500' }
+};
+
 // --- FABRICANTES DE ESTADO INICIAL ---
 const getInitialWinner = () => ({
   type: 'winner',
@@ -64,12 +74,17 @@ const getInitialImport = () => ({
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
   isWorking: false,
   measures: { width: 0, height: 0, length: 0 },
-  purchaseDate: '', advancePayment: 0, buyer: '', estimatedArrival: '',
-  colors: Array(7).fill(0).map((_, i) => ({ id: i+1, color: '', qty: 0 }))
+  // Nuevos campos para importación aprobada
+  purchaseDate: '',
+  advancePayment: { amount: 0, date: '' },
+  totalPayment: { amount: 0, date: '' },
+  actualQuantity: 0,
+  variables: Array(5).fill().map((_, i) => ({ id: i+1, name: '', qty: 0 })),
+  importStatus: 'warehouse' // estado de la cadena logística
 });
 
 const getInitialProjection = () => ({
-  name: '', // Añadido para guardar el nombre temporal del análisis
+  name: '',
   price: '', productCost: '', freight: '', fulfillment: '', commission: '',
   adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
   effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
@@ -118,7 +133,6 @@ const compressImage = (base64Str) => {
       const MAX_HEIGHT = 800;
       let width = img.width;
       let height = img.height;
-
       if (width > height) {
         if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
       } else {
@@ -133,14 +147,12 @@ const compressImage = (base64Str) => {
   });
 };
 
-// --- COMPONENTES P&G INDEPENDIENTES (Evita la pérdida de foco al escribir) ---
+// --- COMPONENTES P&G ---
 const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
   let displayVal = value;
-  
   if (type === 'currency') {
      displayVal = value ? new Intl.NumberFormat('es-CO').format(value) : '';
   }
-
   const handleInput = (e) => {
      if (type === 'currency') {
         const numericString = e.target.value.replace(/\D/g, '');
@@ -149,7 +161,6 @@ const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" })
         onChange(e.target.value !== '' ? parseFloat(e.target.value) : '');
      }
   };
-
   return (
     <div className="bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 focus-within:border-emerald-400 transition-colors shadow-sm">
       <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} ✎</label>
@@ -249,7 +260,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('pending');
   const [isCreating, setIsCreating] = useState(false);
   const [newProduct, setNewProduct] = useState(getInitialWinner());
-  const [proj, setProj] = useState(getInitialProjection()); // Estado aislado para Proyección P&G
+  const [proj, setProj] = useState(getInitialProjection());
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
   const [formError, setFormError] = useState('');
@@ -476,21 +487,28 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // Funciones auxiliares para importación aprobada
+  const updateVariable = async (p, varId, field, value) => {
+    const newVars = (p.variables || getInitialImport().variables).map(v =>
+      v.id === varId ? { ...v, [field]: value } : v
+    );
+    await updateDocField(p.id, 'variables', newVars);
+  };
+
   // --- MÓDULO: PROYECCIÓN P&G ---
   const renderProjectionModule = () => {
     const val = (key) => parseFloat(proj[key]) || 0;
     const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
     const resetProjection = () => setProj(getInitialProjection());
 
-    // Fórmulas Análisis de Métricas
     const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
     const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
     const linkClicks = impressions * (val('ctr') / 100);
     const cpc = linkClicks > 0 ? val('adSpend') / linkClicks : 0;
     const pageVisits = linkClicks * (val('loadSpeed') / 100);
     const costPerVisit = pageVisits > 0 ? val('adSpend') / pageVisits : 0;
-    const salesCol1 = pageVisits * (val('conversionRate') / 100); // Pedidos (Ventas)
-    const salesCol2 = salesCol1 * val('price'); // Ingresos FB (Ventas $)
+    const salesCol1 = pageVisits * (val('conversionRate') / 100);
+    const salesCol2 = salesCol1 * val('price');
     const cpaFb = salesCol1 > 0 ? val('adSpend') / salesCol1 : 0;
     const dispatchedOrders = salesCol1 * (val('effectiveness') / 100);
     const costPerDispatched = dispatchedOrders > 0 ? val('adSpend') / dispatchedOrders : 0;
@@ -501,7 +519,6 @@ export default function App() {
     const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
     const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
 
-    // Fórmulas Pérdidas y Ganancias
     const totalProductCost = effectiveDeliveries * val('productCost');
     const totalFreightCost = val('freight') * dispatchedOrders;
     const totalReturnCost = val('freight') * returns;
@@ -515,10 +532,8 @@ export default function App() {
     const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
     const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
 
-    // Función para generar y descargar el reporte .txt
     const downloadReport = () => {
         const productName = proj.name || 'Sin Nombre';
-        
         const reportContent = `======================================
 📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
 ======================================
@@ -584,8 +599,6 @@ Reporte generado por WinnerProduct OS
 
     return (
       <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
-        
-        {/* NOMBRE DEL PRODUCTO Y BOTONES DE ACCIÓN */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
             <div className="w-full md:flex-1">
                 <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
@@ -614,7 +627,6 @@ Reporte generado por WinnerProduct OS
             </div>
         </div>
 
-        {/* SECCIÓN 1: OPERACIÓN Y COSTOS */}
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
@@ -626,7 +638,6 @@ Reporte generado por WinnerProduct OS
           </div>
         </div>
 
-        {/* SECCIÓN 2: MÉTRICAS */}
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
@@ -663,12 +674,10 @@ Reporte generado por WinnerProduct OS
           </div>
         </div>
 
-        {/* SECCIÓN 3: PÉRDIDAS Y GANANCIAS */}
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Pérdidas y Ganancias</h2>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
-            {/* Resumen Facturación */}
             <div className="space-y-3">
               <OutputP label="Facturado Tienda Web" value={salesCol2} type="currency" />
               <OutputP label="Facturado Real ⭐" value={realRevenue} type="currency" highlight />
@@ -676,7 +685,6 @@ Reporte generado por WinnerProduct OS
               <OutputP label="Inversión Publicidad" value={proj.adSpend} type="currency" />
             </div>
 
-            {/* Desglose de Costos */}
             <div className="space-y-3 p-4 md:p-6 bg-rose-50/50 rounded-[1.5rem] border border-rose-100">
               <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
               <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
@@ -689,7 +697,6 @@ Reporte generado por WinnerProduct OS
               </div>
             </div>
 
-            {/* Beneficio y Gastos Fijos */}
             <div className="space-y-3">
               <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
               <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
@@ -703,7 +710,6 @@ Reporte generado por WinnerProduct OS
             </div>
           </div>
 
-          {/* GRAN RESULTADO FINAL */}
           <div className="mt-8 bg-zinc-900 rounded-[2.5rem] p-6 md:p-12 text-white shadow-2xl relative overflow-hidden">
              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
@@ -910,10 +916,17 @@ Reporte generado por WinnerProduct OS
                 const mImport = !isWinner ? calculateImportMetrics(p) : null;
                 const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
 
+                // Determinar el color de fondo para importaciones aprobadas según importStatus
+                let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50';
+                if (!isWinner && p.status === 'approved') {
+                  const importState = IMPORT_STATES_LIST[p.importStatus] || IMPORT_STATES_LIST.warehouse;
+                  cardBgClass = importState.bgColor + (p.isWorking ? ' ring-2 ring-amber-500/20' : '');
+                }
+
                 return (
                   <div 
                     key={p.id} 
-                    className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50'}`}
+                    className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${cardBgClass}`}
                   >
                     
                     <div className={`px-3 md:px-10 py-2 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
@@ -1031,7 +1044,7 @@ Reporte generado por WinnerProduct OS
                             </div>
                           )}
 
-                          {/* DASHBOARD DE RESULTADOS: MAXIMIZADO PARA MÓVIL */}
+                          {/* DASHBOARD DE RESULTADOS */}
                           <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-5 md:p-10 text-white shadow-2xl relative overflow-hidden">
                              <div className="absolute top-0 right-0 w-32 md:w-80 h-32 md:h-80 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[120px] -mr-16 md:-mr-40 -mt-16 md:-mt-40"></div>
                              
@@ -1087,7 +1100,7 @@ Reporte generado por WinnerProduct OS
                              )}
                           </div>
 
-                          {/* BOTONES DE ESTADO TÁCTILES */}
+                          {/* BOTONES DE ESTADO */}
                           <div className="flex flex-wrap gap-2.5 md:gap-3 justify-center md:justify-start">
                             {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
                               <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
@@ -1095,9 +1108,88 @@ Reporte generado por WinnerProduct OS
                               </button>
                             ))}
                           </div>
+
+                          {/* CAMPO DE MOTIVO DE RECHAZO PARA WINNER */}
+                          {isWinner && p.status === 'rejected' && (
+                            <div className="mt-4 w-full">
+                              <label className="text-[9px] font-black text-rose-600 uppercase tracking-widest block mb-2">Motivo de rechazo</label>
+                              <textarea
+                                value={p.rejectionReason || ''}
+                                onChange={(e) => updateDocField(p.id, 'rejectionReason', e.target.value)}
+                                rows={2}
+                                className="w-full p-3 md:p-4 border-2 border-rose-200 bg-white rounded-xl text-sm text-zinc-800 outline-none focus:border-rose-500 transition-all"
+                                placeholder="Explica por qué se rechazó este producto..."
+                              />
+                            </div>
+                          )}
+
+                          {/* SECCIÓN ADICIONAL PARA IMPORTACIÓN APROBADA */}
+                          {!isWinner && p.status === 'approved' && (
+                            <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
+                              <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Fecha de compra */}
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Fecha de Compra</label>
+                                  <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                                {/* Anticipo */}
+                                <div className="space-y-2">
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Anticipo</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto" />
+                                    <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                {/* Pago total */}
+                                <div className="space-y-2">
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Pago Total</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto" />
+                                    <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                {/* Cantidad real comprada */}
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Cantidad Real Comprada</label>
+                                  <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value)||0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                              </div>
+
+                              {/* Variables (color/talla) */}
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-2">Variables (color, talla, etc.)</label>
+                                <div className="space-y-2">
+                                  {(p.variables || getInitialImport().variables).map(v => (
+                                    <div key={v.id} className="flex gap-2 items-center">
+                                      <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder={`Variable ${v.id}`} />
+                                      <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value)||0)} className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Cantidad" />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Estado de importación (6 estados) */}
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-2">Estado de Importación</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.values(IMPORT_STATES_LIST).map(state => (
+                                    <button
+                                      key={state.id}
+                                      onClick={() => updateDocField(p.id, 'importStatus', state.id)}
+                                      className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}
+                                    >
+                                      {state.emoji} {state.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                        </div>
 
-                       {/* BUNDLES */}
+                       {/* BUNDLES (solo winners) */}
                        {isWinner && (
                         <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-3 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                             <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-3 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
@@ -1137,7 +1229,7 @@ Reporte generado por WinnerProduct OS
         )}
       </div>
 
-      {/* MODAL CREACIÓN (SOLO PARA WINNERS E IMPORTS) */}
+      {/* MODAL CREACIÓN */}
       {isCreating && activeModule !== 'projection' && (
         <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
@@ -1166,4 +1258,3 @@ Reporte generado por WinnerProduct OS
     </div>
   );
 }
-
