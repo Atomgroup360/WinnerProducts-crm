@@ -252,7 +252,7 @@ function LoginScreen({ setErrorExt }) {
 
 // --- COMPONENTE PRINCIPAL ---
 export default function App() {
-  const [activeModule, setActiveModule] = useState('winners'); // 'winners', 'imports', 'projection'
+  const [activeModule, setActiveModule] = useState('winners');
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -264,13 +264,11 @@ export default function App() {
   const [expandedItems, setExpandedItems] = useState({});
   const [notification, setNotification] = useState('');
   const [formError, setFormError] = useState('');
-
-  // Estados para Filtros y Ordenamiento
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('manual');
   const [supplierFilter, setSupplierFilter] = useState('all');
 
-  // 1. Escuchar Auth
+  // Escuchar autenticación
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -279,7 +277,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Escuchar Firestore
+  // Escuchar Firestore solo si hay usuario y no estamos en proyección
   useEffect(() => {
     if (!user || activeModule === 'projection') return; 
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
@@ -366,12 +364,10 @@ export default function App() {
 
   const handleSave = async () => {
     setFormError('');
-
     if (!newProduct.name || newProduct.name.trim() === '') {
       setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
       return; 
     }
-    
     setIsSaving(true);
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
@@ -379,27 +375,21 @@ export default function App() {
     
     try {
       if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
-
       const payloadRaw = {
         ...newProduct,
         regNumber,
         order: Date.now(),
         createdBy: auth.currentUser.uid
       };
-
       const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
       cleanPayload.createdAt = serverTimestamp();
-
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
-      
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
       setActiveTab('pending'); 
       setFormError('');
-      
       setNotification('¡Registro guardado en la Nube! ✨');
       setTimeout(() => setNotification(''), 3000);
-
     } catch (e) { 
       console.error("Firebase Save Error:", e); 
       setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
@@ -456,15 +446,12 @@ export default function App() {
   const handleImage = (e, targetId = null, upsellId = null) => {
     const file = e.target.files[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onloadend = async () => {
       let result = reader.result;
-      
       if (file.size > 500 * 1024) {
         try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
       }
-
       if (!targetId) {
         if (upsellId) {
           const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u);
@@ -487,7 +474,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Funciones auxiliares para importación aprobada
   const updateVariable = async (p, varId, field, value) => {
     const newVars = (p.variables || getInitialImport().variables).map(v =>
       v.id === varId ? { ...v, [field]: value } : v
@@ -585,7 +571,6 @@ export default function App() {
 ======================================
 Reporte generado por WinnerProduct OS
 ======================================`;
-
         const blob = new Blob([reportContent], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -828,6 +813,23 @@ Reporte generado por WinnerProduct OS
     }
   };
 
+  // === CONTROL DE ACCESO ===
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center">
+        <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
+          <div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  // --- DASHBOARD PRINCIPAL (usuario autenticado) ---
   return (
     <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
       
@@ -916,7 +918,6 @@ Reporte generado por WinnerProduct OS
                 const mImport = !isWinner ? calculateImportMetrics(p) : null;
                 const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
 
-                // Determinar el color de fondo para importaciones aprobadas según importStatus
                 let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50';
                 if (!isWinner && p.status === 'approved') {
                   const importState = IMPORT_STATES_LIST[p.importStatus] || IMPORT_STATES_LIST.warehouse;
@@ -1129,12 +1130,10 @@ Reporte generado por WinnerProduct OS
                               <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Fecha de compra */}
                                 <div>
                                   <label className="block text-[10px] font-black text-zinc-500 mb-1">Fecha de Compra</label>
                                   <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                 </div>
-                                {/* Anticipo */}
                                 <div className="space-y-2">
                                   <label className="block text-[10px] font-black text-zinc-500 mb-1">Anticipo</label>
                                   <div className="flex gap-2">
@@ -1142,7 +1141,6 @@ Reporte generado por WinnerProduct OS
                                     <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                   </div>
                                 </div>
-                                {/* Pago total */}
                                 <div className="space-y-2">
                                   <label className="block text-[10px] font-black text-zinc-500 mb-1">Pago Total</label>
                                   <div className="flex gap-2">
@@ -1150,14 +1148,12 @@ Reporte generado por WinnerProduct OS
                                     <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                   </div>
                                 </div>
-                                {/* Cantidad real comprada */}
                                 <div>
                                   <label className="block text-[10px] font-black text-zinc-500 mb-1">Cantidad Real Comprada</label>
                                   <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value)||0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                 </div>
                               </div>
 
-                              {/* Variables (color/talla) */}
                               <div>
                                 <label className="block text-[10px] font-black text-zinc-500 mb-2">Variables (color, talla, etc.)</label>
                                 <div className="space-y-2">
@@ -1170,7 +1166,6 @@ Reporte generado por WinnerProduct OS
                                 </div>
                               </div>
 
-                              {/* Estado de importación (6 estados) */}
                               <div>
                                 <label className="block text-[10px] font-black text-zinc-500 mb-2">Estado de Importación</label>
                                 <div className="flex flex-wrap gap-2">
