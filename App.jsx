@@ -59,6 +59,7 @@ const getInitialWinner = () => ({
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
   isWorking: false,
+  createdAtText: '', // Fecha de creación en formato legible
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -73,14 +74,14 @@ const getInitialImport = () => ({
   name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
   isWorking: false,
+  createdAtText: '', // Fecha de creación en formato legible
   measures: { width: 0, height: 0, length: 0 },
-  // Nuevos campos para importación aprobada
   purchaseDate: '',
   advancePayment: { amount: 0, date: '' },
   totalPayment: { amount: 0, date: '' },
   actualQuantity: 0,
   variables: Array(5).fill().map((_, i) => ({ id: i+1, name: '', qty: 0 })),
-  importStatus: 'warehouse' // estado de la cadena logística
+  importStatus: 'warehouse'
 });
 
 const getInitialProjection = () => ({
@@ -92,6 +93,18 @@ const getInitialProjection = () => ({
 
 // --- AYUDANTES ---
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
+
+// Función para obtener fecha actual formateada
+const getCurrentDateTime = () => {
+  const now = new Date();
+  const day = now.getDate().toString().padStart(2, '0');
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const year = now.getFullYear();
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const seconds = now.getSeconds().toString().padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+};
 
 const calculateWinnerMetrics = (p) => {
   if (!p) return { totalCost: 0, totalPrice: 0, profit: 0, margin: 0, activeUpsells: 0 };
@@ -375,14 +388,20 @@ export default function App() {
     
     try {
       if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
+      
+      // Agregar fecha de creación en formato legible
+      const currentDateTime = getCurrentDateTime();
+      
       const payloadRaw = {
         ...newProduct,
         regNumber,
         order: Date.now(),
-        createdBy: auth.currentUser.uid
+        createdBy: auth.currentUser.uid,
+        createdAtText: currentDateTime  // Fecha legible para mostrar en UI
       };
       const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
-      cleanPayload.createdAt = serverTimestamp();
+      cleanPayload.createdAt = serverTimestamp(); // Timestamp de Firestore para ordenar
+      
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
@@ -933,6 +952,13 @@ Reporte generado por WinnerProduct OS
                     <div className={`px-3 md:px-10 py-2 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
                        <div className="flex items-center gap-2 md:gap-6 flex-wrap text-left">
                          <div className="bg-zinc-900 text-white px-2 py-1 rounded-lg text-[8px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
+                         
+                         {/* FECHA DE CREACIÓN - NUEVO */}
+                         {p.createdAtText && (
+                           <div className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded-lg text-[8px] md:text-[10px] font-mono font-bold tracking-tight">
+                             📅 {p.createdAtText}
+                           </div>
+                         )}
                          
                          <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-lg border border-zinc-200 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => updateDocField(p.id, 'isWorking', !p.isWorking)}>
                             <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-tighter ${p.isWorking ? 'text-amber-600' : 'text-zinc-400'}`}>EN PROCESO</span>
