@@ -60,8 +60,8 @@ const getInitialWinner = () => ({
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
   isWorking: false,
   createdAtText: '',
-  // Datos para testeo: 5 vendedoras con fecha de inicio
-  testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '' })),
+  // Datos para testeo: 5 vendedoras con fecha de inicio y finalización
+  testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '', endDate: '' })),
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -500,7 +500,7 @@ export default function App() {
     await updateDocField(p.id, 'variables', newVars);
   };
 
-  // Función para actualizar los datos de testeo (vendedora y fecha)
+  // Función para actualizar los datos de testeo (vendedora y fechas)
   const updateTestingData = async (p, testId, field, value) => {
     const currentData = p.testingData || getInitialWinner().testingData;
     const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
@@ -1148,7 +1148,7 @@ Reporte generado por WinnerProduct OS
                               <h3 className="text-sm font-black text-amber-700 uppercase tracking-widest flex items-center gap-2">🧪 Datos de Testeo</h3>
                               <div className="space-y-3">
                                 {(p.testingData || getInitialWinner().testingData).map(tester => (
-                                  <div key={tester.id} className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center bg-white/50 p-3 rounded-xl">
+                                  <div key={tester.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white/50 p-3 rounded-xl">
                                     <div>
                                       <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Vendedora {tester.id}</label>
                                       <input
@@ -1160,11 +1160,20 @@ Reporte generado por WinnerProduct OS
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha inicio testeo</label>
+                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha inicio</label>
                                       <input
                                         type="date"
                                         value={tester.startDate || ''}
                                         onChange={(e) => updateTestingData(p, tester.id, 'startDate', e.target.value)}
+                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha finalización</label>
+                                      <input
+                                        type="date"
+                                        value={tester.endDate || ''}
+                                        onChange={(e) => updateTestingData(p, tester.id, 'endDate', e.target.value)}
                                         className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
                                       />
                                     </div>
