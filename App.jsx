@@ -59,7 +59,9 @@ const getInitialWinner = () => ({
   costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
   isWorking: false,
-  createdAtText: '', // Fecha de creación en formato legible
+  createdAtText: '',
+  // Datos para testeo: 5 vendedoras con fecha de inicio
+  testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '' })),
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
     { id: 2, name: '', cost: 0, price: 0, image: null },
@@ -74,7 +76,7 @@ const getInitialImport = () => ({
   name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
   unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
   isWorking: false,
-  createdAtText: '', // Fecha de creación en formato legible
+  createdAtText: '',
   measures: { width: 0, height: 0, length: 0 },
   purchaseDate: '',
   advancePayment: { amount: 0, date: '' },
@@ -94,7 +96,6 @@ const getInitialProjection = () => ({
 // --- AYUDANTES ---
 const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
 
-// Función para obtener fecha actual formateada
 const getCurrentDateTime = () => {
   const now = new Date();
   const day = now.getDate().toString().padStart(2, '0');
@@ -389,7 +390,6 @@ export default function App() {
     try {
       if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
       
-      // Agregar fecha de creación en formato legible
       const currentDateTime = getCurrentDateTime();
       
       const payloadRaw = {
@@ -397,10 +397,10 @@ export default function App() {
         regNumber,
         order: Date.now(),
         createdBy: auth.currentUser.uid,
-        createdAtText: currentDateTime  // Fecha legible para mostrar en UI
+        createdAtText: currentDateTime
       };
       const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
-      cleanPayload.createdAt = serverTimestamp(); // Timestamp de Firestore para ordenar
+      cleanPayload.createdAt = serverTimestamp();
       
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
       setIsCreating(false);
@@ -498,6 +498,13 @@ export default function App() {
       v.id === varId ? { ...v, [field]: value } : v
     );
     await updateDocField(p.id, 'variables', newVars);
+  };
+
+  // Función para actualizar los datos de testeo (vendedora y fecha)
+  const updateTestingData = async (p, testId, field, value) => {
+    const currentData = p.testingData || getInitialWinner().testingData;
+    const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
+    await updateDocField(p.id, 'testingData', newData);
   };
 
   // --- MÓDULO: PROYECCIÓN P&G ---
@@ -953,7 +960,6 @@ Reporte generado por WinnerProduct OS
                        <div className="flex items-center gap-2 md:gap-6 flex-wrap text-left">
                          <div className="bg-zinc-900 text-white px-2 py-1 rounded-lg text-[8px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
                          
-                         {/* FECHA DE CREACIÓN - NUEVO */}
                          {p.createdAtText && (
                            <div className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded-lg text-[8px] md:text-[10px] font-mono font-bold tracking-tight">
                              📅 {p.createdAtText}
@@ -1135,6 +1141,38 @@ Reporte generado por WinnerProduct OS
                               </button>
                             ))}
                           </div>
+
+                          {/* SECCIÓN DE TESTEO PARA WINNER (solo cuando status === 'testing') */}
+                          {isWinner && p.status === 'testing' && (
+                            <div className="mt-6 bg-amber-50/80 rounded-2xl p-4 md:p-6 space-y-4 border border-amber-200">
+                              <h3 className="text-sm font-black text-amber-700 uppercase tracking-widest flex items-center gap-2">🧪 Datos de Testeo</h3>
+                              <div className="space-y-3">
+                                {(p.testingData || getInitialWinner().testingData).map(tester => (
+                                  <div key={tester.id} className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center bg-white/50 p-3 rounded-xl">
+                                    <div>
+                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Vendedora {tester.id}</label>
+                                      <input
+                                        type="text"
+                                        value={tester.sellerName || ''}
+                                        onChange={(e) => updateTestingData(p, tester.id, 'sellerName', e.target.value)}
+                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
+                                        placeholder={`Nombre vendedora ${tester.id}`}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha inicio testeo</label>
+                                      <input
+                                        type="date"
+                                        value={tester.startDate || ''}
+                                        onChange={(e) => updateTestingData(p, tester.id, 'startDate', e.target.value)}
+                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* CAMPO DE MOTIVO DE RECHAZO PARA WINNER */}
                           {isWinner && p.status === 'rejected' && (
