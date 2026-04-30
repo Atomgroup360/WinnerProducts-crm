@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp 
+  onSnapshot, serverTimestamp, Timestamp 
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -24,8 +24,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// Enrutador dinámico para evitar bloqueos de permisos en diferentes entornos
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'winnerproduct-crm';
 
 // --- CONFIGURACIÓN DE ESTADOS ---
@@ -42,7 +40,6 @@ const IMPORT_STATUS = {
   approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
 };
 
-// Lista de estados de importación (para productos aprobados)
 const IMPORT_STATES_LIST = {
   warehouse: { id: 'warehouse', label: 'EN BODEGA', emoji: '🏭', bgColor: 'bg-slate-100 border-slate-300' },
   portChina: { id: 'portChina', label: 'EN PUERTO CHINA', emoji: '🚢', bgColor: 'bg-blue-100 border-blue-300' },
@@ -60,7 +57,6 @@ const getInitialWinner = () => ({
   targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
   isWorking: false,
   createdAtText: '',
-  // Datos para testeo: 5 vendedoras con fecha de inicio y finalización
   testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '', endDate: '' })),
   upsells: [
     { id: 1, name: '', cost: 0, price: 0, image: null },
@@ -264,6 +260,270 @@ function LoginScreen({ setErrorExt }) {
   );
 }
 
+// ==================== COMPONENTE AGENDA ====================
+const RESPONSIBLES = [
+  { id: 'david', name: 'David', color: 'blue' },
+  { id: 'julian', name: 'Julián', color: 'purple' },
+  { id: 'william', name: 'William', color: 'green' }
+];
+
+const TASK_STATUS = {
+  pending: { id: 'pending', label: 'Pendiente', emoji: '⏳', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
+  approved: { id: 'approved', label: 'Aprobado', emoji: '✅', color: 'bg-green-100 text-green-800 border-green-300' },
+  rejected: { id: 'rejected', label: 'Rechazado', emoji: '❌', color: 'bg-red-100 text-red-800 border-red-300' }
+};
+
+const PRIORITIES = {
+  alta: { id: 'alta', label: 'Alta', emoji: '🔴', color: 'bg-red-100 text-red-700 border-red-300' },
+  media: { id: 'media', label: 'Media', emoji: '🟡', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  baja: { id: 'baja', label: 'Baja', emoji: '🟢', color: 'bg-green-100 text-green-700 border-green-300' }
+};
+
+function AgendaModule() {
+  const [tasks, setTasks] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    responsible: 'david',
+    priority: 'media',
+    status: 'pending',
+    dueDate: ''
+  });
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks');
+    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
+      const loaded = snapshot.docs.map(doc => {
+        const data = doc.data();
+        let createdAtFormatted = '';
+        if (data.createdAt?.toDate) {
+          const d = data.createdAt.toDate();
+          createdAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+        }
+        let dueDateStr = data.dueDate?.toDate ? data.dueDate.toDate().toISOString().split('T')[0] : '';
+        return {
+          id: doc.id,
+          ...data,
+          createdAtFormatted,
+          dueDate: dueDateStr
+        };
+      });
+      setTasks(loaded);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleFormChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const saveTask = async () => {
+    if (!formData.title.trim()) {
+      alert("El título es obligatorio");
+      return;
+    }
+    const payload = {
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      responsible: formData.responsible,
+      priority: formData.priority,
+      status: formData.status,
+      dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : null,
+      updatedAt: serverTimestamp(),
+      createdBy: auth.currentUser?.uid
+    };
+    try {
+      if (editingTask) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', editingTask.id), payload);
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks'), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
+      }
+      resetForm();
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar la tarea");
+    }
+  };
+
+  const deleteTask = async (id) => {
+    if (window.confirm("¿Eliminar esta tarea definitivamente? Se borrará de la base de datos.")) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id));
+    }
+  };
+
+  const updateTaskStatus = async (id, newStatus) => {
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id), {
+      status: newStatus,
+      updatedAt: serverTimestamp()
+    });
+  };
+
+  const resetForm = () => {
+    setFormData({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' });
+    setEditingTask(null);
+    setShowForm(false);
+  };
+
+  const editTask = (task) => {
+    setFormData({
+      title: task.title,
+      description: task.description || '',
+      responsible: task.responsible,
+      priority: task.priority || 'media',
+      status: task.status,
+      dueDate: task.dueDate || ''
+    });
+    setEditingTask(task);
+    setShowForm(true);
+  };
+
+  const tasksByResponsible = RESPONSIBLES.map(resp => {
+    const userTasks = tasks.filter(t => t.responsible === resp.id);
+    const total = userTasks.length;
+    const approved = userTasks.filter(t => t.status === 'approved').length;
+    const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
+    return { ...resp, total, approved, percent };
+  });
+
+  const overallTotal = tasks.length;
+  const overallApproved = tasks.filter(t => t.status === 'approved').length;
+  const overallPercent = overallTotal === 0 ? 0 : Math.round((overallApproved / overallTotal) * 100);
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Tarjetas de indicadores */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border text-center">
+          <p className="text-[10px] font-black uppercase text-zinc-500">Tareas totales</p>
+          <p className="text-4xl font-black">{overallTotal}</p>
+          <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${overallPercent}%` }}></div>
+          </div>
+          <p className="text-[11px] mt-1">{overallApproved} aprobadas ({overallPercent}%)</p>
+        </div>
+        {tasksByResponsible.map(resp => (
+          <div key={resp.id} className="bg-white rounded-2xl p-5 shadow-sm border text-center">
+            <p className="text-[10px] font-black uppercase text-zinc-500">{resp.name}</p>
+            <p className="text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.approved}/{resp.total}</p>
+            <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${resp.percent}%` }}></div>
+            </div>
+            <p className="text-[11px] mt-1">{resp.percent}% cumplimiento</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Botón nueva tarea */}
+      <div className="flex justify-end">
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg flex items-center gap-2 transition-all">
+          ➕ Nueva Tarea
+        </button>
+      </div>
+
+      {/* Formulario modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+            <div className="space-y-4">
+              <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
+              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
+              <div className="grid grid-cols-2 gap-3">
+                <select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">
+                  {RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <select name="priority" value={formData.priority} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">
+                  {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <select name="status" value={formData.status} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">
+                  {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                </select>
+                <input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={resetForm} className="px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
+              <button onClick={saveTask} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabla de tareas */}
+      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="bg-zinc-50 border-b border-zinc-200">
+            <tr>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th>
+              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.length === 0 ? (
+              <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas. Crea la primera.</td></tr>
+            ) : (
+              tasks.map(task => {
+                const resp = RESPONSIBLES.find(r => r.id === task.responsible) || RESPONSIBLES[0];
+                const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+                const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+                const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+                return (
+                  <tr key={task.id} className="border-b border-zinc-100 hover:bg-zinc-50 transition">
+                    <td className="px-4 py-3 font-bold text-sm">
+                      {task.title}
+                      {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5">{task.description}</div>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp.id === 'david' ? 'bg-blue-100 text-blue-700' : resp.id === 'julian' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                        {resp.name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
+                        {priorityConfig.emoji} {priorityConfig.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
+                        {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {task.dueDate ? (
+                        <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                      {task.createdAtFormatted || '-'}
+                    </td>
+                    <td className="px-4 py-3 flex gap-2">
+                      <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition" title="Editar">✏️</button>
+                      <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition" title="Eliminar definitivamente">🗑️</button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // --- COMPONENTE PRINCIPAL ---
 export default function App() {
   const [activeModule, setActiveModule] = useState('winners');
@@ -291,9 +551,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Escuchar Firestore solo si hay usuario y no estamos en proyección
+  // Escuchar Firestore solo si hay usuario y no estamos en proyección ni agenda
   useEffect(() => {
-    if (!user || activeModule === 'projection') return; 
+    if (!user || activeModule === 'projection' || activeModule === 'agenda') return; 
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     
@@ -310,7 +570,7 @@ export default function App() {
 
   // Obtener lista única de proveedores para el filtro
   const uniqueSuppliers = useMemo(() => {
-    if(activeModule === 'projection') return [];
+    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
     const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
     const list = products.map(p => p[field]).filter(Boolean);
     return ['all', ...new Set(list)];
@@ -318,7 +578,7 @@ export default function App() {
 
   // Lógica de Filtrado y Ordenamiento Combinada
   const displayedProducts = useMemo(() => {
-    if(activeModule === 'projection') return [];
+    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
     let result = products.filter(p => {
       const matchesTab = p.status === activeTab;
       const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -357,7 +617,7 @@ export default function App() {
     setSearchTerm('');
     setSupplierFilter('all');
     setSortOrder('manual');
-    if (mod !== 'projection') {
+    if (mod !== 'projection' && mod !== 'agenda') {
       setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     }
     setIsCreating(false);
@@ -500,7 +760,6 @@ export default function App() {
     await updateDocField(p.id, 'variables', newVars);
   };
 
-  // Función para actualizar los datos de testeo (vendedora y fechas)
   const updateTestingData = async (p, testId, field, value) => {
     const currentData = p.testingData || getInitialWinner().testingData;
     const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
@@ -867,18 +1126,23 @@ Reporte generado por WinnerProduct OS
 
       <div className="max-w-[1400px] mx-auto">
         
-        {/* NAVEGACIÓN */}
+        {/* NAVEGACIÓN - AGREGADO BOTÓN AGENDA */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-8 gap-3 md:gap-4">
             <div className="bg-white p-1 rounded-2xl md:rounded-[2rem] shadow-xl border border-zinc-200 flex flex-wrap md:flex-nowrap w-full md:w-auto overflow-hidden">
                 <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Winners</button>
                 <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Importación</button>
                 <button onClick={()=>handleModuleChange('projection')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'projection' ? 'bg-indigo-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-indigo-400/50 hover:text-indigo-600'}`}>Proyección P&G</button>
+                <button onClick={()=>handleModuleChange('agenda')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'agenda' ? 'bg-emerald-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-emerald-600/50 hover:text-emerald-600'}`}>📅 Agenda</button>
             </div>
             <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
         </div>
 
-        {/* --- MOSTRAR SOLO SI NO ESTAMOS EN PROYECCIÓN --- */}
-        {activeModule !== 'projection' ? (
+        {/* CONTENIDO SEGÚN MÓDULO */}
+        {activeModule === 'agenda' ? (
+          <AgendaModule />
+        ) : activeModule === 'projection' ? (
+          renderProjectionModule()
+        ) : (
           <>
             {/* ÁREA DE FILTROS Y BÚSQUEDA */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 animate-in fade-in">
@@ -1142,7 +1406,7 @@ Reporte generado por WinnerProduct OS
                             ))}
                           </div>
 
-                          {/* SECCIÓN DE TESTEO PARA WINNER (solo cuando status === 'testing') */}
+                          {/* SECCIÓN DE TESTEO PARA WINNER */}
                           {isWinner && p.status === 'testing' && (
                             <div className="mt-6 bg-amber-50/80 rounded-2xl p-4 md:p-6 space-y-4 border border-amber-200">
                               <h3 className="text-sm font-black text-amber-700 uppercase tracking-widest flex items-center gap-2">🧪 Datos de Testeo</h3>
@@ -1183,7 +1447,7 @@ Reporte generado por WinnerProduct OS
                             </div>
                           )}
 
-                          {/* CAMPO DE MOTIVO DE RECHAZO PARA WINNER */}
+                          {/* MOTIVO DE RECHAZO */}
                           {isWinner && p.status === 'rejected' && (
                             <div className="mt-4 w-full">
                               <label className="text-[9px] font-black text-rose-600 uppercase tracking-widest block mb-2">Motivo de rechazo</label>
@@ -1197,7 +1461,7 @@ Reporte generado por WinnerProduct OS
                             </div>
                           )}
 
-                          {/* SECCIÓN ADICIONAL PARA IMPORTACIÓN APROBADA */}
+                          {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
                           {!isWinner && p.status === 'approved' && (
                             <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
                               <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
@@ -1257,7 +1521,7 @@ Reporte generado por WinnerProduct OS
                           )}
                        </div>
 
-                       {/* BUNDLES (solo winners) */}
+                       {/* BUNDLES */}
                        {isWinner && (
                         <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-3 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
                             <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-3 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
@@ -1292,13 +1556,11 @@ Reporte generado por WinnerProduct OS
               })}
             </div>
           </>
-        ) : (
-          renderProjectionModule()
         )}
       </div>
 
       {/* MODAL CREACIÓN */}
-      {isCreating && activeModule !== 'projection' && (
+      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && (
         <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
                 <header className="sticky top-0 bg-white/90 backdrop-blur-md p-4 md:p-8 border-b flex justify-between items-center z-10">
