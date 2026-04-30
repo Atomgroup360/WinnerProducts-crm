@@ -260,7 +260,7 @@ function LoginScreen({ setErrorExt }) {
   );
 }
 
-// ==================== COMPONENTE AGENDA (CON COMENTARIOS) ====================
+// ==================== COMPONENTE AGENDA (COMPLETO Y CORREGIDO) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -285,8 +285,8 @@ function AgendaModule() {
   const [editingTask, setEditingTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [filterResponsible, setFilterResponsible] = useState('all');
-  const [expandedComments, setExpandedComments] = useState({}); // Para controlar qué comentarios están abiertos
-  const [newComment, setNewComment] = useState({}); // Para almacenar comentarios nuevos por tarea
+  const [expandedComments, setExpandedComments] = useState({});
+  const [newComment, setNewComment] = useState({});
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -313,7 +313,7 @@ function AgendaModule() {
           ...data,
           createdAtFormatted,
           dueDate: dueDateStr,
-          comments: data.comments || [] // Asegurar que exista el array de comentarios
+          comments: data.comments || []
         };
       });
       setTasks(loaded);
@@ -370,32 +370,30 @@ function AgendaModule() {
     });
   };
 
-  // Agregar un comentario a una tarea
   const addComment = async (taskId) => {
     const commentText = newComment[taskId]?.trim();
     if (!commentText) return;
     
-    const currentUser = auth.currentUser;
-    const responsibleName = RESPONSIBLES.find(r => r.id === formData.responsible)?.name || 'Usuario';
+    const task = tasks.find(t => t.id === taskId);
+    const responsibleName = RESPONSIBLES.find(r => r.id === task?.responsible)?.name || 'Usuario';
+    const responsibleId = task?.responsible || 'david';
     
     const comment = {
       id: Date.now().toString(),
       text: commentText,
       author: responsibleName,
-      authorId: formData.responsible,
+      authorId: responsibleId,
       createdAt: new Date().toLocaleString('es-CO'),
       timestamp: serverTimestamp()
     };
     
-    const task = tasks.find(t => t.id === taskId);
-    const updatedComments = [...(task.comments || []), comment];
+    const updatedComments = [...(task?.comments || []), comment];
     
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
       comments: updatedComments,
       updatedAt: serverTimestamp()
     });
     
-    // Limpiar el campo de comentario
     setNewComment({ ...newComment, [taskId]: '' });
   };
 
@@ -422,12 +420,10 @@ function AgendaModule() {
     setExpandedComments({ ...expandedComments, [taskId]: !expandedComments[taskId] });
   };
 
-  // Filtrar tareas según responsable seleccionado
   const filteredTasks = filterResponsible === 'all' 
     ? tasks 
     : tasks.filter(t => t.responsible === filterResponsible);
 
-  // Calcular contadores para los filtros
   const getTaskCount = (responsibleId) => {
     return tasks.filter(t => t.responsible === responsibleId).length;
   };
@@ -444,7 +440,6 @@ function AgendaModule() {
   const overallApproved = tasks.filter(t => t.status === 'approved').length;
   const overallPercent = overallTotal === 0 ? 0 : Math.round((overallApproved / overallTotal) * 100);
 
-  // Agrupar tareas por responsable para la vista de "Todos"
   const groupedTasks = filterResponsible === 'all' 
     ? RESPONSIBLES.map(resp => ({
         responsible: resp,
@@ -456,8 +451,8 @@ function AgendaModule() {
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Modal de detalle de tarea */}
       {selectedTask && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" onClick={() => setSelectedTask(null)}>
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setSelectedTask(null)}>
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-zinc-100 p-4 flex justify-between items-center">
               <h3 className="font-black text-zinc-900 text-lg">{selectedTask.title}</h3>
               <button onClick={() => setSelectedTask(null)} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
@@ -564,10 +559,10 @@ function AgendaModule() {
         </button>
       </div>
 
-      {/* Formulario modal (crear/editar) */}
+      {/* Formulario modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg md:text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
             <div className="space-y-3 md:space-y-4">
               <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
@@ -643,7 +638,6 @@ function AgendaModule() {
                             <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button>
                           </div>
                         </div>
-                        {/* Sección de comentarios desplegable */}
                         {isCommentsOpen && (
                           <div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100">
                             <div className="space-y-3 max-h-64 overflow-y-auto">
@@ -664,7 +658,7 @@ function AgendaModule() {
                                   );
                                 })
                               ) : (
-                                <p className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</p>
+                                <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
                               )}
                             </div>
                             <div className="mt-3 flex gap-2">
@@ -707,7 +701,9 @@ function AgendaModule() {
               </thead>
               <tbody>
                 {filteredTasks.length === 0 ? (
-                  <tr><td colSpan="6" className="text-center py-10 text-zinc-400">No hay tareas para este responsable.</span></td></tr>
+                  <tr>
+                    <td colSpan="6" className="text-center py-10 text-zinc-400">No hay tareas para este responsable.</td>
+                  </tr>
                 ) : (
                   filteredTasks.map(task => {
                     const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
@@ -766,7 +762,7 @@ function AgendaModule() {
                                     );
                                   })
                                 ) : (
-                                  <p className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</p>
+                                  <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
                                 )}
                               </div>
                               <div className="mt-3 flex gap-2">
@@ -798,7 +794,7 @@ function AgendaModule() {
         )}
       </div>
 
-      {/* Versión Móvil (tarjetas con comentarios) */}
+      {/* Versión Móvil (tarjetas) */}
       <div className="md:hidden space-y-4 p-3">
         {filterResponsible === 'all' && groupedTasks ? (
           groupedTasks.map(group => (
@@ -865,7 +861,7 @@ function AgendaModule() {
                                 );
                               })
                             ) : (
-                              <p className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</p>
+                              <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
                             )}
                           </div>
                           <div className="mt-3 flex gap-2">
@@ -959,7 +955,7 @@ function AgendaModule() {
                               );
                             })
                           ) : (
-                            <p className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</p>
+                            <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
                           )}
                         </div>
                         <div className="mt-3 flex gap-2">
