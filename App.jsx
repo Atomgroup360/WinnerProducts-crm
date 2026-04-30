@@ -260,7 +260,7 @@ function LoginScreen({ setErrorExt }) {
   );
 }
 
-// ==================== COMPONENTE AGENDA ====================
+// ==================== COMPONENTE AGENDA (VERSIÓN MEJORADA) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue' },
   { id: 'julian', name: 'Julián', color: 'purple' },
@@ -283,6 +283,7 @@ function AgendaModule() {
   const [tasks, setTasks] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null); // Para el modal de detalle
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -397,44 +398,92 @@ function AgendaModule() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Modal de detalle de tarea */}
+      {selectedTask && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" onClick={() => setSelectedTask(null)}>
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-zinc-100 p-4 flex justify-between items-center">
+              <h3 className="font-black text-zinc-900 text-lg">{selectedTask.title}</h3>
+              <button onClick={() => setSelectedTask(null)} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {selectedTask.description ? (
+                <div className="bg-zinc-50 rounded-xl p-4">
+                  <p className="text-xs font-black text-zinc-400 uppercase mb-2">📝 Descripción</p>
+                  <p className="text-zinc-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedTask.description}</p>
+                </div>
+              ) : (
+                <div className="bg-zinc-50 rounded-xl p-4 text-center text-zinc-400 text-sm">Sin descripción</div>
+              )}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-zinc-50 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase">Responsable</p>
+                  <p className="font-bold mt-1">{RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name || '-'}</p>
+                </div>
+                <div className="bg-zinc-50 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase">Prioridad</p>
+                  <p className="mt-1">{PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</p>
+                </div>
+                <div className="bg-zinc-50 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase">Estado</p>
+                  <p className="mt-1">{TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</p>
+                </div>
+                <div className="bg-zinc-50 rounded-xl p-3">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase">Fecha límite</p>
+                  <p className="mt-1">{selectedTask.dueDate || '-'}</p>
+                </div>
+              </div>
+              <div className="bg-zinc-50 rounded-xl p-3">
+                <p className="text-[9px] font-black text-zinc-400 uppercase">Creada el</p>
+                <p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">✏️ Editar</button>
+                <button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 text-rose-600 py-3 rounded-xl font-bold text-sm">🗑️ Eliminar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tarjetas de indicadores */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border text-center">
-          <p className="text-[10px] font-black uppercase text-zinc-500">Tareas totales</p>
-          <p className="text-4xl font-black">{overallTotal}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
+          <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Tareas totales</p>
+          <p className="text-3xl md:text-4xl font-black">{overallTotal}</p>
           <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
             <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${overallPercent}%` }}></div>
           </div>
-          <p className="text-[11px] mt-1">{overallApproved} aprobadas ({overallPercent}%)</p>
+          <p className="text-[10px] md:text-[11px] mt-1">{overallApproved} aprobadas ({overallPercent}%)</p>
         </div>
         {tasksByResponsible.map(resp => (
-          <div key={resp.id} className="bg-white rounded-2xl p-5 shadow-sm border text-center">
-            <p className="text-[10px] font-black uppercase text-zinc-500">{resp.name}</p>
-            <p className="text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.approved}/{resp.total}</p>
+          <div key={resp.id} className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
+            <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">{resp.name}</p>
+            <p className="text-2xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.approved}/{resp.total}</p>
             <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${resp.percent}%` }}></div>
             </div>
-            <p className="text-[11px] mt-1">{resp.percent}% cumplimiento</p>
+            <p className="text-[10px] md:text-[11px] mt-1">{resp.percent}% cumplimiento</p>
           </div>
         ))}
       </div>
 
       {/* Botón nueva tarea */}
       <div className="flex justify-end">
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg flex items-center gap-2 transition-all">
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-5 md:px-6 py-2.5 md:py-3 rounded-xl font-black text-[10px] md:text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95">
           ➕ Nueva Tarea
         </button>
       </div>
 
-      {/* Formulario modal */}
+      {/* Formulario modal (crear/editar) */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in zoom-in-95">
-            <h3 className="text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
-            <div className="space-y-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg md:text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+            <div className="space-y-3 md:space-y-4">
               <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <div className="grid grid-cols-2 gap-3">
+              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={3} placeholder="Descripción (opcional)" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
+              <div className="grid grid-cols-2 gap-2 md:gap-3">
                 <select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">
                   {RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
@@ -442,7 +491,7 @@ function AgendaModule() {
                   {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 md:gap-3">
                 <select name="status" value={formData.status} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">
                   {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
                 </select>
@@ -457,68 +506,123 @@ function AgendaModule() {
         </div>
       )}
 
-      {/* Tabla de tareas */}
-      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden overflow-x-auto">
-        <table className="w-full text-left">
-          <thead className="bg-zinc-50 border-b border-zinc-200">
-            <tr>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th>
-              <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tasks.length === 0 ? (
-              <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas. Crea la primera.</td></tr>
-            ) : (
-              tasks.map(task => {
-                const resp = RESPONSIBLES.find(r => r.id === task.responsible) || RESPONSIBLES[0];
-                const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                return (
-                  <tr key={task.id} className="border-b border-zinc-100 hover:bg-zinc-50 transition">
-                    <td className="px-4 py-3 font-bold text-sm">
-                      {task.title}
-                      {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5">{task.description}</div>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp.id === 'david' ? 'bg-blue-100 text-blue-700' : resp.id === 'julian' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
-                        {resp.name}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
-                        {priorityConfig.emoji} {priorityConfig.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
-                        {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      {task.dueDate ? (
-                        <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span>
-                      ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
-                      {task.createdAtFormatted || '-'}
-                    </td>
-                    <td className="px-4 py-3 flex gap-2">
-                      <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition" title="Editar">✏️</button>
-                      <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition" title="Eliminar definitivamente">🗑️</button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+      {/* Lista de tareas - Vista responsiva: Tabla en desktop, tarjetas en móvil */}
+      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
+        {/* Versión Desktop (tabla) - oculta en móvil */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-zinc-50 border-b border-zinc-200">
+              <tr>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.length === 0 ? (
+                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas. Crea la primera.</td></tr>
+              ) : (
+                tasks.map(task => {
+                  const resp = RESPONSIBLES.find(r => r.id === task.responsible) || RESPONSIBLES[0];
+                  const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+                  const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+                  const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+                  return (
+                    <tr key={task.id} className="border-b border-zinc-100 hover:bg-zinc-50 transition">
+                      <td className="px-4 py-3">
+                        <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
+                          {task.title}
+                          {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp.id === 'david' ? 'bg-blue-100 text-blue-700' : resp.id === 'julian' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                          {resp.name}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
+                          {priorityConfig.emoji} {priorityConfig.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
+                          {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{task.createdAtFormatted || '-'}</td>
+                      <td className="px-4 py-3 flex gap-2">
+                        <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button>
+                        <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Versión Móvil (tarjetas) - visible solo en móvil */}
+        <div className="md:hidden space-y-3 p-3">
+          {tasks.length === 0 ? (
+            <div className="text-center py-10 text-zinc-400">No hay tareas. Crea la primera.</div>
+          ) : (
+            tasks.map(task => {
+              const resp = RESPONSIBLES.find(r => r.id === task.responsible) || RESPONSIBLES[0];
+              const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+              const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+              const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+              return (
+                <div key={task.id} className="bg-white border border-zinc-200 rounded-xl p-4 shadow-sm active:scale-[0.99] transition-all">
+                  {/* Título clickeable */}
+                  <button onClick={() => setSelectedTask(task)} className="w-full text-left">
+                    <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
+                    {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
+                  </button>
+                  
+                  {/* Grid de badges */}
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp.id === 'david' ? 'bg-blue-100 text-blue-700' : resp.id === 'julian' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                      👤 {resp.name}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
+                      {priorityConfig.emoji} {priorityConfig.label}
+                    </span>
+                    <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
+                      {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                    </select>
+                  </div>
+                  
+                  {/* Fechas */}
+                  <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black uppercase">📅 Límite</span>
+                      <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[9px] font-black uppercase">🕒 Creada</span>
+                      <span>{task.createdAtFormatted || '-'}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Botones de acción */}
+                  <div className="flex gap-3 mt-3 pt-2">
+                    <button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button>
+                    <button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️ Eliminar</button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
