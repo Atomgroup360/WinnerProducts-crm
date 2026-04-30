@@ -260,7 +260,7 @@ function LoginScreen({ setErrorExt }) {
   );
 }
 
-// ==================== COMPONENTE AGENDA (COMPLETO Y CORREGIDO) ====================
+// ==================== COMPONENTE AGENDA (CORREGIDO - COMENTARIOS FUNCIONALES) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -370,31 +370,60 @@ function AgendaModule() {
     });
   };
 
+  // Función para agregar comentario - CORREGIDA
   const addComment = async (taskId) => {
     const commentText = newComment[taskId]?.trim();
-    if (!commentText) return;
+    if (!commentText) {
+      return;
+    }
     
+    // Buscar la tarea actual
     const task = tasks.find(t => t.id === taskId);
-    const responsibleName = RESPONSIBLES.find(r => r.id === task?.responsible)?.name || 'Usuario';
-    const responsibleId = task?.responsible || 'david';
+    if (!task) return;
+    
+    // Obtener el nombre del responsable de la tarea
+    const responsibleName = RESPONSIBLES.find(r => r.id === task.responsible)?.name || 'Usuario';
+    const responsibleId = task.responsible;
+    const currentUserEmail = auth.currentUser?.email || 'Usuario';
     
     const comment = {
       id: Date.now().toString(),
       text: commentText,
       author: responsibleName,
       authorId: responsibleId,
-      createdAt: new Date().toLocaleString('es-CO'),
-      timestamp: serverTimestamp()
+      authorEmail: currentUserEmail,
+      createdAt: new Date().toLocaleString('es-CO', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      })
     };
     
-    const updatedComments = [...(task?.comments || []), comment];
+    const updatedComments = [...(task.comments || []), comment];
     
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
-      comments: updatedComments,
-      updatedAt: serverTimestamp()
-    });
-    
-    setNewComment({ ...newComment, [taskId]: '' });
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
+        comments: updatedComments,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Limpiar el campo de comentario para esta tarea específica
+      setNewComment(prev => ({ ...prev, [taskId]: '' }));
+      
+      // Mostrar confirmación visual (opcional)
+      const tempNotification = document.createElement('div');
+      tempNotification.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 animate-in fade-in slide-in-from-bottom-5';
+      tempNotification.textContent = '✓ Comentario agregado';
+      document.body.appendChild(tempNotification);
+      setTimeout(() => tempNotification.remove(), 2000);
+      
+    } catch (err) {
+      console.error("Error al agregar comentario:", err);
+      alert("Error al guardar el comentario");
+    }
   };
 
   const resetForm = () => {
@@ -417,7 +446,7 @@ function AgendaModule() {
   };
 
   const toggleComments = (taskId) => {
-    setExpandedComments({ ...expandedComments, [taskId]: !expandedComments[taskId] });
+    setExpandedComments(prev => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
   const filteredTasks = filterResponsible === 'all' 
@@ -488,6 +517,48 @@ function AgendaModule() {
                 <p className="text-[9px] font-black text-zinc-400 uppercase">Creada el</p>
                 <p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p>
               </div>
+              
+              {/* Sección de comentarios en el modal */}
+              <div className="bg-zinc-50 rounded-xl p-3">
+                <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
+                <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
+                  {selectedTask.comments && selectedTask.comments.length > 0 ? (
+                    selectedTask.comments.map(comment => {
+                      const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
+                      return (
+                        <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-100'} rounded-lg p-2`}>
+                          <div className="flex justify-between items-start mb-0.5">
+                            <span className={`text-[9px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
+                              👤 {comment.author}
+                            </span>
+                            <span className="text-[8px] text-zinc-400">{comment.createdAt}</span>
+                          </div>
+                          <p className="text-xs text-zinc-700">{comment.text}</p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newComment[selectedTask.id] || ''}
+                    onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))}
+                    placeholder="Escribe un comentario..."
+                    className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                    onKeyPress={(e) => e.key === 'Enter' && addComment(selectedTask.id)}
+                  />
+                  <button
+                    onClick={() => addComment(selectedTask.id)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
+                  >
+                    Enviar
+                  </button>
+                </div>
+              </div>
+              
               <div className="flex gap-3 pt-2">
                 <button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">✏️ Editar</button>
                 <button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 text-rose-600 py-3 rounded-xl font-bold text-sm">🗑️ Eliminar</button>
@@ -665,7 +736,7 @@ function AgendaModule() {
                               <input
                                 type="text"
                                 value={newComment[task.id] || ''}
-                                onChange={(e) => setNewComment({ ...newComment, [task.id]: e.target.value })}
+                                onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
                                 placeholder="Escribe un comentario..."
                                 className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
                                 onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
@@ -769,7 +840,7 @@ function AgendaModule() {
                                 <input
                                   type="text"
                                   value={newComment[task.id] || ''}
-                                  onChange={(e) => setNewComment({ ...newComment, [task.id]: e.target.value })}
+                                  onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
                                   placeholder="Escribe un comentario..."
                                   className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
                                   onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
@@ -868,7 +939,7 @@ function AgendaModule() {
                             <input
                               type="text"
                               value={newComment[task.id] || ''}
-                              onChange={(e) => setNewComment({ ...newComment, [task.id]: e.target.value })}
+                              onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
                               placeholder="Escribe un comentario..."
                               className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
                               onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
@@ -962,7 +1033,7 @@ function AgendaModule() {
                           <input
                             type="text"
                             value={newComment[task.id] || ''}
-                            onChange={(e) => setNewComment({ ...newComment, [task.id]: e.target.value })}
+                            onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
                             placeholder="Escribe un comentario..."
                             className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
                             onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
