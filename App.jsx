@@ -259,8 +259,7 @@ function LoginScreen({ setErrorExt }) {
     </div>
   );
 }
-
-// ==================== COMPONENTE AGENDA (CON SISTEMA DE APROBACIÓN) ====================
+// ==================== COMPONENTE AGENDA (CON PESTAÑAS) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -279,14 +278,24 @@ const PRIORITIES = {
   baja: { id: 'baja', label: 'Baja', emoji: '🟢', color: 'bg-green-100 text-green-700 border-green-300' }
 };
 
+// Pestañas de la agenda
+const AGENDA_TABS = [
+  { id: 'pending', label: 'Pendientes', emoji: '📋', color: 'bg-amber-500' },
+  { id: 'approved', label: 'Aprobadas', emoji: '✅', color: 'bg-emerald-500' },
+  { id: 'rejected', label: 'Rechazadas', emoji: '❌', color: 'bg-rose-500' }
+];
+
 function AgendaModule() {
   const [tasks, setTasks] = useState([]);
+  const [activeTab, setActiveTab] = useState('pending');
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [filterResponsible, setFilterResponsible] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [expandedComments, setExpandedComments] = useState({});
   const [newComment, setNewComment] = useState({});
+  const [sortBy, setSortBy] = useState('dueDate'); // 'dueDate', 'createdAt', 'priority'
   
   // Estado para el modal de aprobación
   const [approvalModal, setApprovalModal] = useState({
@@ -294,7 +303,7 @@ function AgendaModule() {
     taskId: null,
     justification: ''
   });
-  
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -377,10 +386,8 @@ function AgendaModule() {
     }
   };
 
-  // Función para cambiar estado con validación de aprobación
   const handleStatusChange = async (taskId, newStatus, taskDueDate) => {
     if (newStatus === 'approved') {
-      // Abrir modal de aprobación
       setApprovalModal({
         show: true,
         taskId: taskId,
@@ -388,7 +395,6 @@ function AgendaModule() {
         dueDate: taskDueDate
       });
     } else {
-      // Para otros estados, cambiar directamente
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
         status: newStatus,
         updatedAt: serverTimestamp()
@@ -396,7 +402,6 @@ function AgendaModule() {
     }
   };
 
-  // Función para confirmar aprobación con justificación
   const confirmApproval = async () => {
     const { taskId, justification, dueDate } = approvalModal;
     
@@ -416,7 +421,6 @@ function AgendaModule() {
       second: '2-digit'
     });
     
-    // Calcular días de retraso o tiempo a favor
     let delayInfo = null;
     if (dueDate) {
       const dueDateObj = new Date(dueDate);
@@ -460,10 +464,8 @@ function AgendaModule() {
         updatedAt: serverTimestamp()
       });
       
-      // Cerrar modal
       setApprovalModal({ show: false, taskId: null, justification: '' });
       
-      // Mostrar notificación
       const tempNotification = document.createElement('div');
       tempNotification.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 animate-in fade-in slide-in-from-bottom-5 ${delayInfo.status === 'retraso' ? 'bg-orange-600' : 'bg-green-600'}`;
       tempNotification.textContent = `✓ Tarea aprobada. ${delayInfo.message}`;
@@ -538,37 +540,45 @@ function AgendaModule() {
     setExpandedComments(prev => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
-  const filteredTasks = filterResponsible === 'all' 
-    ? tasks 
-    : tasks.filter(t => t.responsible === filterResponsible);
+  // Filtrar tareas por pestaña activa, responsable y búsqueda
+  const filteredTasks = tasks
+    .filter(t => t.status === activeTab)
+    .filter(t => filterResponsible === 'all' || t.responsible === filterResponsible)
+    .filter(t => t.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                 t.description?.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === 'dueDate') {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      }
+      if (sortBy === 'priority') {
+        const priorityOrder = { alta: 0, media: 1, baja: 2 };
+        return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+      }
+      // createdAt
+      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+    });
 
-  const getTaskCount = (responsibleId) => {
-    return tasks.filter(t => t.responsible === responsibleId).length;
+  const getTaskCount = (status) => {
+    return tasks.filter(t => t.status === status).length;
   };
 
-  const tasksByResponsible = RESPONSIBLES.map(resp => {
-    const userTasks = tasks.filter(t => t.responsible === resp.id);
-    const total = userTasks.length;
-    const approved = userTasks.filter(t => t.status === 'approved').length;
-    const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
-    return { ...resp, total, approved, percent };
-  });
+  const getTasksByResponsible = (status) => {
+    return RESPONSIBLES.map(resp => ({
+      ...resp,
+      total: tasks.filter(t => t.status === status && t.responsible === resp.id).length
+    }));
+  };
 
   const overallTotal = tasks.length;
   const overallApproved = tasks.filter(t => t.status === 'approved').length;
   const overallPercent = overallTotal === 0 ? 0 : Math.round((overallApproved / overallTotal) * 100);
 
-  const groupedTasks = filterResponsible === 'all' 
-    ? RESPONSIBLES.map(resp => ({
-        responsible: resp,
-        tasks: tasks.filter(t => t.responsible === resp.id)
-      })).filter(group => group.tasks.length > 0)
-    : null;
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* Modal de aprobación con justificación */}
+      {/* Modal de aprobación */}
       {approvalModal.show && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -586,18 +596,8 @@ function AgendaModule() {
               autoFocus
             />
             <div className="flex gap-3">
-              <button
-                onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}
-                className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmApproval}
-                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-700 transition"
-              >
-                Confirmar Aprobación
-              </button>
+              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
+              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-700 transition">Confirmar Aprobación</button>
             </div>
           </div>
         </div>
@@ -621,7 +621,6 @@ function AgendaModule() {
                 <div className="bg-zinc-50 rounded-xl p-4 text-center text-zinc-400 text-sm">Sin descripción</div>
               )}
               
-              {/* Información de aprobación si la tarea está aprobada */}
               {selectedTask.status === 'approved' && selectedTask.approvalJustification && (
                 <div className="bg-green-50 rounded-xl p-4 border border-green-200">
                   <p className="text-[10px] font-black text-green-700 uppercase mb-2 flex items-center gap-2">✅ Información de Aprobación</p>
@@ -657,7 +656,7 @@ function AgendaModule() {
                 <p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p>
               </div>
               
-              {/* Sección de comentarios */}
+              {/* Comentarios en modal */}
               <div className="bg-zinc-50 rounded-xl p-3">
                 <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
                 <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
@@ -667,9 +666,7 @@ function AgendaModule() {
                       return (
                         <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-100'} rounded-lg p-2`}>
                           <div className="flex justify-between items-start mb-0.5">
-                            <span className={`text-[9px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
-                              👤 {comment.author}
-                            </span>
+                            <span className={`text-[9px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span>
                             <span className="text-[8px] text-zinc-400">{comment.createdAt}</span>
                           </div>
                           <p className="text-xs text-zinc-700">{comment.text}</p>
@@ -681,20 +678,8 @@ function AgendaModule() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newComment[selectedTask.id] || ''}
-                    onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))}
-                    placeholder="Escribe un comentario..."
-                    className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                    onKeyPress={(e) => e.key === 'Enter' && addComment(selectedTask.id)}
-                  />
-                  <button
-                    onClick={() => addComment(selectedTask.id)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
-                  >
-                    Enviar
-                  </button>
+                  <input type="text" value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(selectedTask.id)} />
+                  <button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button>
                 </div>
               </div>
               
@@ -707,7 +692,7 @@ function AgendaModule() {
         </div>
       )}
 
-      {/* Tarjetas de indicadores */}
+      {/* Tarjetas de indicadores generales */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
           <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Tareas totales</p>
@@ -717,48 +702,71 @@ function AgendaModule() {
           </div>
           <p className="text-[10px] md:text-[11px] mt-1">{overallApproved} aprobadas ({overallPercent}%)</p>
         </div>
-        {tasksByResponsible.map(resp => (
+        {getTasksByResponsible('pending').map(resp => (
           <div key={resp.id} className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
-            <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">{resp.name}</p>
-            <p className="text-2xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.approved}/{resp.total}</p>
-            <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${resp.percent}%` }}></div>
-            </div>
-            <p className="text-[10px] md:text-[11px] mt-1">{resp.percent}% cumplimiento</p>
+            <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Pendientes {resp.name}</p>
+            <p className="text-3xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p>
           </div>
         ))}
       </div>
 
-      {/* Filtros por responsable */}
-      <div className="bg-white rounded-xl p-2 shadow-sm border border-zinc-200">
-        <div className="flex flex-wrap gap-2 justify-center">
-          <button
-            onClick={() => setFilterResponsible('all')}
-            className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-black text-[11px] md:text-xs uppercase tracking-wider transition-all active:scale-95 ${
-              filterResponsible === 'all'
-                ? 'bg-zinc-900 text-white shadow-md'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            📋 Todos ({overallTotal})
-          </button>
-          {RESPONSIBLES.map(resp => {
-            const count = getTaskCount(resp.id);
-            const colorClasses = {
-              blue: filterResponsible === resp.id ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
-              purple: filterResponsible === resp.id ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-700 hover:bg-purple-100',
-              green: filterResponsible === resp.id ? 'bg-green-600 text-white' : 'bg-green-50 text-green-700 hover:bg-green-100'
-            };
+      {/* Pestañas de la agenda */}
+      <div className="bg-white rounded-xl p-1 shadow-sm border border-zinc-200">
+        <div className="flex flex-wrap gap-1 justify-center">
+          {AGENDA_TABS.map(tab => {
+            const count = getTaskCount(tab.id);
             return (
               <button
-                key={resp.id}
-                onClick={() => setFilterResponsible(resp.id)}
-                className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-black text-[11px] md:text-xs uppercase tracking-wider transition-all active:scale-95 ${colorClasses[resp.color]}`}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 md:px-8 py-2.5 md:py-3 rounded-xl font-black text-[11px] md:text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center gap-2 ${
+                  activeTab === tab.id
+                    ? `${tab.color} text-white shadow-md`
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                }`}
               >
-                👤 {resp.name} ({count})
+                <span className="text-base">{tab.emoji}</span>
+                {tab.label}
+                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${activeTab === tab.id ? 'bg-white/20' : 'bg-zinc-200'}`}>
+                  {count}
+                </span>
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Filtros y búsqueda dentro de la pestaña activa */}
+      <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            placeholder="🔍 Buscar tarea..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white border-2 border-zinc-100 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 transition-all"
+          />
+        </div>
+        <div className="flex gap-2">
+          <select
+            value={filterResponsible}
+            onChange={(e) => setFilterResponsible(e.target.value)}
+            className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"
+          >
+            <option value="all">👥 Todos</option>
+            {RESPONSIBLES.map(r => (
+              <option key={r.id} value={r.id}>👤 {r.name}</option>
+            ))}
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"
+          >
+            <option value="dueDate">📅 Ordenar por fecha límite</option>
+            <option value="priority">⚠️ Ordenar por prioridad</option>
+            <option value="createdAt">🕒 Ordenar por fecha creación</option>
+          </select>
         </div>
       </div>
 
@@ -769,7 +777,7 @@ function AgendaModule() {
         </button>
       </div>
 
-      {/* Formulario modal */}
+      {/* Formulario modal (crear/editar) */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -801,82 +809,87 @@ function AgendaModule() {
       )}
 
       {/* Lista de tareas - Versión Desktop */}
-      <div className="hidden md:block">
-        {filterResponsible === 'all' && groupedTasks ? (
-          <div className="space-y-6">
-            {groupedTasks.map(group => (
-              <div key={group.responsible.id} className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-                <div className={`${group.responsible.bgLight} px-4 py-3 border-b ${group.responsible.borderColor}`}>
-                  <h3 className="font-black text-sm uppercase tracking-wider">
-                    📌 {group.responsible.name} ({group.tasks.length} tareas)
-                  </h3>
-                </div>
-                <div>
-                  {group.tasks.map(task => {
-                    const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                    const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                    const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                    const isCommentsOpen = expandedComments[task.id];
-                    const delayInfo = task.approvalDelayInfo;
-                    
-                    return (
-                      <div key={task.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 transition">
-                        <div className="px-4 py-3 grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-3">
-                            <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
-                              {task.title}
-                              {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
-                              {task.status === 'approved' && delayInfo && (
-                                <div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
-                                  {delayInfo.message}
-                                </div>
-                              )}
-                            </button>
-                          </div>
-                          <div className="col-span-2">
-                            <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
-                              {priorityConfig.emoji} {priorityConfig.label}
-                            </span>
-                          </div>
-                          <div className="col-span-2">
-                            <select 
-                              value={task.status} 
-                              onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
-                              className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
-                              disabled={task.status === 'approved'}
-                            >
-                              {Object.entries(TASK_STATUS).map(([k, v]) => (
-                                <option key={k} value={k} disabled={k === 'approved' && task.status === 'approved'}>
-                                  {v.emoji} {v.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="col-span-2 text-sm">
-                            {task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}
-                          </div>
-                          <div className="col-span-2 text-xs text-zinc-500">{task.createdAtFormatted || '-'}</div>
-                          <div className="col-span-1 flex gap-1">
-                            <button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800 transition p-1" title="Comentarios">
-                              💬 {task.comments?.length || 0}
-                            </button>
-                            <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button>
-                            <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button>
-                          </div>
-                        </div>
-                        {isCommentsOpen && (
-                          <div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100">
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-zinc-50 border-b border-zinc-200">
+              <tr>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th>
+                <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTasks.length === 0 ? (
+                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</td></tr>
+              ) : (
+                filteredTasks.map(task => {
+                  const resp = RESPONSIBLES.find(r => r.id === task.responsible);
+                  const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+                  const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+                  const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+                  const delayInfo = task.approvalDelayInfo;
+                  
+                  return (
+                    <React.Fragment key={task.id}>
+                      <tr className="border-b border-zinc-100 hover:bg-zinc-50 transition">
+                        <td className="px-4 py-3">
+                          <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
+                            {task.title}
+                            {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
+                            {task.status === 'approved' && delayInfo && (
+                              <div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                            {resp?.name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
+                            {priorityConfig.emoji} {priorityConfig.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <select 
+                            value={task.status} 
+                            onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
+                            className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
+                            disabled={task.status === 'approved'}
+                          >
+                            {Object.entries(TASK_STATUS).map(([k, v]) => (
+                              <option key={k} value={k}>{v.emoji} {v.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{task.createdAtFormatted || '-'}</td>
+                        <td className="px-4 py-3 flex gap-1">
+                          <button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800 transition p-1" title="Comentarios">💬 {task.comments?.length || 0}</button>
+                          <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button>
+                          <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button>
+                        </td>
+                      </tr>
+                      {expandedComments[task.id] && (
+                        <tr className="bg-zinc-50/80">
+                          <td colSpan="7" className="px-4 py-3">
                             <div className="space-y-3 max-h-64 overflow-y-auto">
-                              <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>
+                              <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Comentarios</p>
                               {task.comments && task.comments.length > 0 ? (
                                 task.comments.map(comment => {
                                   const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
                                   return (
                                     <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}>
                                       <div className="flex justify-between items-start mb-1">
-                                        <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
-                                          👤 {comment.author}
-                                        </span>
+                                        <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span>
                                         <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
                                       </div>
                                       <p className="text-xs text-zinc-700">{comment.text}</p>
@@ -888,369 +901,91 @@ function AgendaModule() {
                               )}
                             </div>
                             <div className="mt-3 flex gap-2">
-                              <input
-                                type="text"
-                                value={newComment[task.id] || ''}
-                                onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
-                                placeholder="Escribe un comentario..."
-                                className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                                onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
-                              />
-                              <button
-                                onClick={() => addComment(task.id)}
-                                className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
-                              >
-                                Enviar
-                              </button>
+                              <input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} />
+                              <button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-zinc-50 border-b border-zinc-200">
-                <tr>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTasks.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="text-center py-10 text-zinc-400">No hay tareas para este responsable.</td>
-                  </tr>
-                ) : (
-                  filteredTasks.map(task => {
-                    const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                    const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                    const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                    const isCommentsOpen = expandedComments[task.id];
-                    const delayInfo = task.approvalDelayInfo;
-                    
-                    return (
-                      <React.Fragment key={task.id}>
-                        <tr className="border-b border-zinc-100 hover:bg-zinc-50 transition">
-                          <td className="px-4 py-3">
-                            <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
-                              {task.title}
-                              {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
-                              {task.status === 'approved' && delayInfo && (
-                                <div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
-                                  {delayInfo.message}
-                                </div>
-                              )}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
-                              {priorityConfig.emoji} {priorityConfig.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <select 
-                              value={task.status} 
-                              onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
-                              className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
-                              disabled={task.status === 'approved'}
-                            >
-                              {Object.entries(TASK_STATUS).map(([k, v]) => (
-                                <option key={k} value={k} disabled={k === 'approved' && task.status === 'approved'}>
-                                  {v.emoji} {v.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{task.createdAtFormatted || '-'}</td>
-                          <td className="px-4 py-3 flex gap-1">
-                            <button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800 transition p-1" title="Comentarios">
-                              💬 {task.comments?.length || 0}
-                            </button>
-                            <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button>
-                            <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button>
-                          </td>
+                           </td>
                         </tr>
-                        {isCommentsOpen && (
-                          <tr className="bg-zinc-50/80">
-                            <td colSpan="6" className="px-4 py-3">
-                              <div className="space-y-3 max-h-64 overflow-y-auto">
-                                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Comentarios</p>
-                                {task.comments && task.comments.length > 0 ? (
-                                  task.comments.map(comment => {
-                                    const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
-                                    return (
-                                      <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}>
-                                        <div className="flex justify-between items-start mb-1">
-                                          <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
-                                            👤 {comment.author}
-                                          </span>
-                                          <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
-                                        </div>
-                                        <p className="text-xs text-zinc-700">{comment.text}</p>
-                                      </div>
-                                    );
-                                  })
-                                ) : (
-                                  <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
-                                )}
-                              </div>
-                              <div className="mt-3 flex gap-2">
-                                <input
-                                  type="text"
-                                  value={newComment[task.id] || ''}
-                                  onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
-                                  placeholder="Escribe un comentario..."
-                                  className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                                  onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
-                                />
-                                <button
-                                  onClick={() => addComment(task.id)}
-                                  className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
-                                >
-                                  Enviar
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Versión Móvil (tarjetas) */}
-      <div className="md:hidden space-y-4 p-3">
-        {filterResponsible === 'all' && groupedTasks ? (
-          groupedTasks.map(group => (
-            <div key={group.responsible.id} className="space-y-2">
-              <div className={`${group.responsible.bgLight} rounded-xl px-3 py-2`}>
-                <h3 className="font-black text-sm uppercase tracking-wider">📌 {group.responsible.name} ({group.tasks.length} tareas)</h3>
-              </div>
-              <div className="space-y-3">
-                {group.tasks.map(task => {
-                  const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                  const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                  const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                  const isCommentsOpen = expandedComments[task.id];
-                  const delayInfo = task.approvalDelayInfo;
-                  
-                  return (
-                    <div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
-                      <div className="p-4">
-                        <button onClick={() => setSelectedTask(task)} className="w-full text-left">
-                          <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
-                          {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
-                          {task.status === 'approved' && delayInfo && (
-                            <div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
-                              {delayInfo.message}
+      <div className="md:hidden space-y-3 p-3">
+        {filteredTasks.length === 0 ? (
+          <div className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</div>
+        ) : (
+          filteredTasks.map(task => {
+            const resp = RESPONSIBLES.find(r => r.id === task.responsible);
+            const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+            const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+            const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+            const isCommentsOpen = expandedComments[task.id];
+            const delayInfo = task.approvalDelayInfo;
+            
+            return (
+              <div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="p-4">
+                  <button onClick={() => setSelectedTask(task)} className="w-full text-left">
+                    <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
+                    {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
+                    {task.status === 'approved' && delayInfo && (
+                      <div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>
+                    )}
+                  </button>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>👤 {resp?.name}</span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span>
+                    <select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>
+                      {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
+                    <div className="flex flex-col"><span className="text-[9px] font-black uppercase">📅 Límite</span><span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span></div>
+                    <div className="flex flex-col items-end"><span className="text-[9px] font-black uppercase">🕒 Creada</span><span>{task.createdAtFormatted || '-'}</span></div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1">💬 {task.comments?.length || 0} Comentarios</button>
+                    <button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button>
+                    <button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️</button>
+                  </div>
+                </div>
+                {isCommentsOpen && (
+                  <div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100">
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>
+                      {task.comments && task.comments.length > 0 ? (
+                        task.comments.map(comment => {
+                          const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
+                          return (
+                            <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}>
+                              <div className="flex justify-between items-start mb-1">
+                                <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span>
+                                <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
+                              </div>
+                              <p className="text-xs text-zinc-700">{comment.text}</p>
                             </div>
-                          )}
-                        </button>
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
-                            {priorityConfig.emoji} {priorityConfig.label}
-                          </span>
-                          <select 
-                            value={task.status} 
-                            onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
-                            className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
-                            disabled={task.status === 'approved'}
-                          >
-                            {Object.entries(TASK_STATUS).map(([k, v]) => (
-                              <option key={k} value={k}>{v.emoji} {v.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] font-black uppercase">📅 Límite</span>
-                            <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span>
-                          </div>
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-black uppercase">🕒 Creada</span>
-                            <span>{task.createdAtFormatted || '-'}</span>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mt-3">
-                          <button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1">
-                            💬 {task.comments?.length || 0} Comentarios
-                          </button>
-                          <button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button>
-                          <button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️</button>
-                        </div>
-                      </div>
-                      {isCommentsOpen && (
-                        <div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100">
-                          <div className="space-y-3 max-h-64 overflow-y-auto">
-                            <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>
-                            {task.comments && task.comments.length > 0 ? (
-                              task.comments.map(comment => {
-                                const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
-                                return (
-                                  <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}>
-                                    <div className="flex justify-between items-start mb-1">
-                                      <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
-                                        👤 {comment.author}
-                                      </span>
-                                      <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
-                                    </div>
-                                    <p className="text-xs text-zinc-700">{comment.text}</p>
-                                  </div>
-                                );
-                              })
-                            ) : (
-                              <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
-                            )}
-                          </div>
-                          <div className="mt-3 flex gap-2">
-                            <input
-                              type="text"
-                              value={newComment[task.id] || ''}
-                              onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
-                              placeholder="Escribe un comentario..."
-                              className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                              onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
-                            />
-                            <button
-                              onClick={() => addComment(task.id)}
-                              className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
-                            >
-                              Enviar
-                            </button>
-                          </div>
-                        </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="space-y-3">
-            {filteredTasks.length === 0 ? (
-              <div className="text-center py-10 text-zinc-400">No hay tareas para este responsable.</div>
-            ) : (
-              filteredTasks.map(task => {
-                const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                const isCommentsOpen = expandedComments[task.id];
-                const resp = RESPONSIBLES.find(r => r.id === task.responsible);
-                const delayInfo = task.approvalDelayInfo;
-                
-                return (
-                  <div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="p-4">
-                      <button onClick={() => setSelectedTask(task)} className="w-full text-left">
-                        <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
-                        {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
-                        {task.status === 'approved' && delayInfo && (
-                          <div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
-                            {delayInfo.message}
-                          </div>
-                        )}
-                      </button>
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
-                          👤 {resp?.name}
-                        </span>
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
-                          {priorityConfig.emoji} {priorityConfig.label}
-                        </span>
-                        <select 
-                          value={task.status} 
-                          onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
-                          className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
-                          disabled={task.status === 'approved'}
-                        >
-                          {Object.entries(TASK_STATUS).map(([k, v]) => (
-                            <option key={k} value={k}>{v.emoji} {v.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
-                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black uppercase">📅 Límite</span>
-                          <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-[9px] font-black uppercase">🕒 Creada</span>
-                          <span>{task.createdAtFormatted || '-'}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1">
-                          💬 {task.comments?.length || 0} Comentarios
-                        </button>
-                        <button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button>
-                        <button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️</button>
-                      </div>
+                    <div className="mt-3 flex gap-2">
+                      <input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} />
+                      <button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button>
                     </div>
-                    {isCommentsOpen && (
-                      <div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100">
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                          <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>
-                          {task.comments && task.comments.length > 0 ? (
-                            task.comments.map(comment => {
-                              const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
-                              return (
-                                <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}>
-                                  <div className="flex justify-between items-start mb-1">
-                                    <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>
-                                      👤 {comment.author}
-                                    </span>
-                                    <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
-                                  </div>
-                                  <p className="text-xs text-zinc-700">{comment.text}</p>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
-                          )}
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                          <input
-                            type="text"
-                            value={newComment[task.id] || ''}
-                            onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))}
-                            placeholder="Escribe un comentario..."
-                            className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-                            onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)}
-                          />
-                          <button
-                            onClick={() => addComment(task.id)}
-                            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition"
-                          >
-                            Enviar
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                );
-              })
-            )}
-          </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
