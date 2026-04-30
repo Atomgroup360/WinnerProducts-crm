@@ -260,7 +260,7 @@ function LoginScreen({ setErrorExt }) {
   );
 }
 
-// ==================== COMPONENTE AGENDA (CORREGIDO - COMENTARIOS FUNCIONALES) ====================
+// ==================== COMPONENTE AGENDA (CON SISTEMA DE APROBACIÓN) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -287,6 +287,14 @@ function AgendaModule() {
   const [filterResponsible, setFilterResponsible] = useState('all');
   const [expandedComments, setExpandedComments] = useState({});
   const [newComment, setNewComment] = useState({});
+  
+  // Estado para el modal de aprobación
+  const [approvalModal, setApprovalModal] = useState({
+    show: false,
+    taskId: null,
+    justification: ''
+  });
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -308,11 +316,17 @@ function AgendaModule() {
           createdAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
         }
         let dueDateStr = data.dueDate?.toDate ? data.dueDate.toDate().toISOString().split('T')[0] : '';
+        let approvedAtFormatted = '';
+        if (data.approvedAt?.toDate) {
+          const d = data.approvedAt.toDate();
+          approvedAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+        }
         return {
           id: doc.id,
           ...data,
           createdAtFormatted,
           dueDate: dueDateStr,
+          approvedAtFormatted,
           comments: data.comments || []
         };
       });
@@ -363,35 +377,120 @@ function AgendaModule() {
     }
   };
 
-  const updateTaskStatus = async (id, newStatus) => {
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id), {
-      status: newStatus,
-      updatedAt: serverTimestamp()
-    });
+  // Función para cambiar estado con validación de aprobación
+  const handleStatusChange = async (taskId, newStatus, taskDueDate) => {
+    if (newStatus === 'approved') {
+      // Abrir modal de aprobación
+      setApprovalModal({
+        show: true,
+        taskId: taskId,
+        justification: '',
+        dueDate: taskDueDate
+      });
+    } else {
+      // Para otros estados, cambiar directamente
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+    }
   };
 
-  // Función para agregar comentario - CORREGIDA
-  const addComment = async (taskId) => {
-    const commentText = newComment[taskId]?.trim();
-    if (!commentText) {
+  // Función para confirmar aprobación con justificación
+  const confirmApproval = async () => {
+    const { taskId, justification, dueDate } = approvalModal;
+    
+    if (!justification.trim()) {
+      alert("Debes escribir una justificación para aprobar la tarea");
       return;
     }
     
-    // Buscar la tarea actual
+    const now = new Date();
+    const approvedAt = Timestamp.fromDate(now);
+    const approvedAtFormatted = now.toLocaleString('es-CO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    
+    // Calcular días de retraso o tiempo a favor
+    let delayInfo = null;
+    if (dueDate) {
+      const dueDateObj = new Date(dueDate);
+      const diffTime = now - dueDateObj;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) {
+        delayInfo = {
+          status: 'retraso',
+          days: diffDays,
+          message: `⚠️ Retraso de ${diffDays} día${diffDays !== 1 ? 's' : ''}`
+        };
+      } else if (diffDays < 0) {
+        delayInfo = {
+          status: 'adelanto',
+          days: Math.abs(diffDays),
+          message: `✅ Completado con ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? 's' : ''} de anticipación`
+        };
+      } else {
+        delayInfo = {
+          status: 'justo',
+          days: 0,
+          message: `🎯 Completado justo a tiempo`
+        };
+      }
+    } else {
+      delayInfo = {
+        status: 'sin_fecha',
+        days: 0,
+        message: `📅 Sin fecha límite definida`
+      };
+    }
+    
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
+        status: 'approved',
+        approvedAt: approvedAt,
+        approvedAtFormatted: approvedAtFormatted,
+        approvalJustification: justification.trim(),
+        approvalDelayInfo: delayInfo,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Cerrar modal
+      setApprovalModal({ show: false, taskId: null, justification: '' });
+      
+      // Mostrar notificación
+      const tempNotification = document.createElement('div');
+      tempNotification.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 animate-in fade-in slide-in-from-bottom-5 ${delayInfo.status === 'retraso' ? 'bg-orange-600' : 'bg-green-600'}`;
+      tempNotification.textContent = `✓ Tarea aprobada. ${delayInfo.message}`;
+      document.body.appendChild(tempNotification);
+      setTimeout(() => tempNotification.remove(), 4000);
+      
+    } catch (err) {
+      console.error("Error al aprobar tarea:", err);
+      alert("Error al guardar la aprobación");
+    }
+  };
+
+  const addComment = async (taskId) => {
+    const commentText = newComment[taskId]?.trim();
+    if (!commentText) return;
+    
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     
-    // Obtener el nombre del responsable de la tarea
     const responsibleName = RESPONSIBLES.find(r => r.id === task.responsible)?.name || 'Usuario';
     const responsibleId = task.responsible;
-    const currentUserEmail = auth.currentUser?.email || 'Usuario';
     
     const comment = {
       id: Date.now().toString(),
       text: commentText,
       author: responsibleName,
       authorId: responsibleId,
-      authorEmail: currentUserEmail,
       createdAt: new Date().toLocaleString('es-CO', {
         day: '2-digit',
         month: '2-digit',
@@ -409,17 +508,7 @@ function AgendaModule() {
         comments: updatedComments,
         updatedAt: serverTimestamp()
       });
-      
-      // Limpiar el campo de comentario para esta tarea específica
       setNewComment(prev => ({ ...prev, [taskId]: '' }));
-      
-      // Mostrar confirmación visual (opcional)
-      const tempNotification = document.createElement('div');
-      tempNotification.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 animate-in fade-in slide-in-from-bottom-5';
-      tempNotification.textContent = '✓ Comentario agregado';
-      document.body.appendChild(tempNotification);
-      setTimeout(() => tempNotification.remove(), 2000);
-      
     } catch (err) {
       console.error("Error al agregar comentario:", err);
       alert("Error al guardar el comentario");
@@ -478,9 +567,45 @@ function AgendaModule() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      
+      {/* Modal de aprobación con justificación */}
+      {approvalModal.show && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}>
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-black text-green-600">✅ Aprobar Tarea</h3>
+              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
+            </div>
+            <p className="text-sm text-zinc-600 mb-4">Para aprobar esta tarea, debes explicar las acciones realizadas:</p>
+            <textarea
+              value={approvalModal.justification}
+              onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))}
+              rows={4}
+              placeholder="Describe las acciones realizadas, resultados obtenidos, observaciones importantes..."
+              className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-green-400 mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}
+                className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmApproval}
+                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-700 transition"
+              >
+                Confirmar Aprobación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de detalle de tarea */}
       {selectedTask && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setSelectedTask(null)}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}>
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b border-zinc-100 p-4 flex justify-between items-center">
               <h3 className="font-black text-zinc-900 text-lg">{selectedTask.title}</h3>
@@ -495,6 +620,20 @@ function AgendaModule() {
               ) : (
                 <div className="bg-zinc-50 rounded-xl p-4 text-center text-zinc-400 text-sm">Sin descripción</div>
               )}
+              
+              {/* Información de aprobación si la tarea está aprobada */}
+              {selectedTask.status === 'approved' && selectedTask.approvalJustification && (
+                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                  <p className="text-[10px] font-black text-green-700 uppercase mb-2 flex items-center gap-2">✅ Información de Aprobación</p>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="font-bold text-green-700">📅 Aprobada el:</span> <span className="text-zinc-700">{selectedTask.approvedAtFormatted || '-'}</span></p>
+                    <p><span className="font-bold text-green-700">📊 Estado:</span> <span className={`font-bold ${selectedTask.approvalDelayInfo?.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{selectedTask.approvalDelayInfo?.message || '-'}</span></p>
+                    <p><span className="font-bold text-green-700">💬 Justificación:</span></p>
+                    <p className="text-zinc-700 bg-white/50 rounded-lg p-2 text-sm">{selectedTask.approvalJustification}</p>
+                  </div>
+                </div>
+              )}
+              
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="bg-zinc-50 rounded-xl p-3">
                   <p className="text-[9px] font-black text-zinc-400 uppercase">Responsable</p>
@@ -518,7 +657,7 @@ function AgendaModule() {
                 <p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p>
               </div>
               
-              {/* Sección de comentarios en el modal */}
+              {/* Sección de comentarios */}
               <div className="bg-zinc-50 rounded-xl p-3">
                 <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
                 <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
@@ -678,6 +817,8 @@ function AgendaModule() {
                     const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
                     const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
                     const isCommentsOpen = expandedComments[task.id];
+                    const delayInfo = task.approvalDelayInfo;
+                    
                     return (
                       <div key={task.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 transition">
                         <div className="px-4 py-3 grid grid-cols-12 gap-2 items-center">
@@ -685,6 +826,11 @@ function AgendaModule() {
                             <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
                               {task.title}
                               {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
+                              {task.status === 'approved' && delayInfo && (
+                                <div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
+                                  {delayInfo.message}
+                                </div>
+                              )}
                             </button>
                           </div>
                           <div className="col-span-2">
@@ -693,8 +839,17 @@ function AgendaModule() {
                             </span>
                           </div>
                           <div className="col-span-2">
-                            <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
-                              {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                            <select 
+                              value={task.status} 
+                              onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
+                              className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
+                              disabled={task.status === 'approved'}
+                            >
+                              {Object.entries(TASK_STATUS).map(([k, v]) => (
+                                <option key={k} value={k} disabled={k === 'approved' && task.status === 'approved'}>
+                                  {v.emoji} {v.label}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div className="col-span-2 text-sm">
@@ -781,6 +936,8 @@ function AgendaModule() {
                     const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
                     const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
                     const isCommentsOpen = expandedComments[task.id];
+                    const delayInfo = task.approvalDelayInfo;
+                    
                     return (
                       <React.Fragment key={task.id}>
                         <tr className="border-b border-zinc-100 hover:bg-zinc-50 transition">
@@ -788,6 +945,11 @@ function AgendaModule() {
                             <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">
                               {task.title}
                               {task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}
+                              {task.status === 'approved' && delayInfo && (
+                                <div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
+                                  {delayInfo.message}
+                                </div>
+                              )}
                             </button>
                           </td>
                           <td className="px-4 py-3">
@@ -796,8 +958,17 @@ function AgendaModule() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
-                              {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                            <select 
+                              value={task.status} 
+                              onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
+                              className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
+                              disabled={task.status === 'approved'}
+                            >
+                              {Object.entries(TASK_STATUS).map(([k, v]) => (
+                                <option key={k} value={k} disabled={k === 'approved' && task.status === 'approved'}>
+                                  {v.emoji} {v.label}
+                                </option>
+                              ))}
                             </select>
                           </td>
                           <td className="px-4 py-3 text-sm">
@@ -879,19 +1050,33 @@ function AgendaModule() {
                   const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
                   const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
                   const isCommentsOpen = expandedComments[task.id];
+                  const delayInfo = task.approvalDelayInfo;
+                  
                   return (
                     <div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
                       <div className="p-4">
                         <button onClick={() => setSelectedTask(task)} className="w-full text-left">
                           <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
                           {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
+                          {task.status === 'approved' && delayInfo && (
+                            <div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
+                              {delayInfo.message}
+                            </div>
+                          )}
                         </button>
                         <div className="flex flex-wrap gap-2 mb-3">
                           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
                             {priorityConfig.emoji} {priorityConfig.label}
                           </span>
-                          <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
-                            {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                          <select 
+                            value={task.status} 
+                            onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
+                            className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
+                            disabled={task.status === 'approved'}
+                          >
+                            {Object.entries(TASK_STATUS).map(([k, v]) => (
+                              <option key={k} value={k}>{v.emoji} {v.label}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
@@ -970,12 +1155,19 @@ function AgendaModule() {
                 const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
                 const isCommentsOpen = expandedComments[task.id];
                 const resp = RESPONSIBLES.find(r => r.id === task.responsible);
+                const delayInfo = task.approvalDelayInfo;
+                
                 return (
                   <div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
                     <div className="p-4">
                       <button onClick={() => setSelectedTask(task)} className="w-full text-left">
                         <h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>
                         {task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}
+                        {task.status === 'approved' && delayInfo && (
+                          <div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>
+                            {delayInfo.message}
+                          </div>
+                        )}
                       </button>
                       <div className="flex flex-wrap gap-2 mb-3">
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
@@ -984,8 +1176,15 @@ function AgendaModule() {
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
                           {priorityConfig.emoji} {priorityConfig.label}
                         </span>
-                        <select value={task.status} onChange={(e) => updateTaskStatus(task.id, e.target.value)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}>
-                          {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                        <select 
+                          value={task.status} 
+                          onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
+                          className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
+                          disabled={task.status === 'approved'}
+                        >
+                          {Object.entries(TASK_STATUS).map(([k, v]) => (
+                            <option key={k} value={k}>{v.emoji} {v.label}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100">
