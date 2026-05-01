@@ -1577,7 +1577,7 @@ Reporte generado por WinnerProduct OS
                           )}
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                         {!isWinner && p.status === 'approved' && (
+                        {!isWinner && p.status === 'approved' && (
   <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
     <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
     
@@ -1607,122 +1607,113 @@ Reporte generado por WinnerProduct OS
       </div>
     </div>
 
-    {/* === CÁLCULOS DE SALDO PENDIENTE (SOLO COMPRA EN CHINA) === */}
-    {(() => {
-      // Calcular valor de compra en China (costo productos + flete Yiwu)
-      // Esto es lo que se paga al proveedor chino
-      const valorProductosUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-      const valorTotalCompraUSD = valorProductosUSD + (p.yiwuFreightUSD || 0);
+    {/* Cálculos de Saldo Pendiente con Proveedor Chino */}
+    <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-200">
+      <h4 className="text-[11px] font-black text-indigo-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+        🇨🇳 Saldo Pendiente con Proveedor Chino
+      </h4>
       
-      // Compra China en COP incluyendo el 3% de gestión
-      const valorCompraChinaCOP = valorTotalCompraUSD * (p.dollarRate || 0) * 1.03;
-      
-      // Anticipo registrado (en COP)
-      const anticipoCOP = p.advancePayment?.amount || 0;
-      
-      // Saldo pendiente en COP (solo lo que falta pagar al proveedor chino)
-      const saldoPendienteCOP = valorCompraChinaCOP - anticipoCOP;
-      
-      // Saldo pendiente en USD
-      const saldoPendienteUSD = saldoPendienteCOP / (p.dollarRate || 1);
-      
-      // Porcentaje pagado
-      const porcentajePagado = valorCompraChinaCOP > 0 ? (anticipoCOP / valorCompraChinaCOP) * 100 : 0;
-      
-      return (
-        <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-200">
-          <h4 className="text-[11px] font-black text-indigo-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-            🇨🇳 Saldo Pendiente con Proveedor Chino
-          </h4>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Columna izquierda - Desglose compra China */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">💰 Productos (USD):</span>
-                <span className="font-mono font-bold">{(p.prodCostUSD || 0).toFixed(2)} USD × {(p.unitsQty || 0)} und</span>
+      {(() => {
+        // Calcular valor de compra en China (costo productos + flete Yiwu)
+        const valorProductosUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
+        const valorTotalCompraUSD = valorProductosUSD + (p.yiwuFreightUSD || 0);
+        const valorCompraChinaCOP = valorTotalCompraUSD * (p.dollarRate || 0) * 1.03;
+        const anticipoCOP = p.advancePayment?.amount || 0;
+        const saldoPendienteCOP = valorCompraChinaCOP - anticipoCOP;
+        const saldoPendienteUSD = saldoPendienteCOP / (p.dollarRate || 1);
+        const porcentajePagado = valorCompraChinaCOP > 0 ? (anticipoCOP / valorCompraChinaCOP) * 100 : 0;
+        
+        return (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Columna izquierda - Desglose compra China */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
+                  <span className="text-zinc-600">💰 Productos (USD):</span>
+                  <span className="font-mono font-bold">{(p.prodCostUSD || 0).toFixed(2)} USD × {(p.unitsQty || 0)} und</span>
+                </div>
+                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
+                  <span className="text-zinc-600">🚢 Flete Yiwu (USD):</span>
+                  <span className="font-mono font-bold">{(p.yiwuFreightUSD || 0).toFixed(2)} USD</span>
+                </div>
+                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
+                  <span className="text-zinc-600">💱 TRM:</span>
+                  <span className="font-mono font-bold">${(p.dollarRate || 0).toLocaleString('es-CO')} COP</span>
+                </div>
+                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
+                  <span className="text-zinc-600">📦 Total Compra China (1.03x):</span>
+                  <span className="font-mono font-bold text-indigo-700">{formatCurrency(valorCompraChinaCOP)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-bold pt-1">
+                  <span className="text-zinc-800">💵 VALOR A PAGAR:</span>
+                  <span className="font-mono font-bold text-indigo-800">{formatCurrency(valorCompraChinaCOP)}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">🚢 Flete Yiwu (USD):</span>
-                <span className="font-mono font-bold">{(p.yiwuFreightUSD || 0).toFixed(2)} USD</span>
-              </div>
-              <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">💱 TRM:</span>
-                <span className="font-mono font-bold">${(p.dollarRate || 0).toLocaleString('es-CO')} COP</span>
-              </div>
-              <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">📦 Total Compra China (1.03x):</span>
-                <span className="font-mono font-bold text-indigo-700">{formatCurrency(valorCompraChinaCOP)}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm font-bold pt-1">
-                <span className="text-zinc-800">💵 VALOR A PAGAR:</span>
-                <span className="font-mono font-bold text-indigo-800">{formatCurrency(valorCompraChinaCOP)}</span>
+              
+              {/* Columna derecha - Pagos y saldo */}
+              <div className="bg-white rounded-xl p-3 space-y-2 shadow-inner">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase">💰 Anticipo registrado:</span>
+                  <span className="font-mono font-bold text-emerald-600">{formatCurrency(anticipoCOP)}</span>
+                </div>
+                
+                {/* Barra de progreso de pago */}
+                <div className="mt-2">
+                  <div className="flex justify-between text-[9px] text-zinc-500 mb-1">
+                    <span>Progreso de pago</span>
+                    <span>{porcentajePagado.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${Math.min(porcentajePagado, 100)}%` }}></div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center border-t border-zinc-200 pt-2 mt-2">
+                  <span className="text-sm font-black text-amber-700 uppercase">🔴 SALDO PENDIENTE:</span>
+                  <span className={`font-mono font-bold text-lg ${saldoPendienteCOP > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {formatCurrency(saldoPendienteCOP)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black text-zinc-500 uppercase">💵 Saldo en USD:</span>
+                  <span className={`font-mono font-bold ${saldoPendienteUSD > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    ${saldoPendienteUSD.toFixed(2)} USD
+                  </span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-indigo-100">
+                  <div className="flex justify-between items-center text-[9px] text-zinc-400">
+                    <span>📊 Fórmula:</span>
+                    <span>Saldo = (Productos + Flete Yiwu) × TRM × 1.03 - Anticipo</span>
+                  </div>
+                  <div className="text-[9px] text-zinc-400 text-center mt-1">
+                    Nota: La logística (CBM) se paga en Colombia y no afecta este saldo
+                  </div>
+                </div>
               </div>
             </div>
             
-            {/* Columna derecha - Pagos y saldo */}
-            <div className="bg-white rounded-xl p-3 space-y-2 shadow-inner">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black text-zinc-500 uppercase">💰 Anticipo registrado:</span>
-                <span className="font-mono font-bold text-emerald-600">{formatCurrency(anticipoCOP)}</span>
+            {/* Alertas de estado del pago */}
+            {saldoPendienteCOP < 0 && (
+              <div className="mt-3 bg-emerald-100 rounded-lg p-2 text-center">
+                <p className="text-[10px] font-bold text-emerald-700">✓ Anticipo supera el valor de compra. Saldo a favor de {formatCurrency(Math.abs(saldoPendienteCOP))}</p>
               </div>
-              
-              {/* Barra de progreso de pago */}
-              <div className="mt-2">
-                <div className="flex justify-between text-[9px] text-zinc-500 mb-1">
-                  <span>Progreso de pago</span>
-                  <span>{porcentajePagado.toFixed(1)}%</span>
-                </div>
-                <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${Math.min(porcentajePagado, 100)}%` }}></div>
-                </div>
+            )}
+            {saldoPendienteCOP > 0 && (
+              <div className="mt-3 bg-amber-100 rounded-lg p-2 text-center">
+                <p className="text-[10px] font-bold text-amber-700">⚠️ Pendiente de pago al proveedor: {formatCurrency(saldoPendienteCOP)}</p>
               </div>
-              
-              <div className="flex justify-between items-center border-t border-zinc-200 pt-2 mt-2">
-                <span className="text-sm font-black text-amber-700 uppercase">🔴 SALDO PENDIENTE:</span>
-                <span className={`font-mono font-bold text-lg ${saldoPendienteCOP > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  {formatCurrency(saldoPendienteCOP)}
-                </span>
+            )}
+            {saldoPendienteCOP === 0 && valorCompraChinaCOP > 0 && (
+              <div className="mt-3 bg-green-100 rounded-lg p-2 text-center">
+                <p className="text-[10px] font-bold text-green-700">✓ Compra pagada en su totalidad</p>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black text-zinc-500 uppercase">💵 Saldo en USD:</span>
-                <span className={`font-mono font-bold ${saldoPendienteUSD > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  ${saldoPendienteUSD.toFixed(2)} USD
-                </span>
-              </div>
-              <div className="mt-2 pt-2 border-t border-indigo-100">
-                <div className="flex justify-between items-center text-[9px] text-zinc-400">
-                  <span>📊 Fórmula:</span>
-                  <span>Saldo = (Productos + Flete Yiwu) × TRM × 1.03 - Anticipo</span>
-                </div>
-                <div className="text-[9px] text-zinc-400 text-center mt-1">
-                  Nota: La logística (CBM) se paga en Colombia y no afecta este saldo
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Alerta de estado del pago */}
-          {saldoPendienteCOP < 0 && (
-            <div className="mt-3 bg-emerald-100 rounded-lg p-2 text-center">
-              <p className="text-[10px] font-bold text-emerald-700">✓ Anticipo supera el valor de compra. Saldo a favor de {formatCurrency(Math.abs(saldoPendienteCOP))}</p>
-            </div>
-          )}
-          {saldoPendienteCOP > 0 && (
-            <div className="mt-3 bg-amber-100 rounded-lg p-2 text-center">
-              <p className="text-[10px] font-bold text-amber-700">⚠️ Pendiente de pago al proveedor: {formatCurrency(saldoPendienteCOP)}</p>
-            </div>
-          )}
-          {saldoPendienteCOP === 0 && valorCompraChinaCOP > 0 && (
-            <div className="mt-3 bg-green-100 rounded-lg p-2 text-center">
-              <p className="text-[10px] font-bold text-green-700">✓ Compra pagada en su totalidad</p>
-            </div>
-          )}
-        </div>
-      );
-    })()}
+            )}
+          </>
+        );
+      })()}
+    </div>
 
-    {/* Variables (color, talla, etc.) - Mismo código que antes */}
+    {/* Variables (color, talla, etc.) */}
     <div>
       <label className="block text-[10px] font-black text-zinc-500 mb-2">🎨 Variables (color, talla, etc.)</label>
       <div className="space-y-2">
