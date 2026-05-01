@@ -1577,7 +1577,7 @@ Reporte generado por WinnerProduct OS
                           )}
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                     {!isWinner && p.status === 'approved' && (
+                       {!isWinner && p.status === 'approved' && (
                           <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
                             <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1604,7 +1604,8 @@ Reporte generado por WinnerProduct OS
                                 <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                               </div>
                             </div>
-                            {/* Cálculos de saldo pendiente */}
+                            
+                            {/* CÁLCULO DE SALDO PENDIENTE CON ANTICIPO + PAGO TOTAL */}
                             <div className="bg-indigo-50 rounded-xl p-3">
                               <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
                               {(() => {
@@ -1614,29 +1615,40 @@ Reporte generado por WinnerProduct OS
                                 const trm = p.dollarRate || 0;
                                 const valorCOP = totalUSD * trm * 1.03;
                                 const anticipo = p.advancePayment?.amount || 0;
-                                const saldoCOP = valorCOP - anticipo;
+                                const pagoTotal = p.totalPayment?.amount || 0;
+                                const totalPagado = anticipo + pagoTotal;
+                                const saldoCOP = valorCOP - totalPagado;
                                 const saldoUSD = saldoCOP / (trm || 1);
+                                const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
                                 return (
                                   <div>
                                     <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                                       <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-                                      <div>🚢 Flete: {flete.toFixed(2)} USD</div>
+                                      <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
                                       <div>💱 TRM: {trm.toLocaleString()} COP</div>
                                       <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
                                     </div>
                                     <div className="mt-2 bg-white rounded-lg p-2">
                                       <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-                                      <div className="flex justify-between font-bold mt-1"><span className="text-amber-700">🔴 SALDO PENDIENTE:</span><span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span></div>
+                                      <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
+                                      <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
+                                      <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
+                                      </div>
+                                      <div className="flex justify-between font-bold mt-2">
+                                        <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
+                                        <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
+                                      </div>
                                       <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
                                       {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Anticipo superior, saldo a favor</div>}
+                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
                                       {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
                                     </div>
                                   </div>
                                 );
                               })()}
                             </div>
-                            {/* Variables */}
+
                             <div>
                               <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
                               <div className="space-y-2">
@@ -1648,7 +1660,7 @@ Reporte generado por WinnerProduct OS
                                 ))}
                               </div>
                             </div>
-                            {/* Estado de importación */}
+
                             <div>
                               <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
                               <div className="flex flex-wrap gap-2">
