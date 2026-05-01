@@ -259,7 +259,7 @@ function LoginScreen({ setErrorExt }) {
     </div>
   );
 }
-// ==================== COMPONENTE AGENDA (CON PESTAÑAS) ====================
+// ==================== COMPONENTE AGENDA (CON CUMPLIMIENTO MEJORADO) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -295,9 +295,8 @@ function AgendaModule() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedComments, setExpandedComments] = useState({});
   const [newComment, setNewComment] = useState({});
-  const [sortBy, setSortBy] = useState('dueDate'); // 'dueDate', 'createdAt', 'priority'
+  const [sortBy, setSortBy] = useState('dueDate');
   
-  // Estado para el modal de aprobación
   const [approvalModal, setApprovalModal] = useState({
     show: false,
     taskId: null,
@@ -556,7 +555,6 @@ function AgendaModule() {
         const priorityOrder = { alta: 0, media: 1, baja: 2 };
         return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
       }
-      // createdAt
       return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
     });
 
@@ -564,16 +562,43 @@ function AgendaModule() {
     return tasks.filter(t => t.status === status).length;
   };
 
-  const getTasksByResponsible = (status) => {
-    return RESPONSIBLES.map(resp => ({
-      ...resp,
-      total: tasks.filter(t => t.status === status && t.responsible === resp.id).length
-    }));
+  // Calcular cumplimiento por responsable
+  const getComplianceByResponsible = () => {
+    return RESPONSIBLES.map(resp => {
+      const userTasks = tasks.filter(t => t.responsible === resp.id);
+      const total = userTasks.length;
+      const approved = userTasks.filter(t => t.status === 'approved').length;
+      const rejected = userTasks.filter(t => t.status === 'rejected').length;
+      const pending = total - approved - rejected;
+      const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
+      
+      // Determinar color de la barra según porcentaje
+      let barColor = 'bg-emerald-500';
+      if (percent < 30) barColor = 'bg-rose-500';
+      else if (percent < 70) barColor = 'bg-amber-500';
+      
+      return {
+        ...resp,
+        total,
+        approved,
+        rejected,
+        pending,
+        percent,
+        barColor
+      };
+    });
   };
 
+  const complianceData = getComplianceByResponsible();
   const overallTotal = tasks.length;
   const overallApproved = tasks.filter(t => t.status === 'approved').length;
   const overallPercent = overallTotal === 0 ? 0 : Math.round((overallApproved / overallTotal) * 100);
+
+  // Calcular tareas pendientes por responsable
+  const pendingByResponsible = RESPONSIBLES.map(resp => ({
+    ...resp,
+    total: tasks.filter(t => t.status === 'pending' && t.responsible === resp.id).length
+  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -603,7 +628,7 @@ function AgendaModule() {
         </div>
       )}
 
-      {/* Modal de detalle de tarea */}
+      {/* Modal de detalle de tarea (igual que antes) */}
       {selectedTask && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}>
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -656,7 +681,6 @@ function AgendaModule() {
                 <p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p>
               </div>
               
-              {/* Comentarios en modal */}
               <div className="bg-zinc-50 rounded-xl p-3">
                 <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
                 <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
@@ -692,18 +716,71 @@ function AgendaModule() {
         </div>
       )}
 
-      {/* Tarjetas de indicadores generales */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
-          <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Tareas totales</p>
-          <p className="text-3xl md:text-4xl font-black">{overallTotal}</p>
-          <div className="mt-2 h-2 bg-zinc-100 rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${overallPercent}%` }}></div>
+      {/* ========== PANEL DE CUMPLIMIENTO MEJORADO ========== */}
+      <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-zinc-200">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm md:text-base font-black text-zinc-800 uppercase tracking-wider">
+            📊 Cumplimiento por Responsable
+          </h3>
+          <div className="text-[10px] md:text-xs font-bold text-zinc-400">
+            Total: {overallApproved}/{overallTotal} ({overallPercent}%)
           </div>
-          <p className="text-[10px] md:text-[11px] mt-1">{overallApproved} aprobadas ({overallPercent}%)</p>
         </div>
-        {getTasksByResponsible('pending').map(resp => (
-          <div key={resp.id} className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border text-center">
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {complianceData.map(resp => (
+            <div key={resp.id} className={`${resp.bgLight} rounded-xl p-4 transition-all hover:shadow-md`}>
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div>
+                    <h4 className="font-black text-zinc-800">{resp.name}</h4>
+                  </div>
+                  <p className="text-2xl md:text-3xl font-black mt-1" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>
+                    {resp.percent}%
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-zinc-400 uppercase">Tareas</p>
+                  <p className="text-sm font-bold">{resp.approved}/{resp.total}</p>
+                </div>
+              </div>
+              
+              {/* Barra de progreso */}
+              <div className="h-2 bg-white rounded-full overflow-hidden mb-3">
+                <div 
+                  className={`h-full ${resp.barColor} rounded-full transition-all duration-500`} 
+                  style={{ width: `${resp.percent}%` }}
+                ></div>
+              </div>
+              
+              {/* Estadísticas detalladas */}
+              <div className="flex justify-between text-[10px] font-bold">
+                <div className="text-center flex-1">
+                  <div className="text-emerald-600">✅</div>
+                  <div className="text-zinc-500">{resp.approved}</div>
+                  <div className="text-zinc-400">Aprobadas</div>
+                </div>
+                <div className="text-center flex-1">
+                  <div className="text-amber-600">⏳</div>
+                  <div className="text-zinc-500">{resp.pending}</div>
+                  <div className="text-zinc-400">Pendientes</div>
+                </div>
+                <div className="text-center flex-1">
+                  <div className="text-rose-600">❌</div>
+                  <div className="text-zinc-500">{resp.rejected}</div>
+                  <div className="text-zinc-400">Rechazadas</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tarjetas de tareas pendientes por responsable */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {pendingByResponsible.map(resp => (
+          <div key={resp.id} className="bg-white rounded-2xl p-4 shadow-sm border text-center">
             <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Pendientes {resp.name}</p>
             <p className="text-3xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p>
           </div>
@@ -736,33 +813,17 @@ function AgendaModule() {
         </div>
       </div>
 
-      {/* Filtros y búsqueda dentro de la pestaña activa */}
+      {/* Filtros y búsqueda */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="flex-1 relative">
-          <input
-            type="text"
-            placeholder="🔍 Buscar tarea..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-white border-2 border-zinc-100 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 transition-all"
-          />
+          <input type="text" placeholder="🔍 Buscar tarea..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-white border-2 border-zinc-100 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 transition-all" />
         </div>
         <div className="flex gap-2">
-          <select
-            value={filterResponsible}
-            onChange={(e) => setFilterResponsible(e.target.value)}
-            className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"
-          >
+          <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer">
             <option value="all">👥 Todos</option>
-            {RESPONSIBLES.map(r => (
-              <option key={r.id} value={r.id}>👤 {r.name}</option>
-            ))}
+            {RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}
           </select>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"
-          >
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer">
             <option value="dueDate">📅 Ordenar por fecha límite</option>
             <option value="priority">⚠️ Ordenar por prioridad</option>
             <option value="createdAt">🕒 Ordenar por fecha creación</option>
@@ -825,7 +886,7 @@ function AgendaModule() {
             </thead>
             <tbody>
               {filteredTasks.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</td></tr>
+                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</span></td></tr>
               ) : (
                 filteredTasks.map(task => {
                   const resp = RESPONSIBLES.find(r => r.id === task.responsible);
@@ -857,15 +918,8 @@ function AgendaModule() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <select 
-                            value={task.status} 
-                            onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)}
-                            className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`}
-                            disabled={task.status === 'approved'}
-                          >
-                            {Object.entries(TASK_STATUS).map(([k, v]) => (
-                              <option key={k} value={k}>{v.emoji} {v.label}</option>
-                            ))}
+                          <select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>
+                            {Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
                           </select>
                         </td>
                         <td className="px-4 py-3 text-sm">
