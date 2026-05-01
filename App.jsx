@@ -1577,183 +1577,46 @@ Reporte generado por WinnerProduct OS
                           )}
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                       {/* 1. Validación principal segura */}
-{!isWinner && p?.status === 'approved' && (
-  <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
-    <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">
-      📋 Gestión de Compra
-    </h3>
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-        <input 
-          type="date" 
-          value={p.purchaseDate || ''} 
-          onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} 
-          className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-        <div className="flex gap-2">
-          <input 
-            type="number" 
-            value={p.advancePayment?.amount || ''} 
-            onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} 
-            className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-            placeholder="Monto" 
-          />
-          <input 
-            type="date" 
-            value={p.advancePayment?.date || ''} 
-            onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} 
-            className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-        <div className="flex gap-2">
-          <input 
-            type="number" 
-            value={p.totalPayment?.amount || ''} 
-            onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} 
-            className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-            placeholder="Monto" 
-          />
-          <input 
-            type="date" 
-            value={p.totalPayment?.date || ''} 
-            onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} 
-            className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-        <input 
-          type="number" 
-          value={p.actualQuantity || ''} 
-          onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} 
-          className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-        />
-      </div>
+                     {!isWinner && p.status === 'approved' && 
+  <div className="bg-white/50 rounded-2xl p-4 space-y-4 border border-emerald-200">
+    <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <input type="date" value={p.purchaseDate||''} onChange={(e)=>updateDocField(p.id,'purchaseDate',e.target.value)} className="border rounded-xl p-2 text-sm"/>
+      <div className="flex gap-2"><input type="number" value={p.advancePayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'advancePayment','amount',parseFloat(e.target.value)||0)} placeholder="Anticipo" className="w-1/2 border rounded-xl p-2 text-sm"/><input type="date" value={p.advancePayment?.date||''} onChange={(e)=>updateNestedField(p.id,'advancePayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/></div>
+      <div className="flex gap-2"><input type="number" value={p.totalPayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'totalPayment','amount',parseFloat(e.target.value)||0)} placeholder="Pago Total" className="w-1/2 border rounded-xl p-2 text-sm"/><input type="date" value={p.totalPayment?.date||''} onChange={(e)=>updateNestedField(p.id,'totalPayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/></div>
+      <input type="number" value={p.actualQuantity||0} onChange={(e)=>updateDocField(p.id,'actualQuantity',parseFloat(e.target.value)||0)} placeholder="Cantidad real" className="border rounded-xl p-2 text-sm"/>
     </div>
-
-    {/* 2. Sección de Cálculos con IIFE corregida */}
-    <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-200">
-      <h4 className="text-[11px] font-black text-indigo-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-        🇨🇳 Saldo Pendiente con Proveedor Chino
-      </h4>
-      
+    {/* Cálculos de saldo pendiente */}
+    <div className="bg-indigo-50 rounded-xl p-3">
+      <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
       {(() => {
-        const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-        const flete = p.yiwuFreightUSD || 0;
+        const prodUSD = (p.prodCostUSD||0)*(p.unitsQty||0);
+        const flete = p.yiwuFreightUSD||0;
         const totalUSD = prodUSD + flete;
-        const trm = p.dollarRate || 1; // Evitar división por cero
+        const trm = p.dollarRate||0;
         const valorCOP = totalUSD * trm * 1.03;
-        const anticipo = p.advancePayment?.amount || 0;
+        const anticipo = p.advancePayment?.amount||0;
         const saldoCOP = valorCOP - anticipo;
-        const saldoUSD = saldoCOP / trm;
-        const porcentajePagado = valorCOP > 0 ? (anticipo / valorCOP) * 100 : 0;
-        
+        const saldoUSD = saldoCOP / (trm||1);
         return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">💰 Productos (USD):</span>
-                <span className="font-mono font-bold">{prodUSD.toFixed(2)} USD</span>
-              </div>
-              <div className="flex justify-between border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">🚢 Flete Yiwu (USD):</span>
-                <span className="font-mono font-bold">{flete.toFixed(2)} USD</span>
-              </div>
-              <div className="flex justify-between border-b border-indigo-100 pb-1">
-                <span className="text-zinc-600">💱 TRM:</span>
-                <span className="font-mono font-bold">{trm.toLocaleString('es-CO')} COP</span>
-              </div>
-              <div className="flex justify-between font-bold pt-1 text-indigo-800">
-                <span>💵 TOTAL A PAGAR:</span>
-                <span className="font-mono">{typeof formatCurrency === 'function' ? formatCurrency(valorCOP) : valorCOP.toLocaleString()}</span>
-              </div>
+          <div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>💰 Productos: {prodUSD.toFixed(2)} USD</div><div>🚢 Flete: {flete.toFixed(2)} USD</div>
+              <div>💱 TRM: {trm.toLocaleString()} COP</div><div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
             </div>
-            
-            <div className="bg-white rounded-xl p-3 shadow-inner">
-              <div className="flex justify-between text-[10px] font-black text-zinc-500 uppercase mb-2">
-                <span>Anticipo:</span>
-                <span className="text-emerald-600 font-mono">
-                  {typeof formatCurrency === 'function' ? formatCurrency(anticipo) : anticipo}
-                </span>
-              </div>
-              
-              <div className="h-2 bg-zinc-100 rounded-full overflow-hidden mb-3">
-                <div 
-                  className="h-full bg-indigo-500 transition-all duration-500" 
-                  style={{ width: `${Math.min(porcentajePagado, 100)}%` }}
-                ></div>
-              </div>
-              
-              <div className="border-t pt-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-amber-700">SALDO PENDIENTE:</span>
-                  <span className={`font-mono font-bold ${saldoCOP > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {typeof formatCurrency === 'function' ? formatCurrency(saldoCOP) : saldoCOP}
-                  </span>
-                </div>
-                <div className="text-[10px] text-right text-zinc-400">
-                  ≈ ${saldoUSD.toFixed(2)} USD
-                </div>
-              </div>
+            <div className="mt-2 bg-white rounded-lg p-2">
+              <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
+              <div className="flex justify-between font-bold mt-1"><span className="text-amber-700">🔴 SALDO PENDIENTE:</span><span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span></div>
+              <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
+              {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
+              {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Anticipo superior, saldo a favor</div>}
+              {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
             </div>
           </div>
         );
       })()}
     </div>
-
-    {/* 3. Variables con fallback seguro */}
-    <div>
-      <label className="block text-[10px] font-black text-zinc-500 mb-2">🎨 Variables (color, talla, etc.)</label>
-      <div className="space-y-2">
-        {(p.variables || []).map((v, idx) => (
-          <div key={v.id || idx} className="flex gap-2 items-center">
-            <input 
-              type="text" 
-              value={v.name || ''} 
-              onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} 
-              className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-              placeholder="Variable" 
-            />
-            <input 
-              type="number" 
-              value={v.qty || 0} 
-              onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} 
-              className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" 
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-
-    {/* 4. Estados de Importación */}
-    <div>
-      <label className="block text-[10px] font-black text-zinc-500 mb-2">🚢 Estado de Importación</label>
-      <div className="flex flex-wrap gap-2">
-        {Object.values(IMPORT_STATES_LIST || {}).map(state => (
-          <button 
-            key={state.id} 
-            type="button"
-            onClick={() => updateDocField(p.id, 'importStatus', state.id)} 
-            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all 
-              ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200 hover:bg-zinc-50'}`}
-          >
-            {state.emoji} {state.label}
-          </button>
-        ))}
-      </div>
-    </div>
+    <div><label className="block text-[10px] font-black mb-1">Variables</label>{(p.variables||getInitialImport().variables).map(v=><div key={v.id} className="flex gap-2 mb-1"><input value={v.name||''} onChange={(e)=>updateVariable(p,v.id,'name',e.target.value)} placeholder={`Var ${v.id}`} className="flex-1 border rounded-lg p-1 text-sm"/><input type="number" value={v.qty||0} onChange={(e)=>updateVariable(p,v.id,'qty',parseFloat(e.target.value)||0)} placeholder="Cant" className="w-20 border rounded-lg p-1 text-sm"/></div>)}</div>
+    <div><label className="block text-[10px] font-black mb-1">Estado de Importación</label><div className="flex flex-wrap gap-1">{Object.values(IMPORT_STATES_LIST).map(s=><button key={s.id} onClick={()=>updateDocField(p.id,'importStatus',s.id)} className={`px-2 py-1 rounded-lg text-[9px] font-black ${p.importStatus===s.id?'bg-zinc-800 text-white':'bg-white border'}`}>{s.emoji} {s.label}</button>)}</div></div>
   </div>
-)}
+}
