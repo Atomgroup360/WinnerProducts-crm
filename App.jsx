@@ -1577,7 +1577,7 @@ Reporte generado por WinnerProduct OS
                           )}
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                     {!isWinner && p.status === 'approved' && 
+                    {!isWinner && p.status === 'approved' && 
   <div className="bg-white/50 rounded-2xl p-4 space-y-4 border border-emerald-200">
     <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
