@@ -1577,85 +1577,72 @@ Reporte generado por WinnerProduct OS
                           )}
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                    {!isWinner && p.status === 'approved' && 
-  <div className="bg-white/50 rounded-2xl p-4 space-y-4 border border-emerald-200">
-    <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <input type="date" value={p.purchaseDate||''} onChange={(e)=>updateDocField(p.id,'purchaseDate',e.target.value)} className="border rounded-xl p-2 text-sm"/>
-      <div className="flex gap-2">
-        <input type="number" value={p.advancePayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'advancePayment','amount',parseFloat(e.target.value)||0)} placeholder="Anticipo" className="w-1/2 border rounded-xl p-2 text-sm"/>
-        <input type="date" value={p.advancePayment?.date||''} onChange={(e)=>updateNestedField(p.id,'advancePayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/>
-      </div>
-      <div className="flex gap-2">
-        <input type="number" value={p.totalPayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'totalPayment','amount',parseFloat(e.target.value)||0)} placeholder="Pago Total" className="w-1/2 border rounded-xl p-2 text-sm"/>
-        <input type="date" value={p.totalPayment?.date||''} onChange={(e)=>updateNestedField(p.id,'totalPayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/>
-      </div>
-      <input type="number" value={p.actualQuantity||0} onChange={(e)=>updateDocField(p.id,'actualQuantity',parseFloat(e.target.value)||0)} placeholder="Cantidad real" className="border rounded-xl p-2 text-sm"/>
-    </div>
-
-    {/* Cálculos de saldo pendiente */}
-    <div className="bg-indigo-50 rounded-xl p-3">
-      <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
-      {(() => {
-        const prodUSD = (p.prodCostUSD||0)*(p.unitsQty||0);
-        const flete = p.yiwuFreightUSD||0;
-        const totalUSD = prodUSD + flete;
-        const trm = p.dollarRate||0;
-        const valorCOP = totalUSD * trm * 1.03;
-        const anticipo = p.advancePayment?.amount||0;
-        const saldoCOP = valorCOP - anticipo;
-        const saldoUSD = saldoCOP / (trm||1);
-        const porcentaje = valorCOP>0 ? (anticipo/valorCOP)*100 : 0;
-        return (
-          <div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-              <div>🚢 Flete: {flete.toFixed(2)} USD</div>
-              <div>💱 TRM: {trm.toLocaleString()} COP</div>
-              <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
+                    {!isWinner && p.status === 'approved' && (
+                          <div className="bg-white/50 rounded-2xl p-4 space-y-4 border border-emerald-200">
+                            <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <input type="date" value={p.purchaseDate||''} onChange={(e)=>updateDocField(p.id,'purchaseDate',e.target.value)} className="border rounded-xl p-2 text-sm"/>
+                              <div className="flex gap-2"><input type="number" value={p.advancePayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'advancePayment','amount',parseFloat(e.target.value)||0)} placeholder="Anticipo" className="w-1/2 border rounded-xl p-2 text-sm"/><input type="date" value={p.advancePayment?.date||''} onChange={(e)=>updateNestedField(p.id,'advancePayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/></div>
+                              <div className="flex gap-2"><input type="number" value={p.totalPayment?.amount||0} onChange={(e)=>updateNestedField(p.id,'totalPayment','amount',parseFloat(e.target.value)||0)} placeholder="Pago Total" className="w-1/2 border rounded-xl p-2 text-sm"/><input type="date" value={p.totalPayment?.date||''} onChange={(e)=>updateNestedField(p.id,'totalPayment','date',e.target.value)} className="w-1/2 border rounded-xl p-2 text-sm"/></div>
+                              <input type="number" value={p.actualQuantity||0} onChange={(e)=>updateDocField(p.id,'actualQuantity',parseFloat(e.target.value)||0)} placeholder="Cantidad real" className="border rounded-xl p-2 text-sm"/>
+                            </div>
+                            {/* Cálculos de saldo pendiente */}
+                            <div className="bg-indigo-50 rounded-xl p-3">
+                              <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
+                              {(() => {
+                                const prodUSD = (p.prodCostUSD||0)*(p.unitsQty||0);
+                                const flete = p.yiwuFreightUSD||0;
+                                const totalUSD = prodUSD + flete;
+                                const trm = p.dollarRate||0;
+                                const valorCOP = totalUSD * trm * 1.03;
+                                const anticipo = p.advancePayment?.amount||0;
+                                const saldoCOP = valorCOP - anticipo;
+                                const saldoUSD = saldoCOP / (trm||1);
+                                return (
+                                  <div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                      <div>💰 Productos: {prodUSD.toFixed(2)} USD</div><div>🚢 Flete: {flete.toFixed(2)} USD</div>
+                                      <div>💱 TRM: {trm.toLocaleString()} COP</div><div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
+                                    </div>
+                                    <div className="mt-2 bg-white rounded-lg p-2">
+                                      <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
+                                      <div className="flex justify-between font-bold mt-1"><span className="text-amber-700">🔴 SALDO PENDIENTE:</span><span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span></div>
+                                      <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
+                                      {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
+                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Anticipo superior, saldo a favor</div>}
+                                      {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div><label className="block text-[10px] font-black mb-1">Variables</label>{(p.variables||getInitialImport().variables).map(v=><div key={v.id} className="flex gap-2 mb-1"><input value={v.name||''} onChange={(e)=>updateVariable(p,v.id,'name',e.target.value)} placeholder={`Var ${v.id}`} className="flex-1 border rounded-lg p-1 text-sm"/><input type="number" value={v.qty||0} onChange={(e)=>updateVariable(p,v.id,'qty',parseFloat(e.target.value)||0)} placeholder="Cant" className="w-20 border rounded-lg p-1 text-sm"/></div>)}</div>
+                            <div><label className="block text-[10px] font-black mb-1">Estado de Importación</label><div className="flex flex-wrap gap-1">{Object.values(IMPORT_STATES_LIST).map(s=><button key={s.id} onClick={()=>updateDocField(p.id,'importStatus',s.id)} className={`px-2 py-1 rounded-lg text-[9px] font-black ${p.importStatus===s.id?'bg-zinc-800 text-white':'bg-white border'}`}>{s.emoji} {s.label}</button>)}</div></div>
+                          </div>
+                        )}
+                      </div>
+                      {isWinner && (
+                        <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
+                          <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
+                          {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="mt-2 bg-white rounded-lg p-2">
-              <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-              <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full" style={{width: `${porcentaje}%`}}></div>
-              </div>
-              <div className="flex justify-between font-bold mt-2">
-                <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
-                <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Saldo en USD:</span>
-                <span>${saldoUSD.toFixed(2)} USD</span>
-              </div>
-              {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-              {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Anticipo superior, saldo a favor</div>}
-              {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
-            </div>
+          </>
+        )}
+      </div>
+      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
+            <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
           </div>
-        );
-      })()}
-    </div>
-
-    <div>
-      <label className="block text-[10px] font-black mb-1">Variables</label>
-      {(p.variables||getInitialImport().variables).map(v=>(
-        <div key={v.id} className="flex gap-2 mb-1">
-          <input value={v.name||''} onChange={(e)=>updateVariable(p,v.id,'name',e.target.value)} placeholder={`Var ${v.id}`} className="flex-1 border rounded-lg p-1 text-sm"/>
-          <input type="number" value={v.qty||0} onChange={(e)=>updateVariable(p,v.id,'qty',parseFloat(e.target.value)||0)} placeholder="Cant" className="w-20 border rounded-lg p-1 text-sm"/>
         </div>
-      ))}
+      )}
     </div>
-
-    <div>
-      <label className="block text-[10px] font-black mb-1">Estado de Importación</label>
-      <div className="flex flex-wrap gap-1">
-        {Object.values(IMPORT_STATES_LIST).map(s=>(
-          <button key={s.id} onClick={()=>updateDocField(p.id,'importStatus',s.id)} className={`px-2 py-1 rounded-lg text-[9px] font-black ${p.importStatus===s.id?'bg-zinc-800 text-white':'bg-white border'}`}>
-            {s.emoji} {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  </div>
+  );
 }
