@@ -1578,145 +1578,128 @@ Reporte generado por WinnerProduct OS
 
                           {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
                        {!isWinner && p.status === 'approved' && (
-  <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
-    <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-        <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-      </div>
-      <div className="space-y-2">
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-        <div className="flex gap-2">
-          <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto COP" />
-          <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-        <div className="flex gap-2">
-          <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto COP" />
-          <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-        <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value)||0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-      </div>
-    </div>
+                            <div className="mt-6 bg-white/50 rounded-2xl p-4 md:p-6 space-y-5 border border-emerald-200">
+                              <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2">📋 Gestión de Compra</h3>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Fecha de Compra</label>
+                                  <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Anticipo</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto" />
+                                    <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Pago Total</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value)||0)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Monto" />
+                                    <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">Cantidad Real Comprada</label>
+                                  <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value)||0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                              </div>
 
-    <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-200">
-      <h4 className="text-[11px] font-black text-indigo-700 uppercase tracking-widest mb-3">🇨🇳 Saldo Pendiente con Proveedor Chino</h4>
-      
-      {/* Cálculos */}
-      {(() => {
-        const productosUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-        const fleteUSD = p.yiwuFreightUSD || 0;
-        const totalUSD = productosUSD + fleteUSD;
-        const trm = p.dollarRate || 0;
-        const valorCompraCOP = totalUSD * trm * 1.03;
-        const anticipo = p.advancePayment?.amount || 0;
-        const saldoCOP = valorCompraCOP - anticipo;
-        const saldoUSD = saldoCOP / (trm || 1);
-        const porcentaje = valorCompraCOP > 0 ? (anticipo / valorCompraCOP) * 100 : 0;
-        
-        return (
-          <div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                  <span>💰 Productos (USD):</span>
-                  <span>{productosUSD.toFixed(2)} USD</span>
-                </div>
-                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                  <span>🚢 Flete Yiwu (USD):</span>
-                  <span>{fleteUSD.toFixed(2)} USD</span>
-                </div>
-                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                  <span>💱 TRM:</span>
-                  <span>{trm.toLocaleString('es-CO')} COP</span>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-sm border-b border-indigo-100 pb-1">
-                  <span>📦 Total Compra China (1.03x):</span>
-                  <span className="text-indigo-700">{formatCurrency(valorCompraCOP)}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm font-bold pt-1">
-                  <span>💵 VALOR A PAGAR:</span>
-                  <span className="text-indigo-800">{formatCurrency(valorCompraCOP)}</span>
-                </div>
-              </div>
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-2">Variables (color, talla, etc.)</label>
+                                <div className="space-y-2">
+                                  {(p.variables || getInitialImport().variables).map(v => (
+                                    <div key={v.id} className="flex gap-2 items-center">
+                                      <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder={`Variable ${v.id}`} />
+                                      <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value)||0)} className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Cantidad" />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-2">Estado de Importación</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.values(IMPORT_STATES_LIST).map(state => (
+                                    <button
+                                      key={state.id}
+                                      onClick={() => updateDocField(p.id, 'importStatus', state.id)}
+                                      className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}
+                                    >
+                                      {state.emoji} {state.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                       </div>
+
+                       {/* BUNDLES */}
+                       {isWinner && (
+                        <div className="w-full xl:w-[32%] bg-[#fcfdfe] p-3 md:p-10 flex flex-col border-l border-zinc-100 shadow-inner">
+                            <button onClick={()=>setExpandedItems({...expandedItems, [`u_${p.id}`]: !expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between items-center p-3 md:p-6 rounded-xl md:rounded-[1.5rem] border-2 transition-all duration-500 ${expandedItems[`u_${p.id}`] ? 'bg-zinc-900 text-white border-zinc-900 shadow-xl' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'}`}>
+                               <div className="flex items-center gap-2 md:gap-4 text-left leading-none"><span className="text-sm md:text-2xl">🍱</span><div className="text-left"><p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest leading-none">Bundles</p><p className="text-[8px] font-bold mt-1 opacity-50 uppercase leading-none">{mWinner.activeUpsells} Activos</p></div></div>
+                               <svg className={`w-3 h-3 md:w-4 md:h-6 transition-transform ${expandedItems[`u_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
+                            </button>
+                            <div className={`transition-all duration-700 ease-in-out overflow-hidden ${expandedItems[`u_${p.id}`] ? 'max-h-[1200px] opacity-100 mt-4 md:mt-8' : 'max-h-0 opacity-0 mt-0'}`}>
+                               <div className="space-y-2 md:space-y-4 no-scrollbar text-left px-1">
+                                   {(p.upsells || getInitialWinner().upsells).map(u=>(
+                                       <div key={u.id} className="bg-white p-2 md:p-4 rounded-xl md:rounded-2xl border border-zinc-200 flex gap-3 md:gap-4 relative group border-l-4 md:border-l-8 border-l-indigo-600 transition-all text-left">
+                                           <div className="w-10 h-10 md:w-16 bg-zinc-50 rounded-lg md:rounded-2xl relative shrink-0 flex items-center justify-center border overflow-hidden shadow-inner">
+                                               {u.image ? <img src={u.image} className="w-full h-full object-cover" alt="Upsell"/> : <span className="text-sm opacity-20 font-black">+</span>}
+                                               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id, u.id)}/>
+                                           </div>
+                                           <div className="flex-1 min-w-0 pr-6 text-left leading-none">
+                                               <input value={u.name || ''} onChange={(e)=>updateUpsell(p, u.id, 'name', e.target.value)} className="w-full text-[11px] md:text-sm font-black bg-transparent border-b border-zinc-100 focus:border-indigo-600 md:mb-2 outline-none truncate text-zinc-800 leading-none" placeholder="Nombre..."/>
+                                               <div className="flex gap-2 mt-1">
+                                                   <input type="number" value={u.cost || ''} onChange={(e)=>updateUpsell(p, u.id, 'cost', parseFloat(e.target.value)||0)} className="w-1/2 bg-zinc-50 text-[10px] md:text-xs p-1 rounded-lg font-mono outline-none border border-transparent shadow-inner text-zinc-700 leading-none" placeholder="Costo"/>
+                                                   <input type="number" value={u.price || ''} onChange={(e)=>updateUpsell(p, u.id, 'price', parseFloat(e.target.value)||0)} className="w-1/2 bg-indigo-50/50 text-[10px] md:text-xs p-1 rounded-lg font-black text-indigo-700 outline-none border border-transparent shadow-inner leading-none" placeholder="Venta"/>
+                                               </div>
+                                           </div>
+                                           <button onClick={() => resetUpsell(p, u.id)} className="text-zinc-300 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all p-1 hover:text-rose-500 absolute right-1 md:right-3 top-1 md:top-3"><svg className="w-4 md:w-5 h-4 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2.5"/></svg></button>
+                                       </div>
+                                   ))}
+                               </div>
+                            </div>
+                        </div>
+                       )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            
-            <div className="bg-white rounded-xl p-3 space-y-2 mt-3">
-              <div className="flex justify-between items-center">
-                <span>💰 Anticipo registrado:</span>
-                <span className="text-emerald-600">{formatCurrency(anticipo)}</span>
-              </div>
-              
-              <div>
-                <div className="flex justify-between text-[9px] text-zinc-500 mb-1">
-                  <span>Progreso de pago</span>
-                  <span>{porcentaje.toFixed(1)}%</span>
+          </>
+        )}
+      </div>
+
+      {/* MODAL CREACIÓN */}
+      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && (
+        <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-[300] p-3 animate-in fade-in duration-300">
+            <div className="bg-white rounded-2xl md:rounded-[3.5rem] shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto no-scrollbar animate-in zoom-in-95 duration-300">
+                <header className="sticky top-0 bg-white/90 backdrop-blur-md p-4 md:p-8 border-b flex justify-between items-center z-10">
+                    <h2 className="text-sm md:text-2xl font-black text-zinc-900 uppercase italic">Registro Cloud</h2>
+                    <button onClick={()=>{setIsCreating(false); setFormError('');}} className="bg-zinc-100 p-2 md:p-3 rounded-full hover:bg-zinc-200 shadow-sm text-zinc-600">✕</button>
+                </header>
+                <div className="p-4 md:p-12">
+                    {renderCreationForm()}
+                    {formError && (
+                      <div className="w-full bg-rose-100 border-2 border-rose-500 text-rose-700 font-bold p-3 rounded-xl mt-6 text-center text-[11px] md:text-sm animate-in fade-in">
+                        {formError}
+                      </div>
+                    )}
+                    <button 
+                      onClick={handleSave} 
+                      disabled={isSaving}
+                      className="w-full mt-6 bg-zinc-900 hover:bg-black text-white font-black py-5 md:py-7 rounded-xl md:rounded-[2rem] text-sm md:text-xl shadow-2xl transition-all uppercase tracking-widest md:tracking-[0.4em] active:scale-[0.98] disabled:opacity-50"
+                    >
+                        {isSaving ? 'Guardando...' : 'Confirmar Registro'}
+                    </button>
                 </div>
-                <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: porcentaje + '%' }}></div>
-                </div>
-              </div>
-              
-              <div className="flex justify-between items-center border-t pt-2 mt-2">
-                <span className="font-black text-amber-700">🔴 SALDO PENDIENTE:</span>
-                <span className="font-bold text-rose-600">{formatCurrency(saldoCOP)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>💵 Saldo en USD:</span>
-                <span className="text-rose-600">${saldoUSD.toFixed(2)} USD</span>
-              </div>
-              
-              {saldoCOP < 0 && (
-                <div className="bg-emerald-100 rounded-lg p-2 text-center mt-2">
-                  <p className="text-[10px] font-bold text-emerald-700">✓ Anticipo supera el valor de compra. Saldo a favor de {formatCurrency(Math.abs(saldoCOP))}</p>
-                </div>
-              )}
-              {saldoCOP > 0 && (
-                <div className="bg-amber-100 rounded-lg p-2 text-center mt-2">
-                  <p className="text-[10px] font-bold text-amber-700">⚠️ Pendiente de pago al proveedor: {formatCurrency(saldoCOP)}</p>
-                </div>
-              )}
-              {saldoCOP === 0 && valorCompraCOP > 0 && (
-                <div className="bg-green-100 rounded-lg p-2 text-center mt-2">
-                  <p className="text-[10px] font-bold text-green-700">✓ Compra pagada en su totalidad</p>
-                </div>
-              )}
             </div>
-          </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
-
-    <div>
-      <label className="block text-[10px] font-black text-zinc-500 mb-2">🎨 Variables (color, talla, etc.)</label>
-      <div className="space-y-2">
-        {(p.variables || getInitialImport().variables).map(v => (
-          <div key={v.id} className="flex gap-2 items-center">
-            <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder={`Variable ${v.id}`} />
-            <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value)||0)} className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" placeholder="Cantidad" />
-          </div>
-        ))}
-      </div>
-    </div>
-
-    <div>
-      <label className="block text-[10px] font-black text-zinc-500 mb-2">🚢 Estado de Importación</label>
-      <div className="flex flex-wrap gap-2">
-        {Object.values(IMPORT_STATES_LIST).map(state => (
-          <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
-            {state.emoji} {state.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  </div>
-)}
+  );
+}
