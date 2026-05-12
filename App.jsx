@@ -1,265 +1,1681 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp, Timestamp 
+import {
+  getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, doc, onSnapshot,
+  Timestamp, serverTimestamp   // ← Agregado para la Agenda
 } from 'firebase/firestore';
-import { 
-  getAuth, 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  signOut 
-} from 'firebase/auth';
+import {
+  LayoutDashboard, ClipboardList, Settings, Plus, Trash2, Calendar,
+  TrendingUp, Package, Layers, Truck, Target, Wallet, CheckCircle2,
+  Calculator, Eye, Activity, Pencil, Boxes, ToggleLeft, ToggleRight,
+  ChevronDown, ChevronUp, X, AlertTriangle, Save, BarChart3, Percent,
+  DollarSign, Users, ShoppingBag, ArrowUpRight, ArrowDownRight, Info,
+  Coffee, Moon, Award, ListChecks, CalendarDays, Power, PowerOff
+} from 'lucide-react';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import Login from './src/components/Login';
+import { db } from './src/firebase';
 
-// --- CONFIGURACIÓN DE FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0".trim(),
-  authDomain: "winnerproduct-crm.firebaseapp.com".trim(),
-  projectId: "winnerproduct-crm".trim(),
-  storageBucket: "winnerproduct-crm.firebasestorage.app".trim(),
-  messagingSenderId: "697988179670".trim(),
-  appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'winnerproduct-crm';
-
-// --- CONFIGURACIÓN DE ESTADOS ---
-const WINNER_STATUS = {
-  pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '🕒' },
-  prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-50 text-blue-600', activeColor: 'bg-blue-600 text-white', emoji: '📦' },
-  testing: { id: 'testing', label: 'En Testeo', color: 'bg-amber-50 text-amber-600', activeColor: 'bg-amber-500 text-white', emoji: '🧪' },
-  approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '✅' },
-  rejected: { id: 'rejected', label: 'Rechazado', color: 'bg-rose-50 text-rose-600', activeColor: 'bg-rose-600 text-white', emoji: '❌' }
-};
-
-const IMPORT_STATUS = {
-  pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '⏳' },
-  approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
-};
-
-const IMPORT_STATES_LIST = {
-  warehouse: { id: 'warehouse', label: 'EN BODEGA', emoji: '🏭', bgColor: 'bg-slate-100 border-slate-300' },
-  portChina: { id: 'portChina', label: 'EN PUERTO CHINA', emoji: '🚢', bgColor: 'bg-blue-100 border-blue-300' },
-  seaRoute: { id: 'seaRoute', label: 'EN RUTA MARÍTIMA', emoji: '🌊', bgColor: 'bg-cyan-100 border-cyan-300' },
-  portColombia: { id: 'portColombia', label: 'EN PUERTO COLOMBIA', emoji: '⚓', bgColor: 'bg-emerald-100 border-emerald-300' },
-  warehouseColombia: { id: 'warehouseColombia', label: 'EN BODEGA COLOMBIA', emoji: '🏚️', bgColor: 'bg-amber-100 border-amber-300' },
-  delivered: { id: 'delivered', label: 'ENTREGADO', emoji: '✅', bgColor: 'bg-green-100 border-green-500' }
-};
-
-// --- FABRICANTES DE ESTADO INICIAL ---
-const getInitialWinner = () => ({
-  type: 'winner',
-  name: '', dropiCode: '', supplier: '', description: '',
-  costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
-  targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
-  isWorking: false,
-  createdAtText: '',
-  testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '', endDate: '' })),
-  upsells: [
-    { id: 1, name: '', cost: 0, price: 0, image: null },
-    { id: 2, name: '', cost: 0, price: 0, image: null },
-    { id: 3, name: '', cost: 0, price: 0, image: null },
-    { id: 4, name: '', cost: 0, price: 0, image: null },
-    { id: 5, name: '', cost: 0, price: 0, image: null }
-  ]
-});
-
-const getInitialImport = () => ({
-  type: 'import',
-  name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
-  unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
-  isWorking: false,
-  createdAtText: '',
-  measures: { width: 0, height: 0, length: 0 },
-  purchaseDate: '',
-  advancePayment: { amount: 0, date: '' },
-  totalPayment: { amount: 0, date: '' },
-  actualQuantity: 0,
-  variables: Array(5).fill().map((_, i) => ({ id: i+1, name: '', qty: 0 })),
-  importStatus: 'warehouse'
-});
-
-const getInitialProjection = () => ({
-  name: '',
-  price: '', productCost: '', freight: '', fulfillment: '', commission: '',
-  adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
-  effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
-});
-
-// --- AYUDANTES ---
-const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
-
-const getCurrentDateTime = () => {
+// ─── HELPERS CON ZONA HORARIA COLOMBIA (UTC-5) ───────────────────────────────
+const todayColombia = () => {
   const now = new Date();
-  const day = now.getDate().toString().padStart(2, '0');
-  const month = (now.getMonth() + 1).toString().padStart(2, '0');
-  const year = now.getFullYear();
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  const seconds = now.getSeconds().toString().padStart(2, '0');
-  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  const colombiaDate = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  return colombiaDate.toISOString().split('T')[0];
 };
 
-const calculateWinnerMetrics = (p) => {
-  if (!p) return { totalCost: 0, totalPrice: 0, profit: 0, margin: 0, activeUpsells: 0 };
-  const c = p.costs || {};
-  const baseCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
-    (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
-  const basePrice = parseFloat(p.targetPrice) || 0;
-  const upsells = p.upsells || [];
-  const uCost = upsells.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
-  const uPrice = upsells.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
-  const totalCost = baseCost + uCost;
-  const totalPrice = basePrice + uPrice;
-  const profit = totalPrice - totalCost;
-  const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
-  return { totalCost, totalPrice, profit, margin, activeUpsells: upsells.filter(u => u.name).length };
+const parseColombiaDate = (dateStr) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0);
 };
 
-const calculateImportMetrics = (p) => {
-  if (!p) return { cbmPerCtn: 0, totalCbm: 0, costChinaCOP: 0, nationalizationCOP: 0, totalLandCostCOP: 0, unitCostColombia: 0 };
-  const m = p.measures || { width: 0, height: 0, length: 0 };
-  const cbmPerCtn = (parseFloat(m.width) * parseFloat(m.height) * parseFloat(m.length)) / 1000000;
-  const totalCbm = cbmPerCtn * (parseFloat(p.ctnQty) || 0);
-  const costChinaUSD = ((parseFloat(p.prodCostUSD) || 0) * (parseFloat(p.unitsQty) || 0)) + (parseFloat(p.yiwuFreightUSD) || 0);
-  const costChinaCOP = costChinaUSD * (parseFloat(p.dollarRate) || 0) * 1.03;
-  const nationalizationCOP = totalCbm * (parseFloat(p.cbmCostCOP) || 0);
-  const totalLandCostCOP = costChinaCOP + nationalizationCOP;
-  const unitCostColombia = (parseFloat(p.unitsQty) > 0) ? totalLandCostCOP / parseFloat(p.unitsQty) : 0;
-  return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
-};
+const fmt = (v) => new Intl.NumberFormat('es-CO', {
+  style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
+}).format(v || 0);
 
-// --- COMPRESOR DE IMÁGENES ---
-const compressImage = (base64Str) => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 800;
-      const MAX_HEIGHT = 800;
-      let width = img.width;
-      let height = img.height;
-      if (width > height) {
-        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-      } else {
-        if (height > MAX_HEIGHT) { width = Math.round((width * MAX_HEIGHT) / height); height = MAX_HEIGHT; }
-      }
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7)); 
-    };
-  });
-};
+const fmtDec = (v, d = 2, max = null) => new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: d,
+  maximumFractionDigits: max !== null ? max : d
+}).format(v || 0);
 
-// --- COMPONENTES P&G ---
-const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
-  let displayVal = value;
-  if (type === 'currency') {
-     displayVal = value ? new Intl.NumberFormat('es-CO').format(value) : '';
+const fmtN = (v) => new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 6
+}).format(v || 0);
+
+// ─── MOTOR DE CÁLCULO (global, ranking y detalle temporal) ───────────────────
+// ========== FUNCIÓN AUXILIAR PARA OBTENER LA CONFIGURACIÓN VIGENTE EN UNA FECHA ==========
+function getConfigAtDate(configs, productId, dateStr) {
+  // Obtener todas las versiones de este producto (por ID o por referencia a versión anterior)
+  const allVersions = configs.filter(c => c.id === productId || c.previousVersionId === productId);
+  
+  // Si solo hay una versión, devolverla directamente
+  if (allVersions.length <= 1) {
+    return configs.find(c => c.id === productId);
   }
-  const handleInput = (e) => {
-     if (type === 'currency') {
-        const numericString = e.target.value.replace(/\D/g, '');
-        onChange(numericString !== '' ? parseFloat(numericString) : '');
-     } else {
-        onChange(e.target.value !== '' ? parseFloat(e.target.value) : '');
-     }
-  };
-  return (
-    <div className="bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 focus-within:border-emerald-400 transition-colors shadow-sm">
-      <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} ✎</label>
-      <div className="flex items-center gap-1">
-        {prefix && <span className="text-emerald-600 font-bold">{prefix}</span>}
-        <input 
-          type={type === 'currency' ? 'text' : type} 
-          value={displayVal} 
-          onChange={handleInput}
-          className="w-full bg-transparent text-sm md:text-base font-bold text-emerald-950 outline-none font-mono placeholder:text-emerald-300"
-          placeholder="0"
-        />
-        {suffix && <span className="text-emerald-600 font-bold">{suffix}</span>}
-      </div>
-    </div>
-  );
-};
-
-const OutputP = ({ label, value, type="currency", decimals=2, highlight=false, customBg, customText }) => {
-  let displayValue = 0;
-  const numValue = parseFloat(value) || 0;
-  if (type === "currency") displayValue = formatCurrency(numValue);
-  else if (type === "number") displayValue = numValue.toFixed(decimals);
-  else if (type === "percent") displayValue = `${numValue.toFixed(decimals)}%`;
-
-  let baseBg = customBg || (highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner');
-  let baseText = customText || (highlight ? 'text-white' : 'text-zinc-800');
-  let labelText = customText ? 'text-white/80' : (highlight ? 'text-zinc-400' : 'text-zinc-500');
-
-  return (
-    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${baseBg}`}>
-      <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${labelText}`}>{label}</label>
-      <div className={`font-mono text-sm md:text-lg font-black truncate ${baseText}`}>
-        {displayValue}
-      </div>
-    </div>
-  );
-};
-
-// --- COMPONENTE LOGIN ---
-function LoginScreen({ setErrorExt }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.error(err);
-      let msg = 'Credenciales inválidas.';
-      if (err.code === 'auth/network-request-failed') msg = 'Error de red o API restringida.';
-      setError(msg);
-      setErrorExt(msg);
-    } finally {
-      setLoading(false);
+  
+  const date = parseColombiaDate(dateStr);
+  let activeConfig = null;
+  let closestValidFrom = null;
+  
+  for (const config of allVersions) {
+    const validFrom = config.validFrom ? parseColombiaDate(config.validFrom) : null;
+    // Si no tiene validFrom, es la versión original (siempre válida)
+    if (!validFrom) {
+      if (!activeConfig) activeConfig = config;
+      continue;
     }
+    // Si la fecha de validez es menor o igual a la fecha del registro
+    if (validFrom <= date) {
+      if (!closestValidFrom || validFrom > closestValidFrom) {
+        closestValidFrom = validFrom;
+        activeConfig = config;
+      }
+    }
+  }
+  
+  return activeConfig || configs.find(c => c.id === productId);
+}
+
+// Función para saber si un producto estaba ACTIVO en una fecha específica
+function isProductActiveOnDate(product, dateStr) {
+  if (!product) return false;
+  const active = product.activo !== false;
+  const deactivationDate = product.fechaDesactivacion ? parseColombiaDate(product.fechaDesactivacion) : null;
+  const checkDate = parseColombiaDate(dateStr);
+  
+  if (!active && deactivationDate && deactivationDate <= checkDate) {
+    return false;
+  }
+  return true;
+}
+
+function calcularStats(records, configs) {
+  const activeRecords = records.filter(r => !r.restDay);
+  let s = {
+    grossOrd: 0, grossUnits: 0, grossRev: 0,
+    realShipped: 0, estimatedReturns: 0, finalDeliveries: 0,
+    unitsRegistradas: 0,
+    unitsShippedReal: 0,
+    unitsReturnedReal: 0,
+    unitsDeliveredReal: 0,
+    totalFreightCost: 0, totalFulfillment: 0,
+    productCostTotal: 0, totalCommissions: 0, totalFixedCosts: 0, totalAds: 0,
+    realRev: 0,
+    net: 0,
+    aov: 0,
+    cpaEquilibrioPonderado: 0,
+    rankingVendedoras: [],
+    detalleProductos: []
   };
 
+  let totalCpaEquilibrioPonderado = 0;
+  let totalOrdenesParaCpaEq = 0;
+  const vendedorasStats = {};
+  const productosFechas = {};
+
+ activeRecords.forEach(r => {
+  const c = getConfigAtDate(configs, r.configId, r.date);
+  if (!c) return;
+
+    // Buscar ajuste mensual para el mes de este registro
+const recordMonth = r.date.substring(0, 7); // ej: "2025-04"
+let effectiveness = parseFloat(c.effectiveness) || 95;
+let returnRate = parseFloat(c.returnRate) || 20;
+if (c.monthlyIER && Array.isArray(c.monthlyIER)) {
+  const monthlyAdjust = c.monthlyIER.find(adj => adj.month === recordMonth);
+  if (monthlyAdjust) {
+    effectiveness = parseFloat(monthlyAdjust.effectiveness) || effectiveness;
+    returnRate = parseFloat(monthlyAdjust.returnRate) || returnRate;
+  }
+}
+const eff = Math.min(Math.max(effectiveness, 0), 100) / 100;
+const ret = Math.min(Math.max(returnRate, 0), 100) / 100;
+    const IER = eff * (1 - ret);
+
+    const orders = parseFloat(r.orders) || 0;
+    const units = parseFloat(r.units) || 0;
+    const revenue = parseFloat(r.revenue) || 0;
+    // Determinar si el producto estaba activo en la fecha del registro
+const wasActive = isProductActiveOnDate(c, r.date);
+
+let ads = 0;
+if (wasActive) {
+  // Producto activo: usar publicidad normal
+  ads = parseFloat(r.adSpend) > 0
+    ? parseFloat(r.adSpend)
+    : (c.fixedAdSpend ? parseFloat(c.dailyAdSpend) || 0 : 0);
+}
+// Si estaba inactivo, ads ya es 0 (no gastó publicidad)
+
+    const avgUnits = orders > 0 ? units / orders : 1;
+    const shipped = orders * eff;
+    const returns_ = shipped * ret;
+    const deliveries = shipped * (1 - ret);
+    const unitsRegistradas = units;
+    const unitsShipped = shipped * avgUnits;
+    const unitsReturned = returns_ * avgUnits;
+    const unitsDelivered = deliveries * avgUnits;
+
+    const extraUnitCharge = parseFloat(c.extraUnitCharge) || 0;
+    const extraUnits = Math.max(avgUnits - 1, 0);
+    const fleteBase = parseFloat(c.freight) || 0;
+    const fleteUnit = fleteBase + extraUnits * extraUnitCharge;
+    const freightTotal = shipped * fleteUnit;
+    const fulfillTotal = shipped * (parseFloat(c.fulfillment) || 0);
+    const mercanciaNeto = (parseFloat(c.productCost) || 0) * unitsDelivered;
+    const commissions = deliveries * (parseFloat(c.commission) || 0);
+    const fixedCosts = deliveries * (parseFloat(c.fixedCosts) || 0);
+    const realRevenue = revenue * IER;
+
+    s.grossOrd += orders;
+    s.grossUnits += units;
+    s.grossRev += revenue;
+    s.realShipped += shipped;
+    s.estimatedReturns += returns_;
+    s.finalDeliveries += deliveries;
+    s.unitsRegistradas += unitsRegistradas;
+    s.unitsShippedReal += unitsShipped;
+    s.unitsReturnedReal += unitsReturned;
+    s.unitsDeliveredReal += unitsDelivered;
+    s.totalFreightCost += freightTotal;
+    s.totalFulfillment += fulfillTotal;
+    s.productCostTotal += mercanciaNeto;
+    s.totalCommissions += commissions;
+    s.totalFixedCosts += fixedCosts;
+    s.totalAds += ads;
+    s.realRev += realRevenue;
+
+    const cpaEq = parseFloat(c.cpaEquilibrio) || 0;
+    totalCpaEquilibrioPonderado += cpaEq * orders;
+    totalOrdenesParaCpaEq += orders;
+
+    const vendor = c.vendedora;
+    if (!vendedorasStats[vendor]) {
+      vendedorasStats[vendor] = {
+        vendedora: vendor,
+        pedidos: 0,
+        recaudoNeto: 0,
+        utilidad: 0,
+        totalGrossOrd: 0,
+        totalIER: 0
+      };
+    }
+    vendedorasStats[vendor].pedidos += orders;
+    vendedorasStats[vendor].recaudoNeto += realRevenue;
+    vendedorasStats[vendor].utilidad += (realRevenue - mercanciaNeto - freightTotal - fulfillTotal - commissions - fixedCosts - ads);
+    vendedorasStats[vendor].totalGrossOrd += orders;
+    vendedorasStats[vendor].totalIER += IER * orders;
+
+    if (!productosFechas[r.configId]) {
+      productosFechas[r.configId] = {
+        configId: r.configId,
+        vendedora: c.vendedora,
+        productName: c.productName,
+        primerRegistro: r.date,
+        ultimoRegistro: r.date,
+        activo: c.activo !== false,
+        fechaCreacion: c.fechaCreacion,
+        fechaDesactivacion: c.fechaDesactivacion
+      };
+    } else {
+      const p = productosFechas[r.configId];
+      if (r.date < p.primerRegistro) p.primerRegistro = r.date;
+      if (r.date > p.ultimoRegistro) p.ultimoRegistro = r.date;
+    }
+  });
+
+  s.net = s.realRev
+    - s.productCostTotal
+    - s.totalFreightCost
+    - s.totalFulfillment
+    - s.totalCommissions
+    - s.totalFixedCosts
+    - s.totalAds;
+
+  s.ierGlobal = s.grossOrd > 0 ? (s.finalDeliveries / s.grossOrd) * 100 : 0;
+  s.freteRealXEntrega = s.finalDeliveries > 0 ? s.totalFreightCost / s.finalDeliveries : 0;
+  s.cpaReal = s.finalDeliveries > 0 ? s.totalAds / s.finalDeliveries : 0;
+  s.roas = s.totalAds > 0 ? s.realRev / s.totalAds : 0;
+  s.avgUnitsPerOrder = s.grossOrd > 0 ? s.grossUnits / s.grossOrd : 0;
+  s.avgUnitsPerDelivery = s.finalDeliveries > 0 ? s.unitsDeliveredReal / s.finalDeliveries : 0;
+  s.costMercXEntrega = s.finalDeliveries > 0 ? s.productCostTotal / s.finalDeliveries : 0;
+  s.pctProductosEntregados = s.unitsRegistradas > 0 ? (s.unitsDeliveredReal / s.unitsRegistradas) * 100 : 0;
+  s.recaudoEficiencia = s.grossRev > 0 ? (s.realRev / s.grossRev) * 100 : 0;
+  s.aov = s.grossOrd > 0 ? s.grossRev / s.grossOrd : 0;
+  s.cpaEquilibrioPonderado = totalOrdenesParaCpaEq > 0 ? totalCpaEquilibrioPonderado / totalOrdenesParaCpaEq : 0;
+
+  const rankingData = Object.values(vendedorasStats).map(v => ({
+    ...v,
+    ierPromedio: v.totalGrossOrd > 0 ? (v.totalIER / v.totalGrossOrd) * 100 : 0
+  }));
+  rankingData.sort((a, b) => b.utilidad - a.utilidad);
+  s.rankingVendedoras = rankingData;
+
+  s.detalleProductos = Object.values(productosFechas).sort((a, b) => a.vendedora.localeCompare(b.vendedora) || a.productName.localeCompare(b.productName));
+
+  return s;
+}
+
+// ─── COMPONENTES UI ──────────────────────────────────────────────────────────
+const Card = ({ children, className = '', dark = false }) => (
+  <div className={`rounded-3xl border p-4 md:p-6 ${dark ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-slate-100 shadow-sm'} ${className}`}>
+    {children}
+  </div>
+);
+
+const Label = ({ children, className = '' }) => (
+  <p className={`text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5 ${className}`}>{children}</p>
+);
+
+const InputField = ({ label, type = 'text', value, onChange, placeholder, className = '', dark = false, disabled = false }) => (
+  <div className="space-y-1">
+    {label && <Label className={dark ? 'text-zinc-500' : ''}>{label}</Label>}
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={`w-full px-4 py-3 rounded-2xl font-semibold text-sm outline-none transition-all
+        ${dark
+          ? 'bg-zinc-800 border border-zinc-700 text-white placeholder:text-zinc-600 focus:border-emerald-500 disabled:opacity-50'
+          : 'bg-slate-50 border-2 border-transparent focus:border-emerald-400 text-slate-900 disabled:bg-slate-100 disabled:opacity-70'
+        } ${className}`}
+    />
+  </div>
+);
+
+const Stat = ({ label, value, sub, accent = false, big = false, dark = false, highlight = false }) => (
+  <div className={`p-3 md:p-4 rounded-2xl ${accent ? 'bg-emerald-500 text-white' : highlight ? 'bg-blue-50 border border-blue-100' : dark ? 'bg-zinc-800' : 'bg-slate-50'}`}>
+    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${accent ? 'text-emerald-100' : highlight ? 'text-blue-500' : dark ? 'text-zinc-500' : 'text-slate-400'}`}>{label}</p>
+    <p className={`font-black font-mono leading-none ${big ? 'text-xl md:text-2xl' : 'text-base md:text-lg'} ${accent ? 'text-white' : highlight ? 'text-blue-700' : dark ? 'text-white' : 'text-slate-900'}`}>{value}</p>
+    {sub && <p className={`text-[9px] mt-1 font-semibold ${accent ? 'text-emerald-100' : highlight ? 'text-blue-400' : dark ? 'text-zinc-500' : 'text-slate-400'}`}>{sub}</p>}
+  </div>
+);
+
+// ─── VISTA 1: CONFIGURACIÓN (responsive móvil) ──────────────────────────────
+const EMPTY_CONFIG = {
+  vendedora: '', productName: '',
+  targetProfit: '', productCost: '', freight: '', fulfillment: '',
+  commission: '', returnRate: '20', effectiveness: '95',
+  fixedCosts: '', priceSingle: '', dailyAdSpend: '', fixedAdSpend: true,
+  extraUnitCharge: '',
+  cpaEquilibrio: '',
+  activo: true,
+  fechaCreacion: todayColombia(),
+  fechaDesactivacion: '',
+  monthlyIER: [],
+permiteRegistrosResiduales: false
+};
+
+function VistaConfig({ configs, onSaved }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(EMPTY_CONFIG);
+  const [expandedV, setExpandedV] = useState({});
+
+  const grouped = useMemo(() => configs.reduce((a, c) => {
+    if (!a[c.vendedora]) a[c.vendedora] = [];
+    a[c.vendedora].push(c);
+    return a;
+  }, {}), [configs]);
+
+  const openNew = () => { setEditId(null); setForm({ ...EMPTY_CONFIG, fechaCreacion: todayColombia(), monthlyIER: [] }); setShowForm(true); };
+  const openNewForVendor = (vendedora) => {
+    setEditId(null);
+    setForm({ ...EMPTY_CONFIG, vendedora, fechaCreacion: todayColombia(), monthlyIER: [] });
+    setExpandedV(x => ({ ...x, [vendedora]: true }));
+    setShowForm(true);
+  };
+  const openEdit = (p) => { setEditId(p.id); setForm({ ...p }); setShowForm(true); };
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    if (!form.vendedora.trim() || !form.productName.trim()) return;
+    const data = { ...form };
+    if (!data.fechaCreacion) data.fechaCreacion = todayColombia();
+    if (data.activo === false && !data.fechaDesactivacion) {
+      data.fechaDesactivacion = todayColombia();
+    }
+    if (data.activo === true) {
+      data.fechaDesactivacion = '';
+    }
+    if (editId) await updateDoc(doc(db, 'sales_configs', editId), data);
+    else await addDoc(collection(db, 'sales_configs'), { ...data, createdAt: Date.now() });
+    setShowForm(false);
+    onSaved?.();
+  };
+
+  const remove = async (id) => {
+    if (window.confirm('¿Eliminar esta estrategia?')) await deleteDoc(doc(db, 'sales_configs', id));
+    onSaved?.();
+  };
+
+  const toggleV = (v) => setExpandedV(x => ({ ...x, [v]: !x[v] }));
+
+  const previewProfit = useMemo(() => {
+    const eff = parseFloat(form.effectiveness) / 100 || 0.95;
+    const ret = parseFloat(form.returnRate) / 100 || 0.20;
+    const IER = eff * (1 - ret);
+    const precio = parseFloat(form.priceSingle) || 0;
+    const costo = parseFloat(form.productCost) || 0;
+    const flete = parseFloat(form.freight) || 0;
+    const full = parseFloat(form.fulfillment) || 0;
+    const com = parseFloat(form.commission) || 0;
+    const fijos = parseFloat(form.fixedCosts) || 0;
+    const ads = parseFloat(form.dailyAdSpend) || 0;
+    const ingreso = precio * IER;
+    const costos = costo + (flete / (IER || 1)) + full + com + fijos + ads;
+    return ingreso - costos;
+  }, [form]);
+
+  const isPrefilledVendor = showForm && !editId && form.vendedora && configs.some(c => c.vendedora === form.vendedora);
+
   return (
-    <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-zinc-200/50 animate-in zoom-in-95 duration-300 text-center">
-        <div className="w-20 h-20 bg-zinc-900 rounded-[1.5rem] flex items-center justify-center text-white text-4xl shadow-xl italic font-black mx-auto mb-6">W</div>
-        <h1 className="text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">Winner OS</h1>
-        <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-widest uppercase mb-10 text-center w-full">Cloud Management System</p>
-        
-        <form onSubmit={handleLogin} className="space-y-6 text-left">
-          <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Correo Electrónico</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-base focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="admin@winneros.com"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Contraseña</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-base focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="••••••••"/>
-          </div>
-          {error && <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl text-rose-600 text-[11px] font-bold uppercase text-center leading-tight">⚠️ {error}</div>}
-          <button type="submit" disabled={loading} className="w-full bg-zinc-900 hover:bg-black text-white font-black py-5 rounded-2xl text-xs shadow-2xl transition-all uppercase tracking-[0.2em] active:scale-[0.98] disabled:opacity-50">
-            {loading ? 'Validando...' : 'Entrar al Sistema'}
-          </button>
-        </form>
+    <div className="space-y-6 md:space-y-8 anim-fade">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-zinc-900">Estrategias</h2>
+          <p className="text-xs text-slate-400 font-semibold mt-1 uppercase tracking-widest">Módulo 1 · Vendedoras y Productos</p>
+        </div>
+        <button onClick={openNew} className="flex items-center gap-2 bg-zinc-950 text-white px-4 md:px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-zinc-800 active:scale-95 transition-all shadow-lg"><Plus size={16} /> Nueva Vendedora + Producto</button>
       </div>
+
+      {Object.keys(grouped).length === 0 ? (
+        <Card className="text-center py-16 text-slate-300"><Users size={48} className="mx-auto mb-4 opacity-30" /><p className="font-black uppercase text-sm">Sin estrategias aún</p><p className="text-xs mt-1">Crea la primera estrategia para comenzar</p></Card>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(grouped).map(([vendedora, productos]) => (
+            <Card key={vendedora} className="overflow-hidden p-0">
+              <div className="flex items-center justify-between gap-3 p-4 md:p-5 bg-white">
+                <div onClick={() => toggleV(vendedora)} className="flex-1 flex items-center gap-3 cursor-pointer select-none">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-2xl bg-emerald-500 flex items-center justify-center text-white font-black text-sm shrink-0">{vendedora[0]?.toUpperCase()}</div>
+                  <div><p className="font-black text-xs md:text-sm uppercase tracking-wide">{vendedora}</p><p className="text-[10px] text-slate-400 font-semibold">{productos.length} producto{productos.length > 1 ? 's' : ''}</p></div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); openNewForVendor(vendedora); }} className="flex items-center gap-1 bg-emerald-500 text-zinc-950 px-3 py-2 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest hover:bg-emerald-400"><Plus size={12} /> Producto</button>
+                  <button type="button" onClick={() => toggleV(vendedora)} className="p-1 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">{expandedV[vendedora] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+                </div>
+              </div>
+              {expandedV[vendedora] && (
+                <div className="border-t border-slate-100 divide-y divide-slate-100">
+                  {productos.map(p => {
+                    const isActive = p.activo !== false;
+                    return (
+                      <div key={p.id} className={`p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-3 transition-all ${!isActive ? 'bg-slate-100 opacity-70' : ''}`}>
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`font-black uppercase text-xs md:text-sm ${!isActive ? 'text-slate-500 line-through' : 'text-emerald-600'}`}>{p.productName}</p>
+                            {!isActive && (
+                              <span className="flex items-center gap-1 text-[9px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full"><PowerOff size={10} /> INACTIVO</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="text-[8px] md:text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-lg uppercase">EFF {p.effectiveness}%</span>
+                            <span className="text-[8px] md:text-[9px] font-black bg-rose-50 text-rose-500 px-2 py-1 rounded-lg uppercase">DEV {p.returnRate}%</span>
+                            <span className="text-[8px] md:text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg uppercase">IER {(parseFloat(p.effectiveness) / 100 * (1 - parseFloat(p.returnRate) / 100) * 100).toFixed(1)}%</span>
+                            <span className="text-[8px] md:text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-1 rounded-lg uppercase">Flete {fmt(p.freight)}</span>
+                            {p.extraUnitCharge && parseFloat(p.extraUnitCharge) > 0 && <span className="text-[8px] md:text-[9px] font-black bg-yellow-50 text-yellow-600 px-2 py-1 rounded-lg uppercase">Extra x2+ {fmt(p.extraUnitCharge)}</span>}
+                            <span className="text-[8px] md:text-[9px] font-black bg-amber-50 text-amber-600 px-2 py-1 rounded-lg uppercase">Meta {fmt(p.targetProfit)}</span>
+                            {p.cpaEquilibrio && parseFloat(p.cpaEquilibrio) > 0 && <span className="text-[8px] md:text-[9px] font-black bg-purple-50 text-purple-600 px-2 py-1 rounded-lg uppercase">CPA Eq {fmt(p.cpaEquilibrio)}</span>}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 md:gap-2">
+                            <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Costo Unit</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.productCost)}</p></div>
+                            <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Comisión</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.commission)}</p></div>
+                            <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Fijos/Ent</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.fixedCosts)}</p></div>
+                          </div>
+                          <div className="text-[8px] text-slate-400 font-mono flex gap-2 flex-wrap">
+                            {p.fechaCreacion && <span>📅 Creación: {parseColombiaDate(p.fechaCreacion).toLocaleDateString('es-CO')}</span>}
+                            {p.fechaDesactivacion && <span className="text-red-400">🔴 Desactivado: {parseColombiaDate(p.fechaDesactivacion).toLocaleDateString('es-CO')}</span>}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => openEdit(p)} className="p-2 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 text-slate-400 transition-colors"><Pencil size={14} /></button>
+                          <button onClick={() => remove(p.id)} className="p-2 rounded-xl hover:bg-rose-50 hover:text-rose-500 text-slate-400 transition-colors"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="p-4 bg-slate-50/60"><button onClick={() => openNewForVendor(vendedora)} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-emerald-200 text-emerald-600 bg-white px-4 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50"><Plus size={14} /> Agregar nuevo producto a {vendedora}</button></div>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white w-full max-w-4xl rounded-2xl sm:rounded-3xl p-3 sm:p-6 md:p-8 max-h-[95vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base sm:text-xl md:text-2xl font-black italic uppercase">
+                  {editId ? 'Editar' : isPrefilledVendor ? `Nuevo Producto · ${form.vendedora}` : 'Nueva'} Estrategia
+                </h3>
+                <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
+                  {isPrefilledVendor ? `Agregando producto a vendedora existente` : 'Define parámetros de costo por producto'}
+                </p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-slate-100"><X size={20} /></button>
+            </div>
+
+            {isPrefilledVendor && (
+              <div className="mb-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-black text-xs shrink-0">{form.vendedora[0]?.toUpperCase()}</div>
+                <div>
+                  <p className="text-[10px] font-black text-emerald-700 uppercase">{form.vendedora}</p>
+                  <p className="text-[8px] text-emerald-500 font-semibold">Vendedora ya registrada · solo configura el nuevo producto</p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {!isPrefilledVendor && (
+                <InputField label="Nombre Vendedora" value={form.vendedora} onChange={e => setField('vendedora', e.target.value)} placeholder="Ej: CAMILA PEREIRA" />
+              )}
+              <InputField label="Nombre Producto" value={form.productName} onChange={e => setField('productName', e.target.value)} placeholder="Ej: CEPILLO PRO X2" />
+
+              <InputField label="Fecha de Creación" type="date" value={form.fechaCreacion} onChange={e => setField('fechaCreacion', e.target.value)} />
+
+              <div className="bg-zinc-950 text-white p-3 sm:p-4 rounded-xl flex flex-col gap-2 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {form.activo ? <Power size={16} className="text-emerald-400" /> : <PowerOff size={16} className="text-red-400" />}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest">Estado del Producto</p>
+                      <p className="text-[7px] text-zinc-400">Si lo desactivas, podrás elegir la fecha</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setField('activo', !form.activo)} className="flex items-center gap-1 text-[8px] font-black uppercase">
+                    {form.activo ? <><ToggleRight size={24} className="text-emerald-400" /><span className="text-emerald-400">ACTIVO</span></> : <><ToggleLeft size={24} className="text-red-400" /><span className="text-red-400">INACTIVO</span></>}
+                  </button>
+                </div>
+                {!form.activo && (
+  <>
+    <InputField 
+      label="Fecha de Desactivación" 
+      type="date" 
+      value={form.fechaDesactivacion} 
+      onChange={e => setField('fechaDesactivacion', e.target.value)} 
+    />
+    
+    <div className="flex items-center justify-between bg-white/10 rounded-xl p-3">
+      <div className="flex items-center gap-2">
+        <Package size={14} className="text-yellow-400" />
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-widest">Permitir registros residuales</p>
+          <p className="text-[7px] text-zinc-400">Ventas que llegan después de la desactivación</p>
+        </div>
+      </div>
+      <button 
+        onClick={() => setField('permiteRegistrosResiduales', !form.permiteRegistrosResiduales)} 
+        className="flex items-center gap-1 text-[8px] font-black uppercase"
+      >
+        {form.permiteRegistrosResiduales ? (
+          <><ToggleRight size={22} className="text-emerald-400" /><span className="text-emerald-400">SÍ</span></>
+        ) : (
+          <><ToggleLeft size={22} className="text-zinc-500" /><span className="text-zinc-500">NO</span></>
+        )}
+      </button>
+    </div>
+  </>
+)}
+</div>
+
+              <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl space-y-1">
+                <Label className="text-emerald-700 text-[9px]">% Efectividad</Label>
+                <input type="number" value={form.effectiveness} onChange={e => setField('effectiveness', e.target.value)} className="w-full bg-transparent font-black text-2xl text-emerald-800 outline-none" />
+                <p className="text-[7px] text-emerald-600 font-semibold">Pedidos que salen</p>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-100 p-3 rounded-xl space-y-1">
+                <Label className="text-rose-600 text-[9px]">% Devolución</Label>
+                <input type="number" value={form.returnRate} onChange={e => setField('returnRate', e.target.value)} className="w-full bg-transparent font-black text-2xl text-rose-700 outline-none" />
+                <p className="text-[7px] text-rose-500 font-semibold">Del despachado, % que regresa</p>
+              </div>
+
+              <div className="bg-zinc-950 text-white p-3 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-2 sm:col-span-2">
+                <div>
+                  <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Índice de Efectividad Real (IER)</p>
+                  <p className="text-[8px] text-zinc-400">De cada 100 pedidos, ¿cuántos se pagan?</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-black font-mono text-emerald-400">
+                    {((parseFloat(form.effectiveness) || 95) / 100 * (1 - (parseFloat(form.returnRate) || 20) / 100) * 100).toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+
+              <InputField label="Precio Venta (1 und)" type="number" value={form.priceSingle} onChange={e => setField('priceSingle', e.target.value)} placeholder="Ej: 79000" />
+              <InputField label="Costo Unitario Producto" type="number" value={form.productCost} onChange={e => setField('productCost', e.target.value)} placeholder="Ej: 18000" />
+              <InputField label="Flete Base por Guía" type="number" value={form.freight} onChange={e => setField('freight', e.target.value)} placeholder="Ej: 9500" />
+              <InputField label="Cargo extra x unidad adicional" type="number" value={form.extraUnitCharge} onChange={e => setField('extraUnitCharge', e.target.value)} placeholder="Ej: 5000" />
+              <InputField label="Fulfillment por guía" type="number" value={form.fulfillment} onChange={e => setField('fulfillment', e.target.value)} placeholder="Ej: 1500" />
+              <InputField label="Comisión por Entrega" type="number" value={form.commission} onChange={e => setField('commission', e.target.value)} placeholder="Ej: 3000" />
+              <InputField label="Costos Fijos x Entrega" type="number" value={form.fixedCosts} onChange={e => setField('fixedCosts', e.target.value)} placeholder="Ej: 2000" />
+              <InputField label="Meta Utilidad Mensual" type="number" value={form.targetProfit} onChange={e => setField('targetProfit', e.target.value)} placeholder="Ej: 4000000" />
+              <InputField label="CPA Equilibrio (por pedido)" type="number" value={form.cpaEquilibrio} onChange={e => setField('cpaEquilibrio', e.target.value)} placeholder="Ej: 15000" />
+
+              <div className="bg-zinc-950 text-white p-3 rounded-xl space-y-2 sm:col-span-2">
+                <div className="flex justify-between items-center">
+                  <Label className="text-zinc-500 text-[9px]">Inversión Ads Diaria</Label>
+                  <button onClick={() => setField('fixedAdSpend', !form.fixedAdSpend)} className="flex items-center gap-1 text-[8px] font-black uppercase">
+                    {form.fixedAdSpend ? <><ToggleRight size={20} className="text-emerald-400" /><span className="text-emerald-400">FIJA</span></> : <><ToggleLeft size={20} className="text-zinc-500" /><span className="text-zinc-500">MANUAL</span></>}
+                  </button>
+                </div>
+                <input type="number" value={form.dailyAdSpend} onChange={e => setField('dailyAdSpend', e.target.value)} placeholder="$ 0" className="w-full bg-transparent text-emerald-400 font-black text-xl outline-none placeholder:text-zinc-700" />
+                <p className="text-[7px] text-zinc-600 font-semibold">
+                  {form.fixedAdSpend ? '✓ FIJA: Se aplica automáticamente a cada registro diario' : '⚠ MANUAL: Debes ingresar el valor en cada cierre diario'}
+                </p>
+              </div>
+
+              {form.priceSingle && form.productCost && (
+                <div className={`p-3 rounded-xl border-2 ${previewProfit >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'} sm:col-span-2`}>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-1">Preview Utilidad Estimada por Pedido Registrado</p>
+                  <p className={`text-xl md:text-2xl font-black font-mono ${previewProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmt(previewProfit)}</p>
+                  <p className="text-[7px] text-slate-400 mt-1">Aplicando IER, fletes y todos los costos</p>
+                </div>
+              )}
+
+              {/* SECCIÓN DE AJUSTES MENSUALES - RESPONSIVA */}
+              <div className="sm:col-span-2 border-t border-slate-200 pt-3 mt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <Label className="text-slate-600 text-[9px] flex items-center gap-1">📅 Ajustes mensuales (Efectividad/Devolución)</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMonth = prompt("Ingrese el mes (formato YYYY-MM, ej: 2025-04):");
+                      if (newMonth && /^\d{4}-\d{2}$/.test(newMonth)) {
+                        const current = form.monthlyIER || [];
+                        if (!current.find(a => a.month === newMonth)) {
+                          setForm(prev => ({
+                            ...prev,
+                            monthlyIER: [...current, { month: newMonth, effectiveness: prev.effectiveness, returnRate: prev.returnRate }]
+                          }));
+                        } else alert("Ya existe un ajuste para ese mes");
+                      } else if (newMonth) alert("Formato inválido. Use YYYY-MM");
+                    }}
+                    className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full flex items-center justify-center gap-1"
+                  >
+                    <Plus size={10} /> Agregar mes
+                  </button>
+                </div>
+                
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(form.monthlyIER && form.monthlyIER.length > 0) ? (
+                    form.monthlyIER.map((adj, idx) => (
+                      <div key={idx} className="flex flex-wrap items-center gap-2 bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[9px] font-black bg-slate-200 px-2 py-1 rounded-lg w-16 text-center">{adj.month}</span>
+                        <input
+                          type="number"
+                          value={adj.effectiveness}
+                          onChange={(e) => {
+                            const newAdj = [...form.monthlyIER];
+                            newAdj[idx].effectiveness = e.target.value;
+                            setForm(prev => ({ ...prev, monthlyIER: newAdj }));
+                          }}
+                          className="flex-1 min-w-[70px] px-2 py-1 rounded-lg text-xs bg-white border"
+                          placeholder="Eff %"
+                        />
+                        <input
+                          type="number"
+                          value={adj.returnRate}
+                          onChange={(e) => {
+                            const newAdj = [...form.monthlyIER];
+                            newAdj[idx].returnRate = e.target.value;
+                            setForm(prev => ({ ...prev, monthlyIER: newAdj }));
+                          }}
+                          className="flex-1 min-w-[70px] px-2 py-1 rounded-lg text-xs bg-white border"
+                          placeholder="Ret %"
+                        />
+                        <button onClick={() => {
+                          const newAdj = form.monthlyIER.filter((_, i) => i !== idx);
+                          setForm(prev => ({ ...prev, monthlyIER: newAdj }));
+                        }} className="text-rose-500 hover:text-rose-700 p-1">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[8px] text-slate-400 text-center py-2">Sin ajustes mensuales. Se usarán los valores base.</p>
+                  )}
+                </div>
+                <p className="text-[7px] text-slate-400 mt-2">💡 Los ajustes mensuales sobrescriben la efectividad y devolución para ese mes completo.</p>
+              </div>
+            </div>
+
+            <button
+              onClick={save}
+              disabled={!form.vendedora.trim() || !form.productName.trim()}
+              className="w-full mt-5 bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-emerald-400 active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2"
+            >
+              <Save size={16} /> {editId ? 'Actualizar Estrategia' : isPrefilledVendor ? `Agregar Producto a ${form.vendedora}` : 'Guardar Estrategia'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-// ==================== COMPONENTE AGENDA (CORREGIDO) ====================
+
+// ─── VISTA 2: REGISTRO DIARIO (con filtro de productos activos en la fecha, y resumen de faltantes solo para productos que ya existían) ─────────
+function VistaRegistro({ configs, months, activeTab }) {
+  const [selectedDate, setSelectedDate] = useState(todayColombia());
+  const [selectedVendor, setSelectedVendor] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [form, setForm] = useState({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+  const [editingRec, setEditingRec] = useState(null);
+  const [savedMsg, setSavedMsg] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [filterVendor, setFilterVendor] = useState('all');
+ const [mostrarInactivos, setMostrarInactivos] = useState(false);
+  
+  const grouped = useMemo(() => configs.reduce((a, c) => {
+    if (!a[c.vendedora]) a[c.vendedora] = [];
+    a[c.vendedora].push(c);
+    return a;
+  }, {}), [configs]);
+  const vendors = useMemo(() => Object.keys(grouped).sort(), [grouped]);
+
+  // PRODUCTOS DISPONIBLES para la vendedora seleccionada, considerando fecha de creación y desactivación
+
+ 
+const productsOfVendor = useMemo(() => {
+  if (!selectedVendor) return [];
+  const productos = grouped[selectedVendor] || [];
+  const fechaRegistro = selectedDate;
+  
+  const activosEnFecha = [];
+  const residuales = [];
+  
+  productos.forEach(p => {
+    // Usar la función global (ya definida arriba)
+    const estabaActivo = isProductActiveOnDate(p, fechaRegistro);
+    
+    if (estabaActivo) {
+      activosEnFecha.push(p);
+    } else if (p.permiteRegistrosResiduales === true) {
+      residuales.push({ ...p, esResidual: true });
+    }
+  });
+  
+  if (mostrarInactivos) {
+    return [...activosEnFecha, ...residuales];
+  }
+  return activosEnFecha;
+}, [selectedVendor, grouped, selectedDate, mostrarInactivos]);
+
+  const selectedConfig = useMemo(() => selectedProductId ? configs.find(c => c.id === selectedProductId) : null, [selectedProductId, configs]);
+  const extraUnitCharge = parseFloat(selectedConfig?.extraUnitCharge) || 0;
+
+  const monthId = selectedDate.substring(0, 7);
+  const monthDoc = months.find(m => m.id === monthId);
+  const dayRecords = useMemo(() => (monthDoc?.records || []).filter(r => r.date === selectedDate), [monthDoc, selectedDate]);
+
+  // Resumen de productos registrados vs activos (solo aquellos que deberían estar activos en la fecha)
+  const summary = useMemo(() => {
+    // Productos que deberían estar activos según fecha de creación y desactivación
+    let activeProducts = [];
+    if (filterVendor === 'all') {
+      activeProducts = configs.filter(c => {
+        const fechaCreacion = c.fechaCreacion ? parseColombiaDate(c.fechaCreacion) : null;
+        const fechaDesactivacion = c.fechaDesactivacion ? parseColombiaDate(c.fechaDesactivacion) : null;
+        const fechaCierre = parseColombiaDate(selectedDate);
+        if (fechaCreacion && fechaCreacion > fechaCierre) return false;
+        if (c.activo === false && fechaDesactivacion && fechaDesactivacion <= fechaCierre) return false;
+        return true;
+      });
+    } else {
+      activeProducts = configs.filter(c => {
+        if (c.vendedora !== filterVendor) return false;
+        const fechaCreacion = c.fechaCreacion ? parseColombiaDate(c.fechaCreacion) : null;
+        const fechaDesactivacion = c.fechaDesactivacion ? parseColombiaDate(c.fechaDesactivacion) : null;
+        const fechaCierre = parseColombiaDate(selectedDate);
+        if (fechaCreacion && fechaCreacion > fechaCierre) return false;
+        if (c.activo === false && fechaDesactivacion && fechaDesactivacion <= fechaCierre) return false;
+        return true;
+      });
+    }
+    const registeredProductIds = new Set(dayRecords.map(r => r.configId));
+    const registeredActive = activeProducts.filter(p => registeredProductIds.has(p.id)).length;
+    const totalActive = activeProducts.length;
+    return { totalActive, registeredActive, missing: totalActive - registeredActive };
+  }, [dayRecords, configs, filterVendor, selectedDate]);
+
+  const recordsByVendor = useMemo(() => {
+    const map = new Map();
+    dayRecords.forEach(rec => {
+      const config = configs.find(c => c.id === rec.configId);
+      if (!config) return;
+      const vendor = config.vendedora;
+      if (!map.has(vendor)) map.set(vendor, []);
+      map.get(vendor).push({ ...rec, config });
+    });
+    return map;
+  }, [dayRecords, configs]);
+
+  const filteredDayRecords = useMemo(() => {
+    if (filterVendor === 'all') return dayRecords;
+    return recordsByVendor.get(filterVendor) || [];
+  }, [dayRecords, recordsByVendor, filterVendor]);
+
+  const { ultimoDia, diasFaltantes } = useMemo(() => {
+    let maxDate = null;
+    const fechasConRegistros = new Set();
+    months.forEach(month => {
+      month.records?.forEach(record => {
+        if (!record.restDay) {
+          fechasConRegistros.add(record.date);
+          if (record.date > (maxDate || '')) maxDate = record.date;
+        }
+      });
+    });
+    if (!maxDate) return { ultimoDia: null, diasFaltantes: [] };
+    const fechaUltimo = maxDate;
+    const hoy = todayColombia();
+    const allDates = [];
+    let current = parseColombiaDate(fechaUltimo);
+    const end = parseColombiaDate(hoy);
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      if (!fechasConRegistros.has(dateStr) && dateStr !== fechaUltimo) {
+        allDates.push(dateStr);
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    const diasFaltantesFormateados = allDates.map(d => ({
+      fecha: d,
+      nombre: parseColombiaDate(d).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })
+    }));
+    return { ultimoDia: fechaUltimo, diasFaltantes: diasFaltantesFormateados };
+  }, [months]);
+
+  const diferenciaDias = ultimoDia ? Math.floor((parseColombiaDate(todayColombia()) - parseColombiaDate(ultimoDia)) / (1000 * 60 * 60 * 24)) : null;
+
+  const setFormField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleVendorChange = (vendor) => {
+    setSelectedVendor(vendor);
+    setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+  const handleProductChange = (productId) => {
+    setSelectedProductId(productId);
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  const save = async () => {
+    setErrorMsg('');
+    if (!selectedVendor || !selectedProductId) {
+      alert("Debes seleccionar una vendedora y un producto.");
+      return;
+    }
+    if (!editingRec) {
+      const exists = dayRecords.some(r => r.configId === selectedProductId);
+      if (exists) {
+        const config = configs.find(c => c.id === selectedProductId);
+        const vendorName = config?.vendedora || selectedVendor;
+        const productName = config?.productName || 'Desconocido';
+        setErrorMsg(`❌ Ya existe un registro para ${vendorName} - ${productName} en esta fecha. Puedes editarlo o eliminarlo.`);
+        return;
+      }
+    }
+    let orders = form.orders, units = form.units, revenue = form.revenue, adSpend = form.adSpend;
+    if (form.restDay) {
+      orders = '0'; units = '0'; revenue = '0'; adSpend = '0';
+      setFormField('orders', '0'); setFormField('units', '0'); setFormField('revenue', '0');
+      if (!selectedConfig?.fixedAdSpend) setFormField('adSpend', '0');
+    } else {
+      if (!orders || !units || !revenue) {
+        alert("Completa todos los campos obligatorios (guías, unidades y recaudo) o activa 'Día de descanso'.");
+        return;
+      }
+    }
+    const rec = {
+      configId: selectedProductId, orders, units, revenue, adSpend,
+      date: selectedDate, id: editingRec?.id || Date.now().toString(),
+      savedAt: Date.now(), restDay: form.restDay
+    };
+    const ref = doc(db, 'sales_months', monthId);
+    const existing = months.find(m => m.id === monthId);
+    let records = existing?.records || [];
+    if (editingRec) {
+      records = records.map(r => r.id === editingRec.id ? rec : r);
+      await setDoc(ref, { records });
+      setEditingRec(null);
+    } else {
+      records = [...records, rec];
+      if (existing) await updateDoc(ref, { records });
+      else await setDoc(ref, { records });
+    }
+    //setSelectedVendor(''); setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2500);
+  };
+
+  const startEdit = (r) => {
+    const config = configs.find(c => c.id === r.configId);
+    if (config) {
+      setSelectedVendor(config.vendedora);
+      setSelectedProductId(r.configId);
+      setForm({ orders: r.orders, units: r.units, revenue: r.revenue, adSpend: r.adSpend || '', restDay: r.restDay || false });
+      setEditingRec(r);
+      setErrorMsg('');
+    }
+  };
+
+  const deleteRec = async (id) => {
+    if (!window.confirm('¿Eliminar este registro?')) return;
+    const ref = doc(db, 'sales_months', monthId);
+    const existing = months.find(m => m.id === monthId);
+    const records = (existing?.records || []).filter(r => r.id !== id);
+    await setDoc(ref, { records });
+    if (editingRec?.id === id) cancelEdit();
+  };
+
+  const cancelEdit = () => {
+    setEditingRec(null);
+    setSelectedVendor(''); setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  const avgUnits = (!form.restDay && form.orders && form.units && parseFloat(form.orders) > 0)
+    ? (parseFloat(form.units) / parseFloat(form.orders)).toFixed(2) : null;
+  const extraPerGuide = avgUnits && parseFloat(avgUnits) > 1 && extraUnitCharge > 0
+    ? (parseFloat(avgUnits) - 1) * extraUnitCharge : 0;
+
+  const moveDate = (days) => {
+    const date = parseColombiaDate(selectedDate);
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    setSelectedDate(`${year}-${month}-${day}`);
+    setEditingRec(null);
+    setSelectedVendor(''); setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 anim-slide">
+      <div><h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter">Cierre Diario</h2><p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-1">Módulo 2 · Registro de Operación</p></div>
+
+      {ultimoDia && (
+        <div className={`rounded-2xl p-3 md:p-4 border-l-8 shadow-sm ${diferenciaDias > 1 ? 'bg-amber-50 border-amber-400 text-amber-800' : 'bg-blue-50 border-blue-400 text-blue-800'}`}>
+          <div className="flex flex-col md:flex-row justify-between items-start gap-3">
+            <div className="flex items-start gap-3">
+              <CalendarDays size={18} className="mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-70">Último día registrado</p>
+                <p className="font-black text-xs md:text-base">
+                  {parseColombiaDate(ultimoDia).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
+                </p>
+                <p className="text-[8px] md:text-[9px] font-semibold mt-1">
+                  {diferenciaDias === 0 && ' ✅ Hoy ya hay actividad.'}
+                  {diferenciaDias === 1 && ' ⚠️ Ayer fue el último día. Hoy aún no hay registros.'}
+                  {diferenciaDias > 1 && ` ❗ Han pasado ${diferenciaDias} días sin registrar.`}
+                </p>
+              </div>
+            </div>
+            {diasFaltantes.length > 0 && (
+              <div className="bg-white/80 rounded-xl p-2 max-h-32 overflow-y-auto text-[10px] w-full md:w-auto">
+                <p className="font-black uppercase text-[8px] flex items-center gap-1"><ListChecks size={10} /> Días sin registrar:</p>
+                <ul className="mt-1 space-y-0.5">
+                  {diasFaltantes.slice(0, 4).map(d => (
+                    <li key={d.fecha} className="text-[9px]">📅 {d.nombre}</li>
+                  ))}
+                  {diasFaltantes.length > 4 && <li className="text-[8px] text-amber-600">... y {diasFaltantes.length - 4} más</li>}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <Card className={`space-y-4 md:space-y-5 ${editingRec ? 'border-2 border-amber-400' : ''}`}>
+        {editingRec && (<div className="flex items-center gap-2 text-amber-600 text-[10px] font-black uppercase bg-amber-50 px-3 py-2 rounded-xl"><Pencil size={12} /> Editando registro · <button onClick={cancelEdit} className="text-slate-500 underline ml-auto">Cancelar</button></div>)}
+        {errorMsg && (<div className="flex items-center gap-2 text-rose-600 text-[10px] font-black uppercase bg-rose-50 px-3 py-2 rounded-xl border border-rose-200"><AlertTriangle size={12} /> {errorMsg}</div>)}
+
+        <div className="bg-zinc-950 px-4 py-3 rounded-2xl text-white space-y-3">
+          <div className="flex items-center gap-2"><Calendar size={16} className="text-emerald-400" /><div><p className="text-[8px] font-black text-zinc-500 uppercase">Fecha del Registro · Selección libre (Hora Colombia)</p><p className="text-[8px] text-zinc-600">Cualquier día pasado, presente o futuro</p></div></div>
+          <div className="space-y-2"><input type="date" value={selectedDate} onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setEditingRec(null); setSelectedVendor(''); setSelectedProductId(''); setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false }); setErrorMsg(''); } }} className="w-full bg-white text-zinc-950 font-black text-sm md:text-base rounded-xl px-3 py-2 cursor-pointer border-2 border-emerald-400" /><div className="grid grid-cols-3 gap-1"><button onClick={() => moveDate(-1)} className="bg-white/10 text-emerald-400 px-2 py-1.5 rounded-xl text-[9px] font-black">Día anterior</button><button onClick={() => { setSelectedDate(todayColombia()); setEditingRec(null); setSelectedVendor(''); setSelectedProductId(''); setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false }); setErrorMsg(''); }} className="bg-emerald-500 text-zinc-950 px-2 py-1.5 rounded-xl text-[9px] font-black">Hoy</button><button onClick={() => moveDate(1)} className="bg-white/10 text-emerald-400 px-2 py-1.5 rounded-xl text-[9px] font-black">Día siguiente</button></div></div>
+          <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2"><p className="text-[9px] text-zinc-500 font-black uppercase">Registrando en: <span className="text-emerald-400">{parseColombiaDate(selectedDate).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}</span></p></div>
+        </div>
+
+        <div className={`rounded-xl p-3 flex items-center justify-between ${form.restDay ? 'bg-amber-100 border-2 border-amber-300' : 'bg-slate-100'}`}>
+          <div className="flex items-center gap-2"><Coffee size={16} className="text-amber-600" /><div><p className="text-[9px] font-black uppercase">Día de descanso / Sin campaña</p><p className="text-[8px] text-slate-500">Los campos se guardarán como 0.</p></div></div>
+          <button onClick={() => setFormField('restDay', !form.restDay)} className="flex items-center gap-1 text-[8px] font-black">{form.restDay ? (<><ToggleRight size={22} className="text-amber-500" /><span className="text-amber-600">DESCANSO</span></>) : (<><ToggleLeft size={22} className="text-slate-400" /><span className="text-slate-500">Activo</span></>)}</button>
+        </div>
+
+        <div className="space-y-1.5"><Label>Vendedora</Label><select value={selectedVendor} onChange={(e) => handleVendorChange(e.target.value)} disabled={!!editingRec} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 font-semibold text-sm outline-none focus:border-emerald-400 disabled:bg-slate-100"><option value="">Seleccionar vendedora...</option>{vendors.map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+        <div className="space-y-1.5"><Label>Producto</Label><select value={selectedProductId} onChange={(e) => handleProductChange(e.target.value)} disabled={!selectedVendor || !!editingRec} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 font-semibold text-sm outline-none focus:border-emerald-400 disabled:bg-slate-100"><option value="">Seleccionar producto...</option>{productsOfVendor.map(p => (
+  <option key={p.id} value={p.id} className={p.esResidual ? 'text-red-500 line-through' : ''}>
+    {p.productName} {p.esResidual && '(INACTIVO - residual)'}
+  </option>
+))}</select>{editingRec && <p className="text-[8px] text-amber-600 mt-1">⚠ No puedes cambiar vendedora ni producto mientras editas.</p>}</div>
+
+<div className="flex items-center gap-2 mt-2 mb-2">
+  <input
+    type="checkbox"
+    id="mostrarInactivos"
+    checked={mostrarInactivos}
+    onChange={(e) => setMostrarInactivos(e.target.checked)}
+    className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+  />
+  <label htmlFor="mostrarInactivos" className="text-[10px] font-black uppercase text-slate-500">
+    📦 Mostrar productos inactivos (ventas residuales)
+  </label>
+</div>
+
+        {selectedConfig && !selectedConfig.fixedAdSpend && (<div className="bg-zinc-950 text-white px-4 py-3 rounded-xl space-y-1"><Label className="text-zinc-500 text-[9px]">Inversión Ads de Hoy (MANUAL)</Label><input type="number" value={form.adSpend} onChange={e => setFormField('adSpend', e.target.value)} placeholder="$ 0" disabled={form.restDay} className={`w-full bg-transparent font-black text-xl outline-none ${form.restDay ? 'text-zinc-500 line-through' : 'text-emerald-400'}`} />{form.restDay && <p className="text-[8px] text-amber-400">Se guardará como 0.</p>}</div>)}
+        {selectedConfig?.fixedAdSpend && (<div className="flex items-center gap-2 text-emerald-600 text-[8px] font-black bg-emerald-50 px-3 py-2 rounded-xl uppercase"><ToggleRight size={14} /> Ads fijo: {fmt(selectedConfig.dailyAdSpend)} · Se aplica automático</div>)}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-slate-50 p-3 rounded-xl space-y-1"><div className="flex items-center gap-2 text-slate-400"><Package size={12} /><Label className="!mb-0">Total Guías</Label></div><input type="number" value={form.orders} onChange={e => setFormField('orders', e.target.value)} placeholder="0" disabled={form.restDay} className={`w-full bg-transparent font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-slate-900'}`} />{form.restDay && <p className="text-[7px] text-amber-500">→ 0</p>}</div>
+          <div className="bg-slate-50 p-3 rounded-xl space-y-1"><div className="flex items-center gap-2 text-slate-400"><Layers size={12} /><Label className="!mb-0">Total Unidades</Label></div><input type="number" value={form.units} onChange={e => setFormField('units', e.target.value)} placeholder="0" disabled={form.restDay} className={`w-full bg-transparent font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-slate-900'}`} />{form.restDay && <p className="text-[7px] text-amber-500">→ 0</p>}</div>
+        </div>
+
+        {!form.restDay && avgUnits && (<div className="text-center space-y-0.5"><p className="text-[9px] text-slate-400 font-black uppercase">Promedio: <span className="text-emerald-600">{avgUnits} unid/guía</span></p>{extraUnitCharge > 0 && parseFloat(avgUnits) > 1 && (<p className="text-[8px] font-bold text-yellow-600">Extra: {fmt(extraUnitCharge)} × {fmtN(parseFloat(avgUnits) - 1)} = {fmt(extraPerGuide)}</p>)}</div>)}
+
+        <div className="space-y-1.5"><Label>Recaudo Bruto Total del Día</Label><input type="number" value={form.revenue} onChange={e => setFormField('revenue', e.target.value)} placeholder="$ 0" disabled={form.restDay} className={`w-full px-4 py-4 rounded-xl bg-slate-50 border-2 border-emerald-100 focus:border-emerald-400 font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-emerald-700'}`} />{form.restDay && <p className="text-[8px] text-amber-500 text-center">→ 0</p>}</div>
+
+        <button onClick={save} disabled={!selectedVendor || !selectedProductId} className="w-full bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-400 disabled:opacity-30 flex items-center justify-center gap-2"><Save size={14} /> {editingRec ? 'Actualizar' : 'Guardar'}</button>
+        {savedMsg && <div className="flex justify-center gap-2 text-emerald-600 text-[10px] font-black"><CheckCircle2 size={12} /> ¡Guardado!</div>}
+      </Card>
+
+      {/* Resumen de productos registrados vs activos (solo los que deberían estar activos en esta fecha) */}
+      {summary.totalActive > 0 && (
+        <Card className={`p-3 text-center ${summary.missing === 0 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className="flex items-center justify-center gap-2">
+            <CheckCircle2 size={16} className={summary.missing === 0 ? 'text-green-600' : 'text-amber-600'} />
+            <span className="text-[11px] font-black uppercase tracking-wider">
+              {summary.missing === 0 
+                ? '✅ TODOS LOS PRODUCTOS ACTIVOS REGISTRADOS' 
+                : `⚠️ FALTAN ${summary.missing} PRODUCTO${summary.missing !== 1 ? 'S' : ''} POR REGISTRAR`}
+            </span>
+          </div>
+          <p className="text-[10px] font-semibold mt-1">
+            Registrados hoy: <strong>{summary.registeredActive}</strong> de <strong>{summary.totalActive}</strong> productos activos en esta fecha
+          </p>
+        </Card>
+      )}
+
+      {dayRecords.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Registros del día</p>
+            <select
+              value={filterVendor}
+              onChange={(e) => setFilterVendor(e.target.value)}
+              className="text-[10px] font-black uppercase bg-white border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-emerald-400"
+            >
+              <option value="all">TODAS LAS VENDEDORAS</option>
+              {Array.from(recordsByVendor.keys()).sort().map(v => (
+                <option key={v} value={v}>{v.toUpperCase()}</option>
+              ))}
+            </select>
+          </div>
+          
+          {filteredDayRecords.length === 0 ? (
+            <Card className="text-center py-8 text-slate-400 text-[10px]">
+              No hay registros para la vendedora seleccionada en esta fecha.
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {filteredDayRecords.map(r => {
+                const c = configs.find(x => x.id === r.configId);
+                const eff = parseFloat(c?.effectiveness || 95) / 100;
+                const ret = parseFloat(c?.returnRate || 20) / 100;
+                const IER = eff * (1 - ret);
+                const orders = parseFloat(r.orders) || 0;
+                const units = parseFloat(r.units) || 0;
+                const avgU = orders > 0 ? units / orders : 1;
+                const deliveries = orders * IER;
+                const unitsDelivered = deliveries * avgU;
+                return (
+                  <Card key={r.id} className={`flex flex-col sm:flex-row sm:items-center gap-2 ${r.restDay ? 'bg-slate-100' : ''}`}>
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="font-black text-emerald-600 text-xs">{c?.vendedora}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="font-semibold text-xs">{c?.productName}</span>
+                        {r.restDay && <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1 rounded-full"><Moon size={8} /> DESCANSO</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <span className="text-[8px] font-black bg-slate-100 px-1.5 py-0.5 rounded">{r.orders} guías</span>
+                        <span className="text-[8px] font-black bg-slate-100 px-1.5 py-0.5 rounded">{r.units} unid</span>
+                        <span className="text-[8px] font-black bg-emerald-50 px-1.5 py-0.5 rounded">{fmtN(deliveries)} entregas</span>
+                        <span className="text-[8px] font-black bg-blue-50 px-1.5 py-0.5 rounded">{fmtN(unitsDelivered)} prod.</span>
+                        <span className="text-[8px] font-black bg-zinc-100 px-1.5 py-0.5 rounded">{fmt(r.revenue)}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => startEdit(r)} className="p-1.5 rounded hover:bg-amber-50"><Pencil size={12} /></button>
+                      <button onClick={() => deleteRec(r.id)} className="p-1.5 rounded hover:bg-rose-50"><Trash2 size={12} /></button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VISTA 3: DASHBOARD (igual que antes, sin cambios) ──────────────────────
+function VistaDashboard({ configs, months }) {
+  const [filter, setFilter] = useState({ startDate: todayColombia(), endDate: todayColombia() });
+  const [selectedVendors, setSelectedVendors] = useState([]);
+  const [selectedProductsByVendor, setSelectedProductsByVendor] = useState({});
+  // Cargar filtros guardados al montar el componente
+useEffect(() => {
+  const savedStartDate = localStorage.getItem('dashboard_filters_startDate');
+  const savedEndDate = localStorage.getItem('dashboard_filters_endDate');
+  const savedVendors = localStorage.getItem('dashboard_selectedVendors');
+  const savedProducts = localStorage.getItem('dashboard_selectedProductsByVendor');
+  
+  if (savedStartDate) setFilter(f => ({ ...f, startDate: savedStartDate }));
+  if (savedEndDate) setFilter(f => ({ ...f, endDate: savedEndDate }));
+  if (savedVendors) setSelectedVendors(JSON.parse(savedVendors));
+  if (savedProducts) setSelectedProductsByVendor(JSON.parse(savedProducts));
+}, []);
+
+// Guardar filtros cuando cambien
+useEffect(() => {
+  localStorage.setItem('dashboard_filters_startDate', filter.startDate);
+  localStorage.setItem('dashboard_filters_endDate', filter.endDate);
+  localStorage.setItem('dashboard_selectedVendors', JSON.stringify(selectedVendors));
+  localStorage.setItem('dashboard_selectedProductsByVendor', JSON.stringify(selectedProductsByVendor));
+}, [filter.startDate, filter.endDate, selectedVendors, selectedProductsByVendor]);
+
+  // ========== OBTENER PRODUCTOS QUE TIENEN REGISTROS EN EL RANGO ==========
+  const getProductsWithRecordsInRange = useMemo(() => {
+    const productsMap = new Map();
+    const allRecords = months.flatMap(m => m.records || []);
+    const startDate = filter.startDate;
+    const endDate = filter.endDate;
+    
+    allRecords.forEach(record => {
+      if (record.date < startDate || record.date > endDate) return;
+      const config = configs.find(c => c.id === record.configId);
+      if (!config) return;
+      const vendor = config.vendedora;
+      if (!productsMap.has(vendor)) productsMap.set(vendor, new Map());
+      const vendorProducts = productsMap.get(vendor);
+      if (!vendorProducts.has(config.id)) {
+        vendorProducts.set(config.id, config);
+      }
+    });
+    
+    const result = new Map();
+    for (const [vendor, productMap] of productsMap.entries()) {
+      result.set(vendor, Array.from(productMap.values()));
+    }
+    return result;
+  }, [months, configs, filter.startDate, filter.endDate]);
+
+  const availableVendors = useMemo(() => Array.from(getProductsWithRecordsInRange.keys()).sort(), [getProductsWithRecordsInRange]);
+
+  // ========== FILTRADO DE REGISTROS ==========
+  const filteredRecords = useMemo(() => {
+    const all = months.flatMap(m => m.records || []);
+    return all.filter(r => {
+      const c = configs.find(x => x.id === r.configId);
+      if (!c) return false;
+      if (r.date < filter.startDate || r.date > filter.endDate) return false;
+      if (selectedVendors.length > 0 && !selectedVendors.includes(c.vendedora)) return false;
+      const vendorProducts = selectedProductsByVendor[c.vendedora];
+      if (vendorProducts && vendorProducts.length > 0 && !vendorProducts.includes(r.configId)) return false;
+      return true;
+    });
+  }, [months, configs, filter.startDate, filter.endDate, selectedVendors, selectedProductsByVendor]);
+
+  // Resetear selección cuando cambian fechas
+  useEffect(() => {
+    const newSelected = {};
+    for (const vendor of selectedVendors) {
+      const availableProducts = getProductsWithRecordsInRange.get(vendor) || [];
+      const currentSelected = selectedProductsByVendor[vendor] || [];
+      const validSelected = currentSelected.filter(pid => availableProducts.some(p => p.id === pid));
+      if (validSelected.length > 0) newSelected[vendor] = validSelected;
+    }
+    setSelectedProductsByVendor(newSelected);
+  }, [filter.startDate, filter.endDate, getProductsWithRecordsInRange, selectedVendors]);
+
+  const setF = (k, v) => setFilter(f => ({ ...f, [k]: v }));
+  
+  const [openSections, setOpenSections] = useState({
+    embudo: false,
+    costos: false,
+    ranking: false,
+    proyeccion: false,
+    analisisProductos: false,
+    comparativaVendedoras: false,
+    productosRevision: true
+  });
+  const toggleSection = (section) => setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
+
+  const stats = useMemo(() => calcularStats(filteredRecords, configs), [filteredRecords, configs]);
+  const activeDays = useMemo(() => {
+    const activeRecords = filteredRecords.filter(r => !r.restDay);
+    const uniqueDates = new Set(activeRecords.map(r => r.date));
+    return uniqueDates.size;
+  }, [filteredRecords]);
+  const avgDiario = activeDays > 0 ? stats.net / activeDays : 0;
+  const proyeccion30 = avgDiario * 30;
+  
+  const targetProfit = useMemo(() => {
+    let total = 0;
+    for (const [vendor, productIds] of Object.entries(selectedProductsByVendor)) {
+      if (productIds.length) {
+        productIds.forEach(pid => {
+          const c = configs.find(c => c.id === pid);
+          if (c) total += parseFloat(c.targetProfit) || 0;
+        });
+      } else {
+        const prods = getProductsWithRecordsInRange.get(vendor) || [];
+        total += prods.reduce((s, p) => s + (parseFloat(p.targetProfit) || 0), 0);
+      }
+    }
+    if (total > 0) return total;
+    if (selectedVendors.length === 1 && !Object.keys(selectedProductsByVendor).length) {
+      const prods = getProductsWithRecordsInRange.get(selectedVendors[0]) || [];
+      return prods.reduce((s, p) => s + (parseFloat(p.targetProfit) || 0), 0);
+    }
+    let allProfit = 0;
+    for (const prods of getProductsWithRecordsInRange.values()) {
+      allProfit += prods.reduce((s, p) => s + (parseFloat(p.targetProfit) || 0), 0);
+    }
+    return allProfit;
+  }, [selectedVendors, selectedProductsByVendor, configs, getProductsWithRecordsInRange]);
+
+  let semaforo = { color: 'bg-rose-500', texto: 'REVISIÓN', emoji: '🔴', textColor: 'text-rose-500' };
+  if (proyeccion30 >= 1_000_000) semaforo = { color: 'bg-emerald-500', texto: 'EXCELENTE', emoji: '🟢', textColor: 'text-emerald-500' };
+  else if (proyeccion30 >= targetProfit && targetProfit > 0) semaforo = { color: 'bg-blue-500', texto: 'BIEN', emoji: '🔵', textColor: 'text-blue-500' };
+
+  let cpaColor = '', cpaMensaje = '';
+  if (stats.cpaReal > stats.cpaEquilibrioPonderado) {
+    cpaColor = 'bg-red-100 border-red-500 text-red-700';
+    cpaMensaje = '⚠️ CPA por encima del equilibrio → No rentable';
+  } else if (stats.cpaReal <= stats.cpaEquilibrioPonderado * 0.75) {
+    cpaColor = 'bg-green-100 border-green-500 text-green-700';
+    cpaMensaje = '🚀 CPA excelente (25%+ por debajo) → ESCALAR';
+  } else {
+    cpaColor = 'bg-yellow-100 border-yellow-500 text-yellow-700';
+    cpaMensaje = '✅ CPA por debajo del equilibrio → Rentable';
+  }
+
+  const costItems = [
+    { label: 'Costo de Mercancía', value: stats.productCostTotal, note: `${fmtN(stats.unitsDeliveredReal)} unid. entregadas`, icon: Package },
+    { label: 'Fletes Totales', value: stats.totalFreightCost, note: 'Incluye cargos extra', icon: Truck },
+    { label: 'Fulfillment', value: stats.totalFulfillment, note: 'Por guía despachada', icon: Boxes },
+    { label: 'Comisiones', value: stats.totalCommissions, note: 'Solo entregas exitosas', icon: DollarSign },
+    { label: 'Costos Fijos', value: stats.totalFixedCosts, note: 'Prorrateo por entrega', icon: Activity },
+    { label: 'Publicidad', value: stats.totalAds, note: 'Meta Ads', icon: Target },
+  ];
+  const totalCostos = costItems.reduce((s, i) => s + i.value, 0);
+
+  // ========== PRODUCTOS EN REVISIÓN (ordenados: primero activos, luego inactivos) ==========
+  const productosEnRevision = useMemo(() => {
+    if (filteredRecords.length === 0) return [];
+    const productosMap = new Map();
+    
+    filteredRecords.forEach(record => {
+      const config = configs.find(c => c.id === record.configId);
+      if (!config) return;
+      if (!productosMap.has(record.configId)) {
+        productosMap.set(record.configId, {
+          configId: record.configId,
+          vendedora: config.vendedora,
+          productName: config.productName,
+          targetProfit: parseFloat(config.targetProfit) || 0,
+          isActive: config.activo !== false,
+          records: []
+        });
+      }
+      productosMap.get(record.configId).records.push(record);
+    });
+    
+    const resultados = [];
+    for (const [configId, producto] of productosMap) {
+      const { records, vendedora, productName, targetProfit, isActive } = producto;
+      const statsProd = calcularStats(records, configs);
+      const activeRecords = records.filter(r => !r.restDay);
+      const uniqueDates = new Set(activeRecords.map(r => r.date));
+      const activeDaysProd = uniqueDates.size;
+      const avgDiarioProd = activeDaysProd > 0 ? statsProd.net / activeDaysProd : 0;
+      const proyeccion30Prod = avgDiarioProd * 30;
+      
+      let estado = { texto: 'REVISIÓN', emoji: '🔴', color: 'bg-rose-500', textColor: 'text-rose-500' };
+      if (proyeccion30Prod >= 1_000_000) estado = { texto: 'EXCELENTE', emoji: '🟢', color: 'bg-emerald-500', textColor: 'text-emerald-500' };
+      else if (proyeccion30Prod >= targetProfit && targetProfit > 0) estado = { texto: 'BIEN', emoji: '🔵', color: 'bg-blue-500', textColor: 'text-blue-500' };
+      
+      if (estado.texto === 'REVISIÓN') {
+        resultados.push({
+          configId, vendedora, productName, targetProfit, 
+          proyeccion30: proyeccion30Prod, 
+          avgDiario: avgDiarioProd,
+          utilidadPeriodo: statsProd.net, 
+          ier: statsProd.ierGlobal, 
+          roas: statsProd.roas,
+          cpaReal: statsProd.cpaReal,
+          cpaEquilibrio: parseFloat(configs.find(c => c.id === configId)?.cpaEquilibrio) || 0,
+          pedidos: statsProd.grossOrd, 
+          entregas: statsProd.finalDeliveries, 
+          diasActivos: activeDaysProd, 
+          estado,
+          isActive
+        });
+      }
+    }
+    
+    // Ordenar: primero activos (por proyección), luego inactivos (por proyección)
+    const activos = resultados.filter(p => p.isActive).sort((a, b) => a.proyeccion30 - b.proyeccion30);
+    const inactivos = resultados.filter(p => !p.isActive).sort((a, b) => a.proyeccion30 - b.proyeccion30);
+    return [...activos, ...inactivos];
+  }, [filteredRecords, configs]);
+
+  const SectionHeader = ({ title, icon: Icon, section, totalItems = null }) => (
+    <button onClick={() => toggleSection(section)} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+      <div className="flex items-center gap-1.5 md:gap-2">
+        <Icon size={14} className="text-emerald-600" />
+        <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-700">{title}</span>
+        {totalItems !== null && totalItems > 0 && <span className="text-[8px] md:text-[9px] font-black bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded-full">{totalItems}</span>}
+      </div>
+      {openSections[section] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+  );
+
+  return (
+    <div className="space-y-6 md:space-y-8 anim-fade">
+      <div><h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter">Dashboard General</h2><p className="text-[10px] md:text-xs text-slate-400 font-black uppercase tracking-widest mt-1">Módulo 3 · Análisis de Rendimiento</p></div>
+
+      {/* FILTROS */}
+      <Card className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1"><Label><Calendar size={10} className="inline mr-1" />Desde</Label><input type="date" value={filter.startDate} onChange={e => setF('startDate', e.target.value)} className="w-full px-3 py-2 bg-slate-50 rounded-xl font-bold text-sm outline-none" /></div>
+          <div className="space-y-1"><Label><Calendar size={10} className="inline mr-1" />Hasta</Label><input type="date" value={filter.endDate} onChange={e => setF('endDate', e.target.value)} className="w-full px-3 py-2 bg-slate-50 rounded-xl font-bold text-sm outline-none" /></div>
+        </div>
+        <div className="space-y-2">
+          <Label>Vendedoras (múltiple)</Label>
+          <div className="flex flex-wrap gap-2">
+            {availableVendors.map(v => (
+              <button key={v} onClick={() => {
+                if (selectedVendors.includes(v)) {
+                  setSelectedVendors(selectedVendors.filter(vv => vv !== v));
+                  const newSelected = { ...selectedProductsByVendor };
+                  delete newSelected[v];
+                  setSelectedProductsByVendor(newSelected);
+                } else {
+                  setSelectedVendors([...selectedVendors, v]);
+                }
+              }} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${selectedVendors.includes(v) ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'}`}>{v}</button>
+            ))}
+          </div>
+        </div>
+        {selectedVendors.length > 0 && (
+          <div className="space-y-3 border-t pt-3">
+            <Label>Productos con registros en el período (inactivos se muestran tachados)</Label>
+            {selectedVendors.map(vendor => {
+              const productsForVendor = getProductsWithRecordsInRange.get(vendor) || [];
+              return (
+                <div key={vendor} className="bg-slate-50 p-3 rounded-xl">
+                  <p className="text-[9px] font-black uppercase mb-2">{vendor}</p>
+                  <div className="flex flex-wrap gap-1">
+                    <button onClick={() => setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: productsForVendor.map(p => p.id) }))} className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">Todos</button>
+                    <button onClick={() => { const newSelected = { ...selectedProductsByVendor }; delete newSelected[vendor]; setSelectedProductsByVendor(newSelected); }} className="text-[8px] font-black bg-red-100 text-red-700 px-2 py-1 rounded-full">Ninguno</button>
+                    {productsForVendor.map(product => {
+                      const isActiveNow = product.activo !== false;
+                      return (
+                        <button
+                          key={product.id}
+                          onClick={() => {
+                            const current = selectedProductsByVendor[vendor] || [];
+                            if (current.includes(product.id)) {
+                              setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: current.filter(id => id !== product.id) }));
+                            } else {
+                              setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: [...current, product.id] }));
+                            }
+                          }}
+                          className={`text-[8px] font-black px-2 py-1 rounded-full flex items-center gap-1 transition-all ${(selectedProductsByVendor[vendor] || []).includes(product.id) ? 'bg-blue-500 text-white' : isActiveNow ? 'bg-white border border-slate-300 text-slate-600' : 'bg-gray-200 border border-gray-400 text-gray-500 line-through'}`}
+                        >
+                          {!isActiveNow && <PowerOff size={10} />}
+                          {product.productName}
+                          {!isActiveNow && <span className="text-[6px] font-black ml-1">(inactivo)</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[7px] text-slate-400 mt-2">* Productos inactivos visibles para revisar su historial en el rango seleccionado.</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="col-span-2 flex flex-wrap items-center gap-1 bg-slate-50 px-3 py-2 rounded-xl"><Info size={12} className="text-slate-400 shrink-0" /><p className="text-[8px] md:text-[9px] font-black text-slate-400">Analizando <span className="text-emerald-600">{activeDays} día{activeDays !== 1 ? 's' : ''} activo{activeDays !== 1 ? 's' : ''}</span> (excluye descansos) · Proyección a 30 días = promedio diario × 30</p></div>
+      </Card>
+
+      {filteredRecords.length === 0 || activeDays === 0 ? (
+        <Card className="text-center py-12 text-slate-300"><BarChart3 size={32} className="mx-auto mb-3 opacity-30" /><p className="font-black uppercase text-sm">Sin datos activos en este rango</p></Card>
+      ) : (
+        <>
+          {/* CPA */}
+          <div className={`rounded-xl p-3 md:p-5 border-2 ${cpaColor} shadow-md`}>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <div><Label className="text-inherit opacity-70">CPA REAL PROMEDIO</Label><p className="text-xl md:text-3xl font-black font-mono">{fmt(stats.cpaReal)}</p><p className="text-[8px] md:text-[9px] font-semibold">Costo por adquisición real</p></div>
+              <div className="text-center"><Label className="text-inherit opacity-70">CPA EQUILIBRIO PONDERADO</Label><p className="text-lg md:text-2xl font-black font-mono">{fmt(stats.cpaEquilibrioPonderado)}</p><p className="text-[8px] md:text-[9px] font-semibold">Basado en cada producto</p></div>
+              <div className="text-right"><div className="inline-block px-2 py-1 rounded-lg bg-white/50 backdrop-blur-sm"><p className="text-[8px] md:text-[10px] font-black">{cpaMensaje}</p></div></div>
+            </div>
+          </div>
+
+          {/* Resumen rápido */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+            <Card className="border-l-4 border-l-slate-400"><Label>💰 Recaudo Bruto Total</Label><p className="text-xl md:text-3xl font-black">{fmt(stats.grossRev)}</p></Card>
+            <Card className="bg-amber-50 border-l-4 border-l-amber-400"><Label>⚠ Ajuste por IER</Label><p className="text-xl md:text-3xl font-black text-amber-600">- {fmt(stats.grossRev - stats.realRev)}</p></Card>
+            <Card className="bg-emerald-50 border-l-4 border-l-emerald-500"><Label>✅ Recaudo Neto Real</Label><p className="text-xl md:text-3xl font-black text-emerald-700">{fmt(stats.realRev)}</p></Card>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+            <Stat label="AOV" value={fmt(stats.aov)} sub={`${fmtN(stats.grossOrd)} pedidos`} highlight />
+            <Stat label="Flete x Entrega" value={fmt(stats.freteRealXEntrega)} sub={`${fmtN(stats.finalDeliveries)} entregas`} />
+            <Stat label="ROAS" value={`${fmtDec(stats.roas, 4)}x`} />
+            <Stat label="Utilidad Neta" value={fmt(stats.net)} sub={`${stats.net >= 0 ? '💰' : '⚠️'}`} />
+            <Stat label="Profit / Día" value={fmt(avgDiario)} sub={`${activeDays} días`} highlight />
+          </div>
+
+          {/* EMBUDO */}
+          <div className="space-y-2">
+            <SectionHeader title="EMBUDO OPERATIVO Y PRODUCTOS" icon={Activity} section="embudo" />
+            {openSections.embudo && (
+              <Card>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+                  <div><Label>Pedidos Registrados</Label><p className="text-xl font-black">{fmtN(stats.grossOrd)}</p><p className="text-[8px]">{fmtN(stats.grossUnits)} unidades</p></div>
+                  <div><Label>Guías Despachadas</Label><p className="text-xl font-black text-blue-600">{fmtN(stats.realShipped)}</p></div>
+                  <div><Label>Devoluciones Est.</Label><p className="text-xl font-black text-rose-500">{fmtN(stats.estimatedReturns)}</p></div>
+                  <div><Label>Entregas Finales</Label><p className="text-xl font-black text-emerald-600">{fmtN(stats.finalDeliveries)}</p><p className="text-[8px]">IER {fmtDec(stats.ierGlobal, 2)}%</p></div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl">
+                  <p className="text-[8px] font-black uppercase mb-2">📦 Unidades físicas</p>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+                    <div><span className="text-[8px] text-slate-500">Registradas:</span> <span className="font-black ml-1">{fmtN(stats.unitsRegistradas)}</span></div>
+                    <div><span className="text-[8px] text-slate-500">Enviadas:</span> <span className="font-black ml-1 text-blue-600">{fmtN(stats.unitsShippedReal)}</span></div>
+                    <div><span className="text-[8px] text-slate-500">Devueltas:</span> <span className="font-black ml-1 text-rose-500">{fmtN(stats.unitsReturnedReal)}</span></div>
+                    <div><span className="text-[8px] text-slate-500">Entregadas:</span> <span className="font-black ml-1 text-emerald-600">{fmtN(stats.unitsDeliveredReal)}</span></div>
+                    <div><span className="text-[8px] text-slate-500">% Entregado:</span> <span className="font-black ml-1">{fmtDec(stats.pctProductosEntregados, 1)}%</span></div>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          {/* COSTOS */}
+          <div className="space-y-2">
+            <SectionHeader title="RADIOGRAFÍA DE COSTOS" icon={Calculator} section="costos" />
+            {openSections.costos && (
+              <Card className="space-y-0 p-0 overflow-hidden">
+                {costItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-2 md:gap-4 px-4 py-3 border-b border-slate-50 last:border-0">
+                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-xl bg-slate-100 flex items-center justify-center"><item.icon size={12} /></div>
+                    <div className="flex-1"><p className="text-[11px] md:text-xs font-black">{item.label}</p><p className="text-[7px] md:text-[9px] text-slate-400">{item.note}</p></div>
+                    <p className="font-black font-mono text-xs md:text-sm">{fmt(item.value)}</p>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 md:gap-4 px-4 py-3 bg-slate-900 text-white">
+                  <div className="flex-1"><p className="text-[11px] md:text-xs font-black uppercase">Total Costos</p></div>
+                  <p className="font-black font-mono text-sm md:text-lg text-rose-400">{fmt(totalCostos)}</p>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          {/* RANKING */}
+          <div className="space-y-2">
+            <SectionHeader title="RANKING DE VENDEDORAS" icon={Award} section="ranking" totalItems={stats.rankingVendedoras?.length} />
+            {openSections.ranking && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs md:text-sm">
+                  <thead className="bg-slate-100 text-[8px] md:text-[9px] font-black uppercase text-slate-500">
+                    <tr><th className="p-2 rounded-l-xl">#</th><th className="p-2">Vendedora</th><th className="p-2 text-right">Pedidos</th><th className="p-2 text-right">Recaudo Neto</th><th className="p-2 text-right">Utilidad</th><th className="p-2 text-right">IER</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stats.rankingVendedoras?.map((v, idx) => (
+                      <tr key={v.vendedora} className="hover:bg-slate-50">
+                        <td className="p-2 font-black text-emerald-600">{idx+1}</td>
+                        <td className="p-2 font-bold uppercase">{v.vendedora}</td>
+                        <td className="p-2 text-right font-mono">{fmtN(v.pedidos)}</td>
+                        <td className="p-2 text-right font-mono">{fmt(v.recaudoNeto)}</td>
+                        <td className={`p-2 text-right font-mono ${v.utilidad >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmt(v.utilidad)}</td>
+                        <td className="p-2 text-right font-mono">{fmtDec(v.ierPromedio, 2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* PROYECCIÓN */}
+          <div className="space-y-2">
+            <SectionHeader title="UTILIDAD Y PROYECCIÓN" icon={TrendingUp} section="proyeccion" />
+            {openSections.proyeccion && (
+              <div className="flex flex-col md:grid md:grid-cols-2 gap-4">
+                <Card dark className="space-y-3">
+                  <Label className="text-zinc-500">Utilidad Neta Período</Label>
+                  <p className={`text-2xl md:text-4xl font-black font-mono ${stats.net >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmt(stats.net)}</p>
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800 text-xs">
+                    <div><p className="text-[8px] text-zinc-500">Ingresos Reales</p><p className="font-black text-white">{fmt(stats.realRev)}</p></div>
+                    <div><p className="text-[8px] text-zinc-500">Total Costos</p><p className="font-black text-rose-400">{fmt(totalCostos)}</p></div>
+                    <div><p className="text-[8px] text-zinc-500">Margen Neto</p><p className="font-black text-emerald-400">{stats.realRev > 0 ? fmtDec((stats.net / stats.realRev) * 100) : '0.00'}%</p></div>
+                    <div><p className="text-[8px] text-zinc-500">Profit / Día</p><p className="font-black text-white">{fmt(avgDiario)}</p></div>
+                  </div>
+                </Card>
+                <div className={`rounded-2xl p-4 text-white shadow-xl ${semaforo.color === 'bg-emerald-500' ? 'bg-emerald-600' : semaforo.color === 'bg-blue-500' ? 'bg-blue-600' : 'bg-rose-600'}`}>
+                  <div><p className="text-[8px] font-black opacity-60">Proyección 30 Días</p><p className="text-[8px] opacity-50 mt-0.5">({fmt(avgDiario)}/día × 30)</p></div>
+                  <p className="text-2xl md:text-4xl font-black">{fmt(proyeccion30)}</p>
+                  <div className="bg-white/20 px-3 py-2 rounded-xl mt-2"><p className="text-sm md:text-lg font-black">{semaforo.emoji} {semaforo.texto}</p>{targetProfit > 0 && <p className="text-[8px] opacity-70">Meta: {fmt(targetProfit)} · 1M excelente</p>}</div>
+                  <div className="flex justify-between text-[8px] font-black opacity-60 mt-3"><span>Días activos: {activeDays}</span><span>IER: {fmtDec(stats.ierGlobal, 2)}%</span></div>
+                </div>
+                {targetProfit > 0 && (
+                  <Card className="col-span-2">
+                    <div className="flex justify-between text-xs"><Label>Avance vs Meta</Label><span className={`text-xs font-black ${semaforo.textColor}`}>{fmtDec((proyeccion30 / targetProfit) * 100, 2)}%</span></div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-1"><div className={`h-full rounded-full ${semaforo.color === 'bg-emerald-500' ? 'bg-emerald-500' : semaforo.color === 'bg-blue-500' ? 'bg-blue-500' : 'bg-rose-500'}`} style={{ width: `${Math.min((proyeccion30 / targetProfit) * 100, 100)}%` }} /></div>
+                  </Card>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* PRODUCTOS EN REVISIÓN */}
+          <div className="space-y-2">
+            <button onClick={() => toggleSection('productosRevision')} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border-l-4 border-red-500">
+              <div className="flex items-center gap-1.5 md:gap-2"><AlertTriangle size={14} className="text-red-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-red-700">🚨 PRODUCTOS EN REVISIÓN ({productosEnRevision.length})</span></div>
+              {openSections.productosRevision ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {openSections.productosRevision && (
+              <Card className="overflow-hidden p-0">
+                {productosEnRevision.length === 0 ? (
+                  <div className="p-6 text-center text-green-600 flex items-center justify-center gap-2"><CheckCircle2 size={20} /><span className="font-black text-sm">✅ No hay productos en revisión en este período</span></div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-[10px] md:text-sm">
+                      <thead className="bg-red-50 text-[7px] md:text-[8px] font-black uppercase text-red-700">
+                        <tr>
+                          <th className="p-2 md:p-3">Vendedora</th>
+                          <th className="p-2 md:p-3">Producto</th>
+                          <th className="p-2 md:p-3 text-right">Utilidad Período</th>
+                          <th className="p-2 md:p-3 text-right">Proy. 30 días</th>
+                          <th className="p-2 md:p-3 text-right">Meta Mensual</th>
+                          <th className="p-2 md:p-3 text-right">% Meta</th>
+                          <th className="p-2 md:p-3 text-right">IER</th>
+                          <th className="p-2 md:p-3 text-right">ROAS</th>
+                          <th className="p-2 md:p-3 text-right">CPA</th>
+                          <th className="p-2 md:p-3">⚠️ Alertas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {productosEnRevision.map(p => {
+                          const porcentajeMeta = p.targetProfit > 0 ? (p.proyeccion30 / p.targetProfit) * 100 : 0;
+                          const alertas = [];
+                          if (p.utilidadPeriodo < 0) alertas.push('💰 pérdida');
+                          if (p.ier < 70) alertas.push(`📉 IER ${fmtDec(p.ier,1)}%`);
+                          if (p.roas < 1.5 && p.roas > 0) alertas.push(`📊 ROAS ${fmtDec(p.roas,2)}x`);
+                          if (p.cpaEquilibrio > 0 && p.cpaReal > p.cpaEquilibrio) alertas.push('🎯 CPA alto');
+                          if (p.pedidos === 0) alertas.push('⚠️ sin pedidos');
+                          
+                          // Si el producto está inactivo, agregar alerta especial
+                          if (!p.isActive) alertas.push('🔴 PRODUCTO DESACTIVADO');
+                          
+                          return (
+                            <tr key={p.configId} className={`hover:bg-red-50/50 transition ${!p.isActive ? 'opacity-75 bg-gray-50' : ''}`}>
+                              <td className="p-2 md:p-3 font-black text-red-700 uppercase text-[9px] md:text-xs">{p.vendedora}</td>
+                              <td className={`p-2 md:p-3 font-semibold text-[9px] md:text-xs ${!p.isActive ? 'line-through text-gray-500' : ''}`}>
+                                {p.productName}
+                                {!p.isActive && <span className="ml-2 text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">⚠️ DESACTIVADO</span>}
+                              </td>
+                              <td className={`p-2 md:p-3 text-right font-mono font-black ${p.utilidadPeriodo < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                {fmt(p.utilidadPeriodo)}
+                              </td>
+                              <td className="p-2 md:p-3 text-right font-mono font-black text-red-600">{fmt(p.proyeccion30)}</td>
+                              <td className="p-2 md:p-3 text-right font-mono">{fmt(p.targetProfit)}</td>
+                              <td className="p-2 md:p-3 text-right font-mono font-black">
+                                <span className={porcentajeMeta < 50 ? 'text-red-600' : 'text-amber-600'}>
+                                  {fmtDec(porcentajeMeta, 1)}%
+                                </span>
+                              </td>
+                              <td className="p-2 md:p-3 text-right font-mono">{fmtDec(p.ier, 1)}%</td>
+                              <td className="p-2 md:p-3 text-right font-mono">{fmtDec(p.roas, 2)}x</td>
+                              <td className="p-2 md:p-3 text-right font-mono">{fmt(p.cpaReal)}</td>
+                              <td className="p-2 md:p-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {alertas.map((a, i) => (
+                                    <span key={i} className={`text-[7px] md:text-[8px] font-black px-1.5 py-0.5 rounded-full ${a.includes('DESACTIVADO') ? 'bg-gray-300 text-gray-700' : 'bg-red-100 text-red-600'}`}>
+                                      {a}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {productosEnRevision.some(p => !p.isActive) && (
+                      <div className="p-3 bg-gray-100 text-[8px] font-black text-gray-600 flex items-center gap-2 border-t">
+                        <Info size={12} />
+                        <span>📌 Los productos tachados están DESACTIVADOS. Su historial se muestra solo para referencia, pero ya no requieren acción.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+
+          {/* ANÁLISIS TEMPORAL POR PRODUCTO */}
+          <div className="space-y-2">
+            <SectionHeader title="ANÁLISIS TEMPORAL POR PRODUCTO" icon={CalendarDays} section="analisisProductos" totalItems={stats.detalleProductos.length} />
+            {openSections.analisisProductos && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[10px] md:text-sm">
+                  <thead className="bg-slate-100 text-[7px] md:text-[8px] font-black uppercase text-slate-500">
+                    <tr>
+                      <th className="p-2">Vendedora</th>
+                      <th className="p-2">Producto</th>
+                      <th className="p-2">Primer registro</th>
+                      <th className="p-2">Último registro</th>
+                      <th className="p-2">Fecha creación</th>
+                      <th className="p-2">Fecha desactivación</th>
+                      <th className="p-2">Días activos</th>
+                      <th className="p-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {stats.detalleProductos.map(p => {
+                      const diasActivos = Math.floor((parseColombiaDate(p.ultimoRegistro) - parseColombiaDate(p.primerRegistro)) / (1000 * 60 * 60 * 24)) + 1;
+                      const isActive = p.activo !== false;
+                      return (
+                        <tr key={p.configId} className="hover:bg-slate-50">
+                          <td className="p-2 font-bold uppercase text-[9px] md:text-xs">{p.vendedora}</td>
+                          <td className={`p-2 font-semibold text-[9px] md:text-xs ${!isActive ? 'text-slate-400 line-through' : ''}`}>{p.productName}</td>
+                          <td className="p-2 font-mono text-[8px] md:text-[10px]">{parseColombiaDate(p.primerRegistro).toLocaleDateString('es-CO')}</td>
+                          <td className="p-2 font-mono text-[8px] md:text-[10px]">{parseColombiaDate(p.ultimoRegistro).toLocaleDateString('es-CO')}</td>
+                          <td className="p-2 font-mono text-[8px] md:text-[10px]">{p.fechaCreacion ? parseColombiaDate(p.fechaCreacion).toLocaleDateString('es-CO') : '-'}</td>
+                          <td className="p-2 font-mono text-[8px] md:text-[10px]">{p.fechaDesactivacion ? parseColombiaDate(p.fechaDesactivacion).toLocaleDateString('es-CO') : '-'}</td>
+                          <td className="p-2 font-mono text-[8px] md:text-[10px]">{diasActivos} días</td>
+                          <td className="p-2">{!isActive ? <span className="text-[8px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><PowerOff size={10} /> INACTIVO</span> : <span className="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Power size={10} /> ACTIVO</span>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* COMPARATIVA ENTRE VENDEDORAS */}
+          <div className="space-y-2">
+            <button onClick={() => toggleSection('comparativaVendedoras')} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors">
+              <div className="flex items-center gap-1.5 md:gap-2"><Users size={14} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-indigo-700">📊 COMPARATIVA ENTRE VENDEDORAS</span></div>
+              {openSections.comparativaVendedoras ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {openSections.comparativaVendedoras && (
+              <Card className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[10px] md:text-sm">
+                  <thead className="bg-indigo-50 text-[7px] md:text-[8px] font-black uppercase text-indigo-700">
+                    <tr><th className="p-2 md:p-3">Vendedora</th><th className="p-2 md:p-3 text-right">Inversión Ads</th><th className="p-2 md:p-3 text-right">CPA Promedio</th><th className="p-2 md:p-3 text-right">Utilidad Período</th><th className="p-2 md:p-3 text-right">Proy. 30 días</th><th className="p-2 md:p-3 text-right">Facturación Real</th><th className="p-2 md:p-3 text-right">ROAS</th><th className="p-2 md:p-3 text-right">IER</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedVendors.length === 0 ? (
+                      <tr><td colSpan="8" className="p-4 text-center text-slate-400">Selecciona al menos una vendedora en los filtros para ver la comparativa.</td></tr>
+                    ) : (
+                      selectedVendors.map(vendor => {
+                        const vendorRecords = filteredRecords.filter(r => {
+                          const c = configs.find(x => x.id === r.configId);
+                          return c && c.vendedora === vendor;
+                        });
+                        const vendorStats = calcularStats(vendorRecords, configs);
+                        const activeDaysV = new Set(vendorRecords.filter(r => !r.restDay).map(r => r.date)).size;
+                        const proy30 = activeDaysV > 0 ? (vendorStats.net / activeDaysV) * 30 : 0;
+                        return (
+                          <tr key={vendor} className="hover:bg-indigo-50/50">
+                            <td className="p-2 md:p-3 font-black uppercase text-indigo-700">{vendor}</td>
+                            <td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.totalAds)}</td>
+                            <td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.cpaReal)}</td>
+                            <td className={`p-2 md:p-3 text-right font-mono font-black ${vendorStats.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{fmt(vendorStats.net)}</td>
+                            <td className="p-2 md:p-3 text-right font-mono font-black">{fmt(proy30)}</td>
+                            <td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.realRev)}</td>
+                            <td className="p-2 md:p-3 text-right font-mono">{fmtDec(vendorStats.roas, 2)}x</td>
+                            <td className="p-2 md:p-3 text-right font-mono">{fmtDec(vendorStats.ierGlobal, 1)}%</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+                {selectedVendors.length > 0 && (
+                  <div className="p-3 bg-indigo-50 text-[8px] font-black text-indigo-600 flex justify-between">
+                    <span>Período: {filter.startDate} al {filter.endDate}</span>
+                    <span>Registros analizados: {filteredRecords.length}</span>
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+// ==================== COMPONENTE AGENDA (ADAPTADO A TU ENTORNO) ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -285,6 +1701,7 @@ const AGENDA_TABS = [
 ];
 
 function AgendaModule() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
   const [showForm, setShowForm] = useState(false);
@@ -295,12 +1712,14 @@ function AgendaModule() {
   const [expandedComments, setExpandedComments] = useState({});
   const [newComment, setNewComment] = useState({});
   const [sortBy, setSortBy] = useState('dueDate');
-  const [approvalModal, setApprovalModal] = useState({ show: false, taskId: null, justification: '' });
-  const [formData, setFormData] = useState({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' });
+  const [approvalModal, setApprovalModal] = useState({ show: false, taskId: null, justification: '', dueDate: null });
+  const [formData, setFormData] = useState({
+    title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: ''
+  });
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks');
+    if (!user) return;
+    const tasksRef = collection(db, 'agenda_tasks');
     const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
       const loaded = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -320,30 +1739,35 @@ function AgendaModule() {
       setTasks(loaded);
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const saveTask = async () => {
     if (!formData.title.trim()) { alert("El título es obligatorio"); return; }
     const payload = {
-      title: formData.title.trim(), description: formData.description.trim(), responsible: formData.responsible,
-      priority: formData.priority, status: formData.status, dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : null,
-      updatedAt: serverTimestamp(), createdBy: auth.currentUser?.uid
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      responsible: formData.responsible,
+      priority: formData.priority,
+      status: formData.status,
+      dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : null,
+      updatedAt: serverTimestamp(),
+      createdBy: user?.uid
     };
     try {
       if (editingTask) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', editingTask.id), payload);
+        await updateDoc(doc(db, 'agenda_tasks', editingTask.id), payload);
       } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks'), { ...payload, createdAt: serverTimestamp(), comments: [] });
+        await addDoc(collection(db, 'agenda_tasks'), { ...payload, createdAt: serverTimestamp(), comments: [] });
       }
       resetForm();
     } catch (err) { console.error(err); alert("Error al guardar la tarea"); }
   };
 
   const deleteTask = async (id) => {
-    if (window.confirm("¿Eliminar esta tarea definitivamente? Se borrará de la base de datos.")) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id));
+    if (window.confirm("¿Eliminar esta tarea?")) {
+      await deleteDoc(doc(db, 'agenda_tasks', id));
     }
   };
 
@@ -351,34 +1775,33 @@ function AgendaModule() {
     if (newStatus === 'approved') {
       setApprovalModal({ show: true, taskId, justification: '', dueDate: taskDueDate });
     } else {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'agenda_tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
     }
   };
 
   const confirmApproval = async () => {
     const { taskId, justification, dueDate } = approvalModal;
-    if (!justification.trim()) { alert("Debes escribir una justificación para aprobar la tarea"); return; }
+    if (!justification.trim()) { alert("Debes escribir una justificación"); return; }
     const now = new Date();
     const approvedAt = Timestamp.fromDate(now);
-    const approvedAtFormatted = now.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const approvedAtFormatted = now.toLocaleString('es-CO');
     let delayInfo = null;
     if (dueDate) {
-      const dueDateObj = new Date(dueDate);
-      const diffDays = Math.ceil((now - dueDateObj) / (1000 * 60 * 60 * 24));
-      if (diffDays > 0) delayInfo = { status: 'retraso', days: diffDays, message: `⚠️ Retraso de ${diffDays} día${diffDays !== 1 ? 's' : ''}` };
-      else if (diffDays < 0) delayInfo = { status: 'adelanto', days: Math.abs(diffDays), message: `✅ Completado con ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? 's' : ''} de anticipación` };
-      else delayInfo = { status: 'justo', days: 0, message: `🎯 Completado justo a tiempo` };
-    } else { delayInfo = { status: 'sin_fecha', days: 0, message: `📅 Sin fecha límite definida` }; }
+      const diffDays = Math.ceil((now - new Date(dueDate)) / (1000*60*60*24));
+      if (diffDays > 0) delayInfo = { status: 'retraso', message: `⚠️ Retraso de ${diffDays} día${diffDays !== 1 ? 's' : ''}` };
+      else if (diffDays < 0) delayInfo = { status: 'adelanto', message: `✅ Completado con ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? 's' : ''} de anticipación` };
+      else delayInfo = { status: 'justo', message: '🎯 Completado justo a tiempo' };
+    } else delayInfo = { status: 'sin_fecha', message: '📅 Sin fecha límite definida' };
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
-        status: 'approved', approvedAt, approvedAtFormatted, approvalJustification: justification.trim(), approvalDelayInfo: delayInfo, updatedAt: serverTimestamp()
+      await updateDoc(doc(db, 'agenda_tasks', taskId), {
+        status: 'approved',
+        approvedAt,
+        approvedAtFormatted,
+        approvalJustification: justification.trim(),
+        approvalDelayInfo: delayInfo,
+        updatedAt: serverTimestamp()
       });
-      setApprovalModal({ show: false, taskId: null, justification: '' });
-      const tempNotification = document.createElement('div');
-      tempNotification.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 ${delayInfo.status === 'retraso' ? 'bg-orange-600' : 'bg-green-600'}`;
-      tempNotification.textContent = `✓ Tarea aprobada. ${delayInfo.message}`;
-      document.body.appendChild(tempNotification);
-      setTimeout(() => tempNotification.remove(), 4000);
+      setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null });
     } catch (err) { console.error(err); alert("Error al guardar la aprobación"); }
   };
 
@@ -389,12 +1812,15 @@ function AgendaModule() {
     if (!task) return;
     const responsibleName = RESPONSIBLES.find(r => r.id === task.responsible)?.name || 'Usuario';
     const comment = {
-      id: Date.now().toString(), text: commentText, author: responsibleName, authorId: task.responsible,
-      createdAt: new Date().toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      id: Date.now().toString(),
+      text: commentText,
+      author: responsibleName,
+      authorId: task.responsible,
+      createdAt: new Date().toLocaleString('es-CO')
     };
     const updatedComments = [...(task.comments || []), comment];
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), { comments: updatedComments, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'agenda_tasks', taskId), { comments: updatedComments, updatedAt: serverTimestamp() });
       setNewComment(prev => ({ ...prev, [taskId]: '' }));
     } catch (err) { console.error(err); alert("Error al guardar el comentario"); }
   };
@@ -405,7 +1831,14 @@ function AgendaModule() {
   };
 
   const editTask = (task) => {
-    setFormData({ title: task.title, description: task.description || '', responsible: task.responsible, priority: task.priority || 'media', status: task.status, dueDate: task.dueDate || '' });
+    setFormData({
+      title: task.title,
+      description: task.description || '',
+      responsible: task.responsible,
+      priority: task.priority || 'media',
+      status: task.status,
+      dueDate: task.dueDate || ''
+    });
     setEditingTask(task); setShowForm(true);
   };
 
@@ -421,8 +1854,8 @@ function AgendaModule() {
         return new Date(a.dueDate) - new Date(b.dueDate);
       }
       if (sortBy === 'priority') {
-        const priorityOrder = { alta: 0, media: 1, baja: 2 };
-        return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+        const order = { alta: 0, media: 1, baja: 2 };
+        return (order[a.priority] || 1) - (order[b.priority] || 1);
       }
       return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
     });
@@ -452,1254 +1885,375 @@ function AgendaModule() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Modal de aprobación */}
       {approvalModal.show && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null })}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-black text-green-600">✅ Aprobar Tarea</h3>
-              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
-            </div>
-            <p className="text-sm text-zinc-600 mb-4">Para aprobar esta tarea, debes explicar las acciones realizadas:</p>
-            <textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas, resultados obtenidos, observaciones importantes..." className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-green-400 mb-4" autoFocus />
+            <h3 className="text-xl font-black text-green-600 mb-4">✅ Aprobar Tarea</h3>
+            <textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas..." className="w-full border rounded-xl p-3 text-sm mb-4" autoFocus />
             <div className="flex gap-3">
-              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
-              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-700 transition">Confirmar Aprobación</button>
+              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null })} className="flex-1 border rounded-xl py-2">Cancelar</button>
+              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white rounded-xl py-2">Confirmar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal de detalle de tarea */}
       {selectedTask && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}>
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b border-zinc-100 p-4 flex justify-between items-center">
-              <h3 className="font-black text-zinc-900 text-lg">{selectedTask.title}</h3>
-              <button onClick={() => setSelectedTask(null)} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
-            </div>
-            <div className="p-5 space-y-4">
-              {selectedTask.description ? (
-                <div className="bg-zinc-50 rounded-xl p-4"><p className="text-xs font-black text-zinc-400 uppercase mb-2">📝 Descripción</p><p className="text-zinc-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedTask.description}</p></div>
-              ) : (<div className="bg-zinc-50 rounded-xl p-4 text-center text-zinc-400 text-sm">Sin descripción</div>)}
+            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h3 className="font-black">{selectedTask.title}</h3><button onClick={() => setSelectedTask(null)} className="text-2xl">&times;</button></div>
+            <div className="p-4 space-y-3">
+              <div className="bg-zinc-50 p-3 rounded-xl"><p className="text-xs font-black">📝 Descripción</p><p>{selectedTask.description || 'Sin descripción'}</p></div>
               {selectedTask.status === 'approved' && selectedTask.approvalJustification && (
-                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                  <p className="text-[10px] font-black text-green-700 uppercase mb-2 flex items-center gap-2">✅ Información de Aprobación</p>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="font-bold text-green-700">📅 Aprobada el:</span> <span className="text-zinc-700">{selectedTask.approvedAtFormatted || '-'}</span></p>
-                    <p><span className="font-bold text-green-700">📊 Estado:</span> <span className={`font-bold ${selectedTask.approvalDelayInfo?.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{selectedTask.approvalDelayInfo?.message || '-'}</span></p>
-                    <p><span className="font-bold text-green-700">💬 Justificación:</span></p>
-                    <p className="text-zinc-700 bg-white/50 rounded-lg p-2 text-sm">{selectedTask.approvalJustification}</p>
-                  </div>
+                <div className="bg-green-50 p-3 rounded-xl border border-green-200">
+                  <p className="text-xs font-black text-green-700">✅ Aprobada el: {selectedTask.approvedAtFormatted}</p>
+                  <p className="text-xs font-bold">{selectedTask.approvalDelayInfo?.message}</p>
+                  <p className="text-xs mt-1">Justificación: {selectedTask.approvalJustification}</p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Responsable</p><p className="font-bold mt-1">{RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name || '-'}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Prioridad</p><p className="mt-1">{PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Estado</p><p className="mt-1">{TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Fecha límite</p><p className="mt-1">{selectedTask.dueDate || '-'}</p></div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="font-black">Responsable:</span> {RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name}</div>
+                <div><span className="font-black">Prioridad:</span> {PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</div>
+                <div><span className="font-black">Estado:</span> {TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</div>
+                <div><span className="font-black">Fecha límite:</span> {selectedTask.dueDate || '-'}</div>
               </div>
-              <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Creada el</p><p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p></div>
-              <div className="bg-zinc-50 rounded-xl p-3">
-                <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
-                <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
-                  {selectedTask.comments && selectedTask.comments.length > 0 ? selectedTask.comments.map(comment => {
-                    const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
-                    return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-100'} rounded-lg p-2`}><div className="flex justify-between items-start mb-0.5"><span className={`text-[9px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[8px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>);
-                  }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}
-                </div>
-                <div className="flex gap-2">
-                  <input type="text" value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(selectedTask.id)} />
-                  <button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button>
-                </div>
+              <div className="bg-zinc-50 p-3 rounded-xl">
+                <p className="text-xs font-black">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
+                <div className="max-h-32 overflow-y-auto space-y-1 my-2">{selectedTask.comments?.map(c => <div key={c.id} className="text-xs border-b pb-1"><b>{c.author}</b> ({c.createdAt}): {c.text}</div>)}</div>
+                <div className="flex gap-2 mt-2"><input value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 border rounded-xl px-3 py-1 text-sm" /><button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">✏️ Editar</button>
-                <button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 text-rose-600 py-3 rounded-xl font-bold text-sm">🗑️ Eliminar</button>
-              </div>
+              <div className="flex gap-2"><button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 py-2 rounded-xl">✏️ Editar</button><button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 py-2 rounded-xl">🗑️ Eliminar</button></div>
             </div>
           </div>
         </div>
       )}
 
-      {/* PANEL DE CUMPLIMIENTO */}
-      <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-zinc-200">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm md:text-base font-black text-zinc-800 uppercase tracking-wider">📊 Cumplimiento por Responsable</h3>
-          <div className="text-[10px] md:text-xs font-bold text-zinc-400">Total: {overallApproved}/{overallTotal} ({overallPercent}%)</div>
-        </div>
+      <div className="bg-white rounded-2xl p-4 shadow-sm border">
+        <div className="flex justify-between items-center mb-3"><h3 className="font-black">📊 Cumplimiento por Responsable</h3><span className="text-xs">Total: {overallApproved}/{overallTotal} ({overallPercent}%)</span></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {complianceData.map(resp => (
-            <div key={resp.id} className={`${resp.bgLight} rounded-xl p-4 transition-all hover:shadow-md`}>
-              <div className="flex justify-between items-start mb-3">
-                <div><div className="flex items-center gap-2"><div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div><h4 className="font-black text-zinc-800">{resp.name}</h4></div><p className="text-2xl md:text-3xl font-black mt-1" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.percent}%</p></div>
-                <div className="text-right"><p className="text-[10px] font-black text-zinc-400 uppercase">Tareas</p><p className="text-sm font-bold">{resp.approved}/{resp.total}</p></div>
+            <div key={resp.id} className={`${resp.bgLight} rounded-xl p-3`}>
+              <div className="flex justify-between">
+                <div><div className="flex gap-1"><div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div><span className="font-black">{resp.name}</span></div><span className="text-2xl font-black">{resp.percent}%</span></div>
+                <div className="text-right"><span className="text-xs text-zinc-500">Tareas</span><div className="font-bold">{resp.approved}/{resp.total}</div></div>
               </div>
-              <div className="h-2 bg-white rounded-full overflow-hidden mb-3"><div className={`h-full ${resp.barColor} rounded-full transition-all duration-500`} style={{ width: `${resp.percent}%` }}></div></div>
-              <div className="flex justify-between text-[10px] font-bold">
-                <div className="text-center flex-1"><div className="text-emerald-600">✅</div><div className="text-zinc-500">{resp.approved}</div><div className="text-zinc-400">Aprobadas</div></div>
-                <div className="text-center flex-1"><div className="text-amber-600">⏳</div><div className="text-zinc-500">{resp.pending}</div><div className="text-zinc-400">Pendientes</div></div>
-                <div className="text-center flex-1"><div className="text-rose-600">❌</div><div className="text-zinc-500">{resp.rejected}</div><div className="text-zinc-400">Rechazadas</div></div>
-              </div>
+              <div className="h-2 bg-white rounded-full my-2"><div className={`h-full rounded-full ${resp.barColor}`} style={{ width: `${resp.percent}%` }}></div></div>
+              <div className="flex justify-between text-[10px] font-bold"><span>✅ {resp.approved}</span><span>⏳ {resp.pending}</span><span>❌ {resp.rejected}</span></div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Tarjetas de tareas pendientes */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {pendingByResponsible.map(resp => (
-          <div key={resp.id} className="bg-white rounded-2xl p-4 shadow-sm border text-center">
-            <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Pendientes {resp.name}</p>
-            <p className="text-3xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p>
+          <div key={resp.id} className="bg-white rounded-xl p-3 text-center shadow-sm border">
+            <p className="text-[10px] font-black uppercase">Pendientes {resp.name}</p>
+            <p className="text-3xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p>
           </div>
         ))}
       </div>
 
-      {/* Pestañas */}
-      <div className="bg-white rounded-xl p-1 shadow-sm border border-zinc-200">
+      <div className="bg-white rounded-xl p-1 shadow-sm border">
         <div className="flex flex-wrap gap-1 justify-center">
-          {AGENDA_TABS.map(tab => {
-            const count = getTaskCount(tab.id);
-            return (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 md:px-8 py-2.5 md:py-3 rounded-xl font-black text-[11px] md:text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center gap-2 ${activeTab === tab.id ? `${tab.color} text-white shadow-md` : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}><span className="text-base">{tab.emoji}</span>{tab.label}<span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${activeTab === tab.id ? 'bg-white/20' : 'bg-zinc-200'}`}>{count}</span></button>);
-          })}
+          {AGENDA_TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-1 ${activeTab === tab.id ? `${tab.color} text-white shadow-md` : 'bg-zinc-100'}`}>
+              <span>{tab.emoji}</span> {tab.label} <span className="ml-1 px-1 rounded-full bg-white/30">{getTaskCount(tab.id)}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="flex flex-col md:flex-row gap-3">
-        <div className="flex-1 relative"><input type="text" placeholder="🔍 Buscar tarea..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-white border-2 border-zinc-100 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 transition-all" /></div>
-        <div className="flex gap-2">
-          <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"><option value="dueDate">📅 Ordenar por fecha límite</option><option value="priority">⚠️ Ordenar por prioridad</option><option value="createdAt">🕒 Ordenar por fecha creación</option></select>
-        </div>
+        <input type="text" placeholder="🔍 Buscar tarea..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 border rounded-xl px-3 py-2 text-sm" />
+        <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border rounded-xl px-3 py-2 text-sm">
+          <option value="all">👥 Todos</option>
+          {RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-xl px-3 py-2 text-sm">
+          <option value="dueDate">📅 Fecha límite</option>
+          <option value="priority">⚠️ Prioridad</option>
+          <option value="createdAt">🕒 Creación</option>
+        </select>
       </div>
 
-      {/* Botón nueva tarea */}
-      <div className="flex justify-end"><button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-5 md:px-6 py-2.5 md:py-3 rounded-xl font-black text-[10px] md:text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95">➕ Nueva Tarea</button></div>
+      <div className="flex justify-end">
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 text-white px-5 py-2 rounded-xl text-xs font-black">➕ Nueva Tarea</button>
+      </div>
 
-      {/* Formulario modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg md:text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
-            <div className="space-y-3 md:space-y-4">
-              <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={3} placeholder="Descripción (opcional)" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <div className="grid grid-cols-2 gap-2 md:gap-3">
-                <select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                <select name="priority" value={formData.priority} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5">
+            <h3 className="font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+            <div className="space-y-3">
+              <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border rounded-xl p-2" />
+              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border rounded-xl p-2" />
+              <div className="grid grid-cols-2 gap-2">
+                <select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border rounded-xl p-2">
+                  {RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <select name="priority" value={formData.priority} onChange={handleFormChange} className="border rounded-xl p-2">
+                  {Object.entries(PRIORITIES).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                </select>
               </div>
-              <div className="grid grid-cols-2 gap-2 md:gap-3">
-                <select name="status" value={formData.status} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select>
-                <input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm" />
+              <div className="grid grid-cols-2 gap-2">
+                <select name="status" value={formData.status} onChange={handleFormChange} className="border rounded-xl p-2">
+                  {Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                </select>
+                <input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border rounded-xl p-2" />
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6"><button onClick={resetForm} className="px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button><button onClick={saveTask} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button></div>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={resetForm} className="border rounded-xl px-4 py-1">Cancelar</button>
+              <button onClick={saveTask} className="bg-zinc-900 text-white rounded-xl px-4 py-1">Guardar</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Lista de tareas - Desktop */}
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-zinc-50 border-b border-zinc-200">
-              <tr><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th></tr>
-            </thead>
-            <tbody>
-              {filteredTasks.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</td></tr>
-              ) : (filteredTasks.map(task => {
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="bg-zinc-50 border-b">
+            <tr>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Título</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Responsable</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Prioridad</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Estado</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Fecha límite</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Creada</th>
+              <th className="px-4 py-2 text-[10px] font-black uppercase">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTasks.length === 0 ? (
+              <tr><td colSpan="7" className="text-center py-8 text-zinc-400">No hay tareas</td></tr>
+            ) : (
+              filteredTasks.map(task => {
                 const resp = RESPONSIBLES.find(r => r.id === task.responsible);
                 const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
                 const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
                 const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
                 const delayInfo = task.approvalDelayInfo;
-                return (<React.Fragment key={task.id}><tr className="border-b border-zinc-100 hover:bg-zinc-50 transition"><td className="px-4 py-3"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">{task.title}{task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}{task.status === 'approved' && delayInfo && (<div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>)}</button></td><td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{resp?.name}</span></td><td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td className="px-4 py-3"><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="px-4 py-3 text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}</td><td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{task.createdAtFormatted || '-'}</td><td className="px-4 py-3 flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800 transition p-1" title="Comentarios">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50/80"><td colSpan="7" className="px-4 py-3"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button></div></td></tr>)}</React.Fragment>);
-              }))}
-            </tbody>
-          </table>
-        </div>
+                const isCommentsOpen = expandedComments[task.id];
+                return (
+                  <React.Fragment key={task.id}>
+                    <tr className="border-b hover:bg-zinc-50 transition">
+                      <td className="px-4 py-2">
+                        <button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600">
+                          {task.title}
+                          {task.description && <div className="text-[10px] text-zinc-400 font-normal">{task.description}</div>}
+                          {task.status === 'approved' && delayInfo && <div className="text-[9px] text-orange-600">{delayInfo.message}</div>}
+                        </button>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                          {resp?.name}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>
+                          {priorityConfig.emoji} {priorityConfig.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>
+                          {Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-4 py-2 text-sm">
+                        {task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}
+                      </td>
+                      <td className="px-4 py-2 text-xs text-zinc-500">{task.createdAtFormatted || '-'}</td>
+                      <td className="px-4 py-2 flex gap-1">
+                        <button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800" title="Comentarios">💬 {task.comments?.length || 0}</button>
+                        <button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800" title="Editar">✏️</button>
+                        <button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800" title="Eliminar">🗑️</button>
+                      </td>
+                    </tr>
+                    {isCommentsOpen && (
+                      <tr className="bg-zinc-50/80">
+                        <td colSpan="7" className="px-4 py-3">
+                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                            <p className="text-[9px] font-black text-zinc-400 uppercase">💬 Comentarios</p>
+                            {task.comments && task.comments.length > 0 ? (
+                              task.comments.map(comment => {
+                                const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
+                                return (
+                                  <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-2`}>
+                                    <div className="flex justify-between items-start mb-1">
+                                      <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span>
+                                      <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
+                                    </div>
+                                    <p className="text-xs text-zinc-700">{comment.text}</p>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
+                            )}
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border rounded-xl px-3 py-2 text-sm" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} />
+                            <button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold">Enviar</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {/* Versión Móvil */}
-      <div className="md:hidden space-y-3 p-3">
-        {filteredTasks.length === 0 ? (<div className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</div>) : (filteredTasks.map(task => {
-          const resp = RESPONSIBLES.find(r => r.id === task.responsible);
-          const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-          const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-          const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-          const isCommentsOpen = expandedComments[task.id];
-          const delayInfo = task.approvalDelayInfo;
-          return (<div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm"><div className="p-4"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}{task.status === 'approved' && delayInfo && (<div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>)}</button><div className="flex flex-wrap gap-2 mb-3"><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>👤 {resp?.name}</span><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100"><div className="flex flex-col"><span className="text-[9px] font-black uppercase">📅 Límite</span><span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span></div><div className="flex flex-col items-end"><span className="text-[9px] font-black uppercase">🕒 Creada</span><span>{task.createdAtFormatted || '-'}</span></div></div><div className="flex gap-2 mt-3"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1">💬 {task.comments?.length || 0} Comentarios</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️</button></div></div>{isCommentsOpen && (<div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button></div></div>)}</div>);
-        }))}
+      <div className="md:hidden space-y-3 p-2">
+        {filteredTasks.length === 0 ? (
+          <div className="text-center py-10 text-zinc-400">No hay tareas</div>
+        ) : (
+          filteredTasks.map(task => {
+            const resp = RESPONSIBLES.find(r => r.id === task.responsible);
+            const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
+            const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
+            const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
+            const delayInfo = task.approvalDelayInfo;
+            const isCommentsOpen = expandedComments[task.id];
+            return (
+              <div key={task.id} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                <div className="p-4">
+                  <button onClick={() => setSelectedTask(task)} className="w-full text-left">
+                    <h3 className="font-black text-base">{task.title}</h3>
+                    {task.description && <p className="text-xs text-zinc-500 mt-1">{task.description}</p>}
+                    {task.status === 'approved' && delayInfo && <p className="text-[10px] text-orange-600 mt-1">{delayInfo.message}</p>}
+                  </button>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{resp?.name}</span>
+                    <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span>
+                    <select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>
+                      {Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex justify-between text-xs text-zinc-500 mt-3 pt-2 border-t">
+                    <span>📅 {task.dueDate || '-'}</span>
+                    <span>🕒 {task.createdAtFormatted || '-'}</span>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1">💬 {task.comments?.length || 0}</button>
+                    <button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl text-xs font-bold">✏️</button>
+                    <button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl text-xs font-bold">🗑️</button>
+                  </div>
+                </div>
+                {isCommentsOpen && (
+                  <div className="bg-zinc-50/80 px-4 py-3 border-t">
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      <p className="text-[9px] font-black text-zinc-400 uppercase">💬 Comentarios</p>
+                      {task.comments && task.comments.length > 0 ? (
+                        task.comments.map(comment => {
+                          const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
+                          return (
+                            <div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-2`}>
+                              <div className="flex justify-between items-start mb-1">
+                                <span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span>
+                                <span className="text-[9px] text-zinc-400">{comment.createdAt}</span>
+                              </div>
+                              <p className="text-xs text-zinc-700">{comment.text}</p>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>
+                      )}
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border rounded-xl px-3 py-2 text-sm" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} />
+                      <button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold">Enviar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
 }
 
-// --- COMPONENTE PRINCIPAL ---
+// ─── APP PRINCIPAL (CON LOGIN INTEGRADO Y NUEVA PESTAÑA AGENDA) ──────────────
 export default function App() {
-  const [activeModule, setActiveModule] = useState('winners');
-  const [user, setUser] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('pending');
-  const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState(getInitialWinner());
-  const [proj, setProj] = useState(getInitialProjection());
-  const [expandedItems, setExpandedItems] = useState({});
-  const [notification, setNotification] = useState('');
-  const [formError, setFormError] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState('manual');
-  const [supplierFilter, setSupplierFilter] = useState('all');
+  const { user, loading } = useAuth();
+  const [configs, setConfigs] = useState([]);
+  const [months, setMonths] = useState([]);
+  const [activeTab, setTab] = useState('dashboard');
 
-  // Escuchar autenticación
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Escuchar Firestore solo si hay usuario y no estamos en proyección ni agenda
-  useEffect(() => {
-    if (!user || activeModule === 'projection' || activeModule === 'agenda') return; 
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(loaded);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-      setNotification(`Error de acceso: No tienes permisos.`);
-      setTimeout(() => setNotification(''), 4000);
-    });
-    return () => unsubscribe();
-  }, [user, activeModule]);
-
-  // Obtener lista única de proveedores para el filtro
-  const uniqueSuppliers = useMemo(() => {
-    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
-    const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
-    const list = products.map(p => p[field]).filter(Boolean);
-    return ['all', ...new Set(list)];
-  }, [products, activeModule]);
-
-  // Lógica de Filtrado y Ordenamiento Combinada
-  const displayedProducts = useMemo(() => {
-    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
-    let result = products.filter(p => {
-      const matchesTab = p.status === activeTab;
-      const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           p.dropiCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           p.chineseSupplier?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const supplierField = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
-      const matchesSupplier = supplierFilter === 'all' || p[supplierField] === supplierFilter;
-
-      return matchesTab && matchesSearch && matchesSupplier;
-    });
-
-    return [...result].sort((a, b) => {
-      if (a.isWorking && !b.isWorking) return -1;
-      if (!a.isWorking && b.isWorking) return 1;
-
-      if (sortOrder === 'manual' || sortOrder === 'recent') {
-        return (a.order || 0) - (b.order || 0);
-      }
-      
-      const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
-      const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
-
-      if (sortOrder === 'roi-desc') return valB - valA;
-      if (sortOrder === 'roi-asc') return valA - valB;
-      return 0;
-    });
-  }, [products, activeTab, searchTerm, supplierFilter, sortOrder, activeModule]);
-
-  const handleLogout = () => signOut(auth);
-
-  const handleModuleChange = (mod) => {
-    setProducts([]); 
-    setActiveModule(mod);
-    setActiveTab('pending');
-    setSearchTerm('');
-    setSupplierFilter('all');
-    setSortOrder('manual');
-    if (mod !== 'projection' && mod !== 'agenda') {
-      setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
-    }
-    setIsCreating(false);
-    setFormError('');
-  };
-
-  const copyToClipboard = (text) => {
-    if (!text) return;
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    setNotification(`Copiado: ${text}`);
-    setTimeout(() => setNotification(''), 2000);
-    document.body.removeChild(textArea);
-  };
-
-  const handleSave = async () => {
-    setFormError('');
-    if (!newProduct.name || newProduct.name.trim() === '') {
-      setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
-      return; 
-    }
-    setIsSaving(true);
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
-    const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
-    
-    try {
-      if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
-      
-      const currentDateTime = getCurrentDateTime();
-      
-      const payloadRaw = {
-        ...newProduct,
-        regNumber,
-        order: Date.now(),
-        createdBy: auth.currentUser.uid,
-        createdAtText: currentDateTime
-      };
-      const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
-      cleanPayload.createdAt = serverTimestamp();
-      
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
-      setIsCreating(false);
-      setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
-      setActiveTab('pending'); 
-      setFormError('');
-      setNotification('¡Registro guardado en la Nube! ✨');
-      setTimeout(() => setNotification(''), 3000);
-    } catch (e) { 
-      console.error("Firebase Save Error:", e); 
-      setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const updateDocField = async (id, f, v) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [f]: v }); } catch (e) { console.error(e); }
-  };
-
-  const updateNestedField = async (id, parent, f, v) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const item = products.find(x => x.id === id);
-    if (!item) return;
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [parent]: { ...item[parent], [f]: v } }); } catch (e) { console.error(e); }
-  };
-
-  const updateUpsell = async (p, uid, f, v) => {
-    const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells }); } catch (e) { console.error(e); }
-  };
-
-  const resetUpsell = async (p, uid) => {
-    const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells }); } catch (e) { console.error(e); }
-  };
-
-  const deleteItem = async (id) => {
-    if (window.confirm('¿Estás seguro de borrar este registro de la base de datos?')) {
-      const colName = activeModule === 'winners' ? 'products' : 'import_products';
-      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id)); } catch (e) { console.error(e); }
-    }
-  };
-
-  const moveItem = async (id, dir) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const list = displayedProducts;
-    const idx = list.findIndex(p => p.id === id);
-    const targetIdx = idx + dir;
-    if (targetIdx >= 0 && targetIdx < list.length) {
-      const a = list[idx], b = list[targetIdx];
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
-      } catch (e) { console.error(e); }
-    }
-  };
-
-  const handleImage = (e, targetId = null, upsellId = null) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      let result = reader.result;
-      if (file.size > 500 * 1024) {
-        try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
-      }
-      if (!targetId) {
-        if (upsellId) {
-          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u);
-          setNewProduct({...newProduct, upsells: up});
-        } else {
-          setNewProduct({...newProduct, image: result});
-        }
-      } else {
-        const colName = activeModule === 'winners' ? 'products' : 'import_products';
-        const item = products.find(x => x.id === targetId);
-        if (!item) return;
-        if (upsellId) {
-          const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
-        } else {
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { image: result });
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const updateVariable = async (p, varId, field, value) => {
-    const newVars = (p.variables || getInitialImport().variables).map(v =>
-      v.id === varId ? { ...v, [field]: value } : v
+    if (!user) return;
+    const u1 = onSnapshot(collection(db, 'sales_configs'), snap =>
+      setConfigs(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
-    await updateDocField(p.id, 'variables', newVars);
-  };
-
-  const updateTestingData = async (p, testId, field, value) => {
-    const currentData = p.testingData || getInitialWinner().testingData;
-    const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
-    await updateDocField(p.id, 'testingData', newData);
-  };
-
-  // --- MÓDULO: PROYECCIÓN P&G ---
-  const renderProjectionModule = () => {
-    const val = (key) => parseFloat(proj[key]) || 0;
-    const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
-    const resetProjection = () => setProj(getInitialProjection());
-
-    const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
-    const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
-    const linkClicks = impressions * (val('ctr') / 100);
-    const cpc = linkClicks > 0 ? val('adSpend') / linkClicks : 0;
-    const pageVisits = linkClicks * (val('loadSpeed') / 100);
-    const costPerVisit = pageVisits > 0 ? val('adSpend') / pageVisits : 0;
-    const salesCol1 = pageVisits * (val('conversionRate') / 100);
-    const salesCol2 = salesCol1 * val('price');
-    const cpaFb = salesCol1 > 0 ? val('adSpend') / salesCol1 : 0;
-    const dispatchedOrders = salesCol1 * (val('effectiveness') / 100);
-    const costPerDispatched = dispatchedOrders > 0 ? val('adSpend') / dispatchedOrders : 0;
-    const returns = dispatchedOrders * (val('returnRate') / 100);
-    const effectiveDeliveries = dispatchedOrders - returns;
-    const realRevenue = effectiveDeliveries * val('price');
-    const cpaReal = effectiveDeliveries > 0 ? val('adSpend') / effectiveDeliveries : 0;
-    const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
-    const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
-
-    const totalProductCost = effectiveDeliveries * val('productCost');
-    const totalFreightCost = val('freight') * dispatchedOrders;
-    const totalReturnCost = val('freight') * returns;
-    const totalFulfillmentCost = val('fulfillment') * dispatchedOrders;
-    const totalCommissionCost = val('commission') * effectiveDeliveries;
-    
-    const intermediationCosts = totalProductCost + totalFreightCost + totalReturnCost + totalFulfillmentCost + totalCommissionCost;
-    const grossProfit = realRevenue - intermediationCosts - val('adSpend');
-    const prorateCampaign = val('activeCampaigns') > 0 ? val('fixedExpenses') / val('activeCampaigns') : 0;
-    const netProfit = grossProfit - prorateCampaign;
-    const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
-    const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
-
-    const downloadReport = () => {
-        const productName = proj.name || 'Sin Nombre';
-        const reportContent = `======================================
-📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
-======================================
-
-🎯 MÉTRICAS DE MARKETING:
-- Inversión Facebook:     ${formatCurrency(val('adSpend'))}
-- CPM:                    ${formatCurrency(val('cpm'))}
-- Impresiones:            ${impressions.toFixed(0)}
-- CTR:                    ${val('ctr').toFixed(2)}%
-- Clics en Enlace:        ${linkClicks.toFixed(0)}
-- Costo por Clic (CPC):   ${formatCurrency(cpc)}
-- Velocidad de Carga:     ${val('loadSpeed').toFixed(2)}%
-- Visitas a la Página:    ${pageVisits.toFixed(0)}
-- Costo por Visita:       ${formatCurrency(costPerVisit)}
-- % Conversión:           ${val('conversionRate').toFixed(2)}%
-
-📦 EMBUDO DE VENTAS Y ENTREGAS:
-- Ventas Generadas (Col1): ${salesCol1.toFixed(2)} pedidos
-- % Efectividad:          ${val('effectiveness').toFixed(2)}%
-- Pedidos Despachados:    ${dispatchedOrders.toFixed(2)} pedidos
-- % Devolución:           ${val('returnRate').toFixed(2)}%
-- Total Devoluciones:     ${returns.toFixed(2)} pedidos
-- ENTREGAS EFECTIVAS:     ${effectiveDeliveries.toFixed(2)} pedidos
-
-💳 ANÁLISIS DE ADQUISICIÓN (CPA & ROAS):
-- CPA Facebook:           ${formatCurrency(cpaFb)}
-- CPA Real:               ${formatCurrency(cpaReal)}
-- ROAS Facebook:          ${roasFb.toFixed(2)}
-- ROAS Real ⭐:            ${roasReal.toFixed(2)}
-
-💰 FINANZAS Y COSTOS DE OPERACIÓN:
-- Precio de Venta:        ${formatCurrency(val('price'))}
-- Costo de Producto:      ${formatCurrency(val('productCost'))}
-- Flete por envío:        ${formatCurrency(val('freight'))}
-- Costo Fulfillment:      ${formatCurrency(val('fulfillment'))}
-- Comisión + Fijos:       ${formatCurrency(val('commission'))}
-
-- Facturado Tienda Web:   ${formatCurrency(salesCol2)}
-- Ingresos Reales ⭐:      ${formatCurrency(realRevenue)}
-- Total Intermediación:   ${formatCurrency(intermediationCosts)}
-- Gastos Fijos (Prorrateo): ${formatCurrency(prorateCampaign)}
-
-🏆 RESULTADOS FINALES:
-- Profit Bruto:           ${formatCurrency(grossProfit)}
-- Profit Neto Real:       ${formatCurrency(netProfit)}
-- Margen Bruto:           ${grossMargin.toFixed(2)}%
-- Margen Neto:            ${netMargin.toFixed(2)}%
-
-======================================
-Reporte generado por WinnerProduct OS
-======================================`;
-        const blob = new Blob([reportContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
-
-    return (
-      <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
-            <div className="w-full md:flex-1">
-                <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
-                <input 
-                    type="text" 
-                    value={proj.name || ''} 
-                    onChange={(e) => setProj({...proj, name: e.target.value})}
-                    className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" 
-                    placeholder="Ej. Nombre del producto..."
-                />
-            </div>
-            <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-                <button 
-                    onClick={downloadReport}
-                    className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    📄 Descargar Informe
-                </button>
-                <button 
-                    onClick={resetProjection}
-                    className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    Limpiar Datos
-                </button>
-            </div>
-        </div>
-
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
-            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} type="currency" prefix="$" />
-            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} type="currency" prefix="$" />
-            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} type="currency" prefix="$" />
-            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} type="currency" prefix="$" />
-            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} type="currency" prefix="$" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} type="currency" prefix="$" />
-            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} type="currency" prefix="$" />
-            <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
-            <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
-
-            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} type="number" suffix="%" />
-            <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
-            <OutputP label="Costo por Clic" value={cpc} type="currency" />
-            
-            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} type="number" suffix="%" />
-            <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
-            <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
-            
-            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} type="number" suffix="%" />
-            <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
-            <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
-            <OutputP label="CPA Facebook" value={cpaFb} type="currency" customBg="bg-blue-600 border-blue-700 shadow-lg" customText="text-white" />
-
-            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} type="number" suffix="%" />
-            <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
-            <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
-            
-            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} type="number" suffix="%" />
-            <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
-            <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
-            <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
-            <OutputP label="CPA Real" value={cpaReal} type="currency" customBg="bg-orange-500 border-orange-600 shadow-lg" customText="text-white" />
-
-            <OutputP label="ROAS FACEBOOK" value={roasFb} type="number" decimals={2} />
-            <OutputP label="ROAS REAL ⭐" value={roasReal} type="number" decimals={2} highlight />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Pérdidas y Ganancias</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
-            <div className="space-y-3">
-              <OutputP label="Facturado Tienda Web" value={salesCol2} type="currency" />
-              <OutputP label="Facturado Real ⭐" value={realRevenue} type="currency" highlight />
-              <OutputP label="Ingresos Totales" value={realRevenue} type="currency" />
-              <OutputP label="Inversión Publicidad" value={proj.adSpend} type="currency" />
-            </div>
-
-            <div className="space-y-3 p-4 md:p-6 bg-rose-50/50 rounded-[1.5rem] border border-rose-100">
-              <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
-              <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
-              <OutputP label="Costo Envío Efectivo 🚚" value={totalFreightCost} type="currency" />
-              <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
-              <OutputP label="Costo Fulfillment" value={totalFulfillmentCost} type="currency" />
-              <OutputP label="Costo Comisión" value={totalCommissionCost} type="currency" />
-              <div className="pt-2">
-                <OutputP label="Total Costos Intermediación" value={intermediationCosts} type="currency" highlight />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
-              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
-              <OutputP label="Prorrateo x Campaña" value={prorateCampaign} type="currency" />
-              <div className="mt-6">
-                <div className={`rounded-[1.5rem] p-5 shadow-lg text-white transition-colors duration-500 ${grossProfit < 0 ? 'bg-rose-600' : 'bg-emerald-500'}`}>
-                  <label className="text-[10px] font-black uppercase tracking-widest opacity-80 block mb-1">Profit Bruto ⭐⭐⭐⭐⭐</label>
-                  <div className="text-3xl md:text-4xl font-black font-mono">{formatCurrency(grossProfit)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 bg-zinc-900 rounded-[2.5rem] p-6 md:p-12 text-white shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
-                    <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                      {formatCurrency(netProfit)}
-                    </p>
-                </div>
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:px-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Bruto</p>
-                    <p className="text-3xl md:text-5xl font-black italic">{grossMargin.toFixed(2)}%</p>
-                </div>
-                <div className="md:pl-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
-                    <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>
-                      {netMargin.toFixed(2)}%
-                    </p>
-                </div>
-             </div>
-          </div>
-        </div>
-      </div>
+    const u2 = onSnapshot(collection(db, 'sales_months'), snap =>
+      setMonths(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
-  };
+    return () => { u1(); u2(); };
+  }, [user]);
 
-  const renderCreationForm = () => {
-    if (activeModule === 'winners') {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label>
-                <input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="ID-000"/>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor</label>
-                <input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-6">
-            <div className="bg-zinc-50 p-4 md:p-6 rounded-2xl border border-zinc-100 shadow-sm">
-              <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 border-b pb-2">Costos Winner (COP)</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1 leading-none">{k}</label>
-                  <input type="number" value={newProduct.costs?.[k] || ''} onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base font-mono text-zinc-800 outline-none"/></div>
-                ))}
-              </div>
-            </div>
-            <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl text-white shadow-xl">
-              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block leading-none">PVP Sugerido</label>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold opacity-30">$</span>
-                <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label>
-                <input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label>
-                <input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4 text-left">
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label>
-                <input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label>
-                <input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label>
-                <input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label>
-                <input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
-                <input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-            </div>
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 text-left">
-                <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
-                <div className="grid grid-cols-3 gap-2 px-1">
-                    <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  };
-
-  // === CONTROL DE ACCESO ===
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center">
-        <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
-          <div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <p className="text-slate-400">Cargando...</p>
       </div>
     );
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return <Login />;
   }
 
-  // --- DASHBOARD PRINCIPAL (usuario autenticado) ---
+  const tabs = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'records', icon: ClipboardList, label: 'Cierres' },
+    { id: 'config', icon: Settings, label: 'Estrategias' },
+    { id: 'agenda', icon: CalendarDays, label: 'Agenda' }  // ← NUEVA
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
-      
-      {notification && (
-        <div className="fixed bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl z-[200] font-bold text-[10px] md:text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10 w-[90%] md:w-auto text-center leading-tight">
-          {notification}
-        </div>
-      )}
-
-      <div className="max-w-[1400px] mx-auto">
-        
-        {/* NAVEGACIÓN - AGREGADO BOTÓN AGENDA */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-8 gap-3 md:gap-4">
-            <div className="bg-white p-1 rounded-2xl md:rounded-[2rem] shadow-xl border border-zinc-200 flex flex-wrap md:flex-nowrap w-full md:w-auto overflow-hidden">
-                <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Winners</button>
-                <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Importación</button>
-                <button onClick={()=>handleModuleChange('projection')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'projection' ? 'bg-indigo-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-indigo-400/50 hover:text-indigo-600'}`}>Proyección P&G</button>
-                <button onClick={()=>handleModuleChange('agenda')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'agenda' ? 'bg-emerald-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-emerald-600/50 hover:text-emerald-600'}`}>📅 Agenda</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'DM Sans', sans-serif", color: '#0f172a', paddingBottom: '5rem' }}>
+      <header style={{ background: '#09090b', position: 'sticky', top: 0, zIndex: 40 }}>
+        <div style={{ maxWidth: '72rem', margin: '0 auto', padding: '0.75rem 1rem' }}>
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="font-black italic text-emerald-400 text-sm md:text-base">Winner System 360</p>
+              <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 tracking-widest">Control Ventas · Contraentrega CO</p>
             </div>
-            <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
-        </div>
-
-        {/* CONTENIDO SEGÚN MÓDULO */}
-        {activeModule === 'agenda' ? (
-          <AgendaModule />
-        ) : activeModule === 'projection' ? (
-          renderProjectionModule()
-        ) : (
-          <>
-            {/* ÁREA DE FILTROS Y BÚSQUEDA */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 animate-in fade-in">
-                <div className="md:col-span-2 relative">
-                    <input 
-                        type="text" 
-                        placeholder="Buscar..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:border-zinc-900 outline-none transition-all shadow-sm"
-                    />
-                    <span className="absolute right-4 top-1/2 transform -translate-y-1/2 opacity-20">🔍</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-1 gap-2 md:contents">
-                  <select 
-                      value={supplierFilter}
-                      onChange={(e) => setSupplierFilter(e.target.value)}
-                      className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-[11px] md:text-base font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
+            <div className="flex items-center gap-3">
+              <nav className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                {tabs.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === t.id ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-500'}`}
                   >
-                      <option value="all">TODOS PROV.</option>
-                      {uniqueSuppliers.filter(s => s !== 'all').map(s => (
-                          <option key={s} value={s}>{s.toUpperCase()}</option>
-                      ))}
-                  </select>
-                  <select 
-                      value={sortOrder}
-                      onChange={(e) => setSortOrder(e.target.value)}
-                      className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-[11px] md:text-base font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
-                  >
-                      <option value="manual">ORDEN MANUAL</option>
-                      <option value="roi-desc">ROI ↑</option>
-                      <option value="roi-asc">ROI ↓</option>
-                      <option value="recent">RECIENTES</option>
-                  </select>
-                </div>
+                    <t.icon size={12} />
+                    <span className="hidden sm:inline">{t.label}</span>
+                  </button>
+                ))}
+              </nav>
+              <button
+                onClick={() => { import('./src/firebase').then(({ logout }) => logout()); }}
+                className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase"
+              >
+                Salir
+              </button>
             </div>
-
-            <header className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-3 md:gap-4 bg-white p-3 md:p-6 rounded-xl md:rounded-[2rem] shadow-sm border border-zinc-200/50 relative animate-in fade-in">
-              <div className="flex items-center gap-3 md:gap-5 w-full md:w-auto">
-                <div className="w-10 h-10 md:w-14 md:h-14 bg-zinc-900 rounded-xl md:rounded-[1.2rem] flex items-center justify-center text-white text-xl md:text-2xl shadow-xl italic font-black shrink-0">W</div>
-                <div className="text-left">
-                  <h1 className="text-lg md:text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">{activeModule === 'winners' ? 'Winner OS' : 'Importación'}</h1>
-                  <p className="text-[7px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">Sincronizado Cloud</p>
-                </div>
-              </div>
-              <button onClick={() => { setIsCreating(true); setFormError(''); }} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
-            </header>
-
-            {/* TABS DE ESTADO */}
-            <div className="flex md:justify-center gap-1.5 md:gap-2 mb-4 md:mb-10 overflow-x-auto no-scrollbar pb-2 animate-in fade-in">
-              {Object.values(activeModule === 'winners' ? WINNER_STATUS : IMPORT_STATUS).map((config) => (
-                <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-3 md:px-6 py-2 md:py-3.5 rounded-lg md:rounded-[1.2rem] font-black text-[10px] md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
-                  {config.emoji} {config.label} <span className="ml-1 opacity-40">({products.filter(p => p.status === config.id).length})</span>
-                </button>
-              ))}
-            </div>
-
-            {/* LISTADO DE PRODUCTOS */}
-            <div className="grid grid-cols-1 gap-4 md:gap-12 pb-20 animate-in slide-in-from-bottom-8">
-              {displayedProducts.map((p, idx) => {
-                const isWinner = activeModule === 'winners';
-                const mWinner = isWinner ? calculateWinnerMetrics(p) : null;
-                const mImport = !isWinner ? calculateImportMetrics(p) : null;
-                const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
-
-                let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50';
-                if (!isWinner && p.status === 'approved') {
-                  const importState = IMPORT_STATES_LIST[p.importStatus] || IMPORT_STATES_LIST.warehouse;
-                  cardBgClass = importState.bgColor + (p.isWorking ? ' ring-2 ring-amber-500/20' : '');
-                }
-
-                return (
-                  <div 
-                    key={p.id} 
-                    className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${cardBgClass}`}
-                  >
-                    
-                    <div className={`px-3 md:px-10 py-2 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
-                       <div className="flex items-center gap-2 md:gap-6 flex-wrap text-left">
-                         <div className="bg-zinc-900 text-white px-2 py-1 rounded-lg text-[8px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
-                         
-                         {p.createdAtText && (
-                           <div className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded-lg text-[8px] md:text-[10px] font-mono font-bold tracking-tight">
-                             📅 {p.createdAtText}
-                           </div>
-                         )}
-                         
-                         <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-lg border border-zinc-200 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => updateDocField(p.id, 'isWorking', !p.isWorking)}>
-                            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-tighter ${p.isWorking ? 'text-amber-600' : 'text-zinc-400'}`}>EN PROCESO</span>
-                            <div className={`w-7 h-4 md:w-9 md:h-5 rounded-full relative transition-colors ${p.isWorking ? 'bg-amber-500' : 'bg-zinc-200'}`}>
-                              <div className={`absolute top-0.5 w-3 h-3 md:w-4 md:h-4 bg-white rounded-full shadow-sm transition-all ${p.isWorking ? 'left-[0.9rem] md:left-[1.2rem]' : 'left-0.5'}`} />
-                            </div>
-                         </div>
-
-                         <span className="font-black text-[8px] md:text-[11px] uppercase tracking-widest text-zinc-500 whitespace-nowrap">{stCfg.emoji} {stCfg.label}</span>
-                         
-                         <div className={`flex items-center bg-white rounded-lg md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100 transition-opacity ${sortOrder === 'manual' ? 'opacity-100' : 'opacity-20 pointer-events-none'}`}>
-                            <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 15l7-7 7 7"/></svg></button>
-                            <span className="text-[7px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
-                            <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length - 1} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M19 9l-7 7-7-7"/></svg></button>
-                         </div>
-                       </div>
-                       <button onClick={() => deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600 transition-all hover:scale-110 shrink-0"><svg className="w-4 h-4 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
-                    </div>
-
-                    <div className="flex flex-col xl:flex-row">
-                       <div className="w-full xl:w-[35%] p-3 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
-                         <div className="flex flex-col items-center">
-                           <div className="w-20 h-20 md:w-64 md:h-64 aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 md:mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer shrink-0">
-                             {p.image ? <img src={p.image} className="w-full h-full object-cover" alt="Producto"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-                             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
-                           </div>
-                           <div className="w-full text-center md:text-left mt-3 md:mt-0">
-                             <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-sm md:text-xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none md:mb-4 py-1 transition-all text-zinc-900 truncate" placeholder="Nombre..."/>
-                             
-                             <div className="grid grid-cols-2 gap-2 mt-2 md:mt-0 md:mb-6">
-                                {isWinner ? (
-                                  <>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(p.dropiCode)}>
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">DROPI 📋</label>
-                                        <input value={p.dropiCode || ''} onChange={(e)=>updateDocField(p.id, 'dropiCode', e.target.value)} className="text-[11px] md:text-sm font-mono font-bold truncate w-full outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none text-left">PROV.</label>
-                                        <input value={p.supplier || ''} onChange={(e)=>updateDocField(p.id, 'supplier', e.target.value)} className="w-full text-[11px] md:text-sm font-bold outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm text-left">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">CH-PROV</label>
-                                        <input value={p.chineseSupplier || ''} onChange={(e)=>updateDocField(p.id, 'chineseSupplier', e.target.value)} className="w-full text-[11px] md:text-sm font-bold outline-none bg-transparent text-zinc-800 truncate"/>
-                                    </div>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm text-left">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">TRM</label>
-                                        <input type="number" value={p.dollarRate || 0} onChange={(e)=>updateDocField(p.id, 'dollarRate', parseFloat(e.target.value)||0)} className="w-full text-[11px] md:text-sm font-mono font-bold outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                  </>
-                                )}
-                             </div>
-                           </div>
-                         </div>
-
-                         {isWinner && (
-                           <div className="mt-3">
-                             <button 
-                               onClick={() => setExpandedItems({...expandedItems, [`desc_${p.id}`]: !expandedItems[`desc_${p.id}`]})}
-                               className="w-full flex justify-between items-center px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest shadow-sm hover:bg-zinc-50 transition-colors"
-                             >
-                               <span>Ver Estrategia</span>
-                               <svg className={`w-3 h-3 transition-transform ${expandedItems[`desc_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
-                             </button>
-                             {expandedItems[`desc_${p.id}`] && (
-                               <textarea 
-                                 value={p.description || ''} 
-                                 onChange={(e)=>updateDocField(p.id, 'description', e.target.value)} 
-                                 rows={3} 
-                                 className="w-full mt-2 text-[12px] md:text-sm bg-white p-3 md:p-6 rounded-xl border border-zinc-100 shadow-inner text-zinc-500 leading-relaxed text-left animate-in fade-in" 
-                                 placeholder="Escribir estrategia..."
-                               />
-                             )}
-                           </div>
-                         )}
-                       </div>
-
-                       <div className="flex-1 p-3 md:p-10 space-y-4 md:space-y-10 relative text-left">
-                          {isWinner ? (
-                            <div className="grid grid-cols-4 md:grid-cols-4 gap-2 md:gap-4">
-                              {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                                <div key={k} className={`p-2 md:p-5 rounded-lg md:rounded-2xl border transition-all hover:bg-white text-left ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-0.5 leading-none">{k}</label>
-                                    <input type="number" value={p.costs?.[k] || 0} onChange={(e)=>updateNestedField(p.id, 'costs', k, parseFloat(e.target.value)||0)} className="w-full font-mono text-[11px] md:text-base font-bold bg-transparent outline-none text-zinc-700"/>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-4 md:grid-cols-4 gap-2 md:gap-4">
-                                {[{k:'prodCostUSD',l:'USD'}, {k:'cbmCostCOP',l:'CBM'}, {k:'unitsQty',l:'Uds'}, {k:'ctnQty',l:'CTN'}, {k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
-                                    <div key={f.k} className={`p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                        <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-0.5 leading-none">{f.l}</label>
-                                        <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-[11px] md:text-base font-bold bg-transparent outline-none text-zinc-800 leading-none"/>
-                                    </div>
-                                ))}
-                                <div className={`col-span-2 p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">Medidas (cm)</label>
-                                    <div className="grid grid-cols-3 gap-1">
-                                        <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                        <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                        <input type="number" value={p.measures?.length || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'length', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                    </div>
-                                </div>
-                                <div className={`col-span-2 md:col-span-1 p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all flex flex-col justify-center ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-indigo-500 uppercase block mb-1 leading-none">TOTAL CBM</label>
-                                    <div className="w-full font-mono text-[11px] md:text-base font-black text-indigo-700 leading-none">{mImport.totalCbm.toFixed(3)}</div>
-                                </div>
-                            </div>
-                          )}
-
-                          {/* DASHBOARD DE RESULTADOS */}
-                          <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-5 md:p-10 text-white shadow-2xl relative overflow-hidden">
-                             <div className="absolute top-0 right-0 w-32 md:w-80 h-32 md:h-80 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[120px] -mr-16 md:-mr-40 -mt-16 md:-mt-40"></div>
-                             
-                             {isWinner ? (
-                                <div className="relative z-10 space-y-6 md:space-y-8">
-                                    <div className="flex justify-between items-end border-b border-zinc-800 pb-4 md:pb-8 gap-4 text-left">
-                                        <div className="flex-1">
-                                            <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-4 block leading-none">PVP Sugerido</label>
-                                            <div className="flex items-center gap-1 md:gap-2">
-                                                <span className="text-xl md:text-3xl font-bold opacity-20">$</span>
-                                                <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-2xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-[10px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 italic leading-none">Costos</p>
-                                            <p className="text-lg md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center gap-4">
-                                        <div className="bg-white/5 p-4 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
-                                            <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 text-left px-1 leading-none">Utilidad Neta</p>
-                                            <p className={`text-2xl md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-[10px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 italic leading-none text-right">Margen ROI</p>
-                                            <p className="text-4xl md:text-7xl font-black italic tracking-tighter leading-none">{mWinner.margin.toFixed(1)}%</p>
-                                        </div>
-                                    </div>
-                                </div>
-                             ) : (
-                                <div className="relative z-10 space-y-5 md:space-y-8">
-                                    <div className="grid grid-cols-2 gap-6 border-b border-zinc-800 pb-4 md:pb-8 text-left">
-                                        <div className="text-left">
-                                            <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">China (1.03x)</p>
-                                            <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.costChinaCOP)}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">Logística</p>
-                                            <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.nationalizationCOP)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="bg-emerald-500/10 p-4 md:p-10 rounded-xl md:rounded-[3rem] border border-emerald-500/20 flex flex-col md:flex-row justify-between items-center gap-3 transition-all hover:bg-emerald-500/20">
-                                        <div className="text-left w-full md:w-auto">
-                                            <p className="text-[9px] md:text-[12px] font-black text-emerald-400 uppercase tracking-[0.1em] mb-1.5 leading-none">Costo Prod. Colombia</p>
-                                            <p className="text-3xl md:text-7xl font-black text-white leading-none tracking-tighter">{formatCurrency(mImport.unitCostColombia)}</p>
-                                        </div>
-                                        <div className="text-left md:text-right w-full md:w-auto">
-                                            <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1 leading-none">Inversión Total</p>
-                                            <p className="text-sm md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                             )}
-                          </div>
-
-                          {/* BOTONES DE ESTADO */}
-                          <div className="flex flex-wrap gap-2.5 md:gap-3 justify-center md:justify-start">
-                            {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
-                              <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
-                                {s.emoji} {s.label}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* SECCIÓN DE TESTEO PARA WINNER */}
-                          {isWinner && p.status === 'testing' && (
-                            <div className="mt-6 bg-amber-50/80 rounded-2xl p-4 md:p-6 space-y-4 border border-amber-200">
-                              <h3 className="text-sm font-black text-amber-700 uppercase tracking-widest flex items-center gap-2">🧪 Datos de Testeo</h3>
-                              <div className="space-y-3">
-                                {(p.testingData || getInitialWinner().testingData).map(tester => (
-                                  <div key={tester.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white/50 p-3 rounded-xl">
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Vendedora {tester.id}</label>
-                                      <input
-                                        type="text"
-                                        value={tester.sellerName || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'sellerName', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                        placeholder={`Nombre vendedora ${tester.id}`}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha inicio</label>
-                                      <input
-                                        type="date"
-                                        value={tester.startDate || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'startDate', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha finalización</label>
-                                      <input
-                                        type="date"
-                                        value={tester.endDate || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'endDate', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                      />
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* MOTIVO DE RECHAZO */}
-                          {isWinner && p.status === 'rejected' && (
-                            <div className="mt-4 w-full">
-                              <label className="text-[9px] font-black text-rose-600 uppercase tracking-widest block mb-2">Motivo de rechazo</label>
-                              <textarea
-                                value={p.rejectionReason || ''}
-                                onChange={(e) => updateDocField(p.id, 'rejectionReason', e.target.value)}
-                                rows={2}
-                                className="w-full p-3 md:p-4 border-2 border-rose-200 bg-white rounded-xl text-sm text-zinc-800 outline-none focus:border-rose-500 transition-all"
-                                placeholder="Explica por qué se rechazó este producto..."
-                              />
-                            </div>
-                          )}
-
-                          {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                       {!isWinner && p.status === 'approved' && (
-                          <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
-                            <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-                                <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-                                <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                              </div>
-                            </div>
-                            
-                            {/* CÁLCULO DE SALDO PENDIENTE CON ANTICIPO + PAGO TOTAL */}
-                            <div className="bg-indigo-50 rounded-xl p-3">
-                              <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
-                              {(() => {
-                                const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-                                const flete = p.yiwuFreightUSD || 0;
-                                const totalUSD = prodUSD + flete;
-                                const trm = p.dollarRate || 0;
-                                const valorCOP = totalUSD * trm * 1.03;
-                                const anticipo = p.advancePayment?.amount || 0;
-                                const pagoTotal = p.totalPayment?.amount || 0;
-                                const totalPagado = anticipo + pagoTotal;
-                                const saldoCOP = valorCOP - totalPagado;
-                                const saldoUSD = saldoCOP / (trm || 1);
-                                const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
-                                return (
-                                  <div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                      <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-                                      <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
-                                      <div>💱 TRM: {trm.toLocaleString()} COP</div>
-                                      <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
-                                    </div>
-                                    <div className="mt-2 bg-white rounded-lg p-2">
-                                      <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-                                      <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
-                                      <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
-                                      <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
-                                      </div>
-                                      <div className="flex justify-between font-bold mt-2">
-                                        <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
-                                        <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
-                                      </div>
-                                      <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
-                                      {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
-                                      {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
-                              <div className="space-y-2">
-                                {(p.variables || getInitialImport().variables).map(v => (
-                                  <div key={v.id} className="flex gap-2 items-center">
-                                    <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
-                              <div className="flex flex-wrap gap-2">
-                                {Object.values(IMPORT_STATES_LIST).map(state => (
-                                  <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
-                                    {state.emoji} {state.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* BUNDLES (solo winners) */}
-                      {isWinner && (
-                        <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
-                          <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
-                          {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Modal de creación */}
-      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
-            <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
           </div>
         </div>
-      )}
+      </header>
+      <main style={{ maxWidth: '72rem', margin: '0 auto', padding: '1rem 1rem 3rem' }}>
+        {activeTab === 'dashboard' && <VistaDashboard configs={configs} months={months} activeTab={activeTab} />}
+{activeTab === 'records' && <VistaRegistro configs={configs} months={months} activeTab={activeTab} />}
+        {activeTab === 'config' && <VistaConfig configs={configs} />}
+        {activeTab === 'agenda' && <AgendaModule />}
+      </main>
     </div>
   );
 }
+
