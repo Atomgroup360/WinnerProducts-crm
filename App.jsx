@@ -259,7 +259,8 @@ function LoginScreen({ setErrorExt }) {
     </div>
   );
 }
-// ==================== COMPONENTE AGENDA (CORREGIDO) ====================
+
+// ==================== COMPONENTE AGENDA ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -296,7 +297,9 @@ function AgendaModule() {
   const [newComment, setNewComment] = useState({});
   const [sortBy, setSortBy] = useState('dueDate');
   const [approvalModal, setApprovalModal] = useState({ show: false, taskId: null, justification: '' });
-  const [formData, setFormData] = useState({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' });
+  const [formData, setFormData] = useState({
+    title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: ''
+  });
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -323,7 +326,6 @@ function AgendaModule() {
   }, []);
 
   const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
   const saveTask = async () => {
     if (!formData.title.trim()) { alert("El título es obligatorio"); return; }
     const payload = {
@@ -340,13 +342,11 @@ function AgendaModule() {
       resetForm();
     } catch (err) { console.error(err); alert("Error al guardar la tarea"); }
   };
-
   const deleteTask = async (id) => {
     if (window.confirm("¿Eliminar esta tarea definitivamente? Se borrará de la base de datos.")) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id));
     }
   };
-
   const handleStatusChange = async (taskId, newStatus, taskDueDate) => {
     if (newStatus === 'approved') {
       setApprovalModal({ show: true, taskId, justification: '', dueDate: taskDueDate });
@@ -354,34 +354,26 @@ function AgendaModule() {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
     }
   };
-
   const confirmApproval = async () => {
     const { taskId, justification, dueDate } = approvalModal;
     if (!justification.trim()) { alert("Debes escribir una justificación para aprobar la tarea"); return; }
     const now = new Date();
     const approvedAt = Timestamp.fromDate(now);
-    const approvedAtFormatted = now.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const approvedAtFormatted = now.toLocaleString('es-CO');
     let delayInfo = null;
     if (dueDate) {
-      const dueDateObj = new Date(dueDate);
-      const diffDays = Math.ceil((now - dueDateObj) / (1000 * 60 * 60 * 24));
-      if (diffDays > 0) delayInfo = { status: 'retraso', days: diffDays, message: `⚠️ Retraso de ${diffDays} día${diffDays !== 1 ? 's' : ''}` };
-      else if (diffDays < 0) delayInfo = { status: 'adelanto', days: Math.abs(diffDays), message: `✅ Completado con ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? 's' : ''} de anticipación` };
-      else delayInfo = { status: 'justo', days: 0, message: `🎯 Completado justo a tiempo` };
-    } else { delayInfo = { status: 'sin_fecha', days: 0, message: `📅 Sin fecha límite definida` }; }
+      const diffDays = Math.ceil((now - new Date(dueDate)) / (1000*60*60*24));
+      if (diffDays > 0) delayInfo = { status: 'retraso', message: `⚠️ Retraso de ${diffDays} día${diffDays !== 1 ? 's' : ''}` };
+      else if (diffDays < 0) delayInfo = { status: 'adelanto', message: `✅ Completado con ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? 's' : ''} de anticipación` };
+      else delayInfo = { status: 'justo', message: '🎯 Completado justo a tiempo' };
+    } else delayInfo = { status: 'sin_fecha', message: '📅 Sin fecha límite definida' };
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
         status: 'approved', approvedAt, approvedAtFormatted, approvalJustification: justification.trim(), approvalDelayInfo: delayInfo, updatedAt: serverTimestamp()
       });
       setApprovalModal({ show: false, taskId: null, justification: '' });
-      const tempNotification = document.createElement('div');
-      tempNotification.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 text-white px-4 py-2 rounded-xl text-sm font-bold z-50 ${delayInfo.status === 'retraso' ? 'bg-orange-600' : 'bg-green-600'}`;
-      tempNotification.textContent = `✓ Tarea aprobada. ${delayInfo.message}`;
-      document.body.appendChild(tempNotification);
-      setTimeout(() => tempNotification.remove(), 4000);
     } catch (err) { console.error(err); alert("Error al guardar la aprobación"); }
   };
-
   const addComment = async (taskId) => {
     const commentText = newComment[taskId]?.trim();
     if (!commentText) return;
@@ -390,7 +382,7 @@ function AgendaModule() {
     const responsibleName = RESPONSIBLES.find(r => r.id === task.responsible)?.name || 'Usuario';
     const comment = {
       id: Date.now().toString(), text: commentText, author: responsibleName, authorId: task.responsible,
-      createdAt: new Date().toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      createdAt: new Date().toLocaleString('es-CO')
     };
     const updatedComments = [...(task.comments || []), comment];
     try {
@@ -398,17 +390,14 @@ function AgendaModule() {
       setNewComment(prev => ({ ...prev, [taskId]: '' }));
     } catch (err) { console.error(err); alert("Error al guardar el comentario"); }
   };
-
   const resetForm = () => {
     setFormData({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' });
     setEditingTask(null); setShowForm(false);
   };
-
   const editTask = (task) => {
     setFormData({ title: task.title, description: task.description || '', responsible: task.responsible, priority: task.priority || 'media', status: task.status, dueDate: task.dueDate || '' });
     setEditingTask(task); setShowForm(true);
   };
-
   const toggleComments = (taskId) => setExpandedComments(prev => ({ ...prev, [taskId]: !prev[taskId] }));
 
   const filteredTasks = tasks
@@ -428,7 +417,6 @@ function AgendaModule() {
     });
 
   const getTaskCount = (status) => tasks.filter(t => t.status === status).length;
-
   const getComplianceByResponsible = () => {
     return RESPONSIBLES.map(resp => {
       const userTasks = tasks.filter(t => t.responsible === resp.id);
@@ -443,7 +431,6 @@ function AgendaModule() {
       return { ...resp, total, approved, rejected, pending, percent, barColor };
     });
   };
-
   const complianceData = getComplianceByResponsible();
   const overallTotal = tasks.length;
   const overallApproved = tasks.filter(t => t.status === 'approved').length;
@@ -452,194 +439,206 @@ function AgendaModule() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Modal de aprobación */}
       {approvalModal.show && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}>
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-black text-green-600">✅ Aprobar Tarea</h3>
-              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
-            </div>
-            <p className="text-sm text-zinc-600 mb-4">Para aprobar esta tarea, debes explicar las acciones realizadas:</p>
-            <textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas, resultados obtenidos, observaciones importantes..." className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-green-400 mb-4" autoFocus />
+            <h3 className="text-xl font-black text-green-600 mb-4">✅ Aprobar Tarea</h3>
+            <textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas..." className="w-full border rounded-xl p-3 text-sm mb-4" autoFocus />
             <div className="flex gap-3">
-              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
-              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-green-700 transition">Confirmar Aprobación</button>
+              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="flex-1 border rounded-xl py-2">Cancelar</button>
+              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white rounded-xl py-2">Confirmar</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Modal de detalle de tarea */}
       {selectedTask && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}>
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b border-zinc-100 p-4 flex justify-between items-center">
-              <h3 className="font-black text-zinc-900 text-lg">{selectedTask.title}</h3>
-              <button onClick={() => setSelectedTask(null)} className="text-zinc-400 hover:text-zinc-900 text-2xl leading-none">&times;</button>
-            </div>
-            <div className="p-5 space-y-4">
-              {selectedTask.description ? (
-                <div className="bg-zinc-50 rounded-xl p-4"><p className="text-xs font-black text-zinc-400 uppercase mb-2">📝 Descripción</p><p className="text-zinc-700 text-sm leading-relaxed whitespace-pre-wrap">{selectedTask.description}</p></div>
-              ) : (<div className="bg-zinc-50 rounded-xl p-4 text-center text-zinc-400 text-sm">Sin descripción</div>)}
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h3 className="font-black">{selectedTask.title}</h3><button onClick={() => setSelectedTask(null)} className="text-2xl">&times;</button></div>
+            <div className="p-4 space-y-3">
+              <div className="bg-zinc-50 p-3 rounded-xl"><p className="text-xs font-black">📝 Descripción</p><p>{selectedTask.description || 'Sin descripción'}</p></div>
               {selectedTask.status === 'approved' && selectedTask.approvalJustification && (
-                <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                  <p className="text-[10px] font-black text-green-700 uppercase mb-2 flex items-center gap-2">✅ Información de Aprobación</p>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="font-bold text-green-700">📅 Aprobada el:</span> <span className="text-zinc-700">{selectedTask.approvedAtFormatted || '-'}</span></p>
-                    <p><span className="font-bold text-green-700">📊 Estado:</span> <span className={`font-bold ${selectedTask.approvalDelayInfo?.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{selectedTask.approvalDelayInfo?.message || '-'}</span></p>
-                    <p><span className="font-bold text-green-700">💬 Justificación:</span></p>
-                    <p className="text-zinc-700 bg-white/50 rounded-lg p-2 text-sm">{selectedTask.approvalJustification}</p>
-                  </div>
+                <div className="bg-green-50 p-3 rounded-xl border border-green-200">
+                  <p className="text-xs font-black text-green-700">✅ Aprobada el: {selectedTask.approvedAtFormatted}</p>
+                  <p className="text-xs font-bold">{selectedTask.approvalDelayInfo?.message}</p>
+                  <p className="text-xs mt-1">Justificación: {selectedTask.approvalJustification}</p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Responsable</p><p className="font-bold mt-1">{RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name || '-'}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Prioridad</p><p className="mt-1">{PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Estado</p><p className="mt-1">{TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</p></div>
-                <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Fecha límite</p><p className="mt-1">{selectedTask.dueDate || '-'}</p></div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="font-black">Responsable:</span> {RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name}</div>
+                <div><span className="font-black">Prioridad:</span> {PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</div>
+                <div><span className="font-black">Estado:</span> {TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</div>
+                <div><span className="font-black">Fecha límite:</span> {selectedTask.dueDate || '-'}</div>
               </div>
-              <div className="bg-zinc-50 rounded-xl p-3"><p className="text-[9px] font-black text-zinc-400 uppercase">Creada el</p><p className="text-sm mt-1">{selectedTask.createdAtFormatted || '-'}</p></div>
-              <div className="bg-zinc-50 rounded-xl p-3">
-                <p className="text-[9px] font-black text-zinc-400 uppercase mb-2">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
-                <div className="space-y-2 max-h-40 overflow-y-auto mb-3">
-                  {selectedTask.comments && selectedTask.comments.length > 0 ? selectedTask.comments.map(comment => {
-                    const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId);
-                    return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-100'} rounded-lg p-2`}><div className="flex justify-between items-start mb-0.5"><span className={`text-[9px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[8px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>);
-                  }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}
-                </div>
-                <div className="flex gap-2">
-                  <input type="text" value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(selectedTask.id)} />
-                  <button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button>
-                </div>
+              <div className="bg-zinc-50 p-3 rounded-xl">
+                <p className="text-xs font-black">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
+                <div className="max-h-32 overflow-y-auto space-y-1 my-2">{selectedTask.comments?.map(c => <div key={c.id} className="text-xs border-b pb-1"><b>{c.author}</b> ({c.createdAt}): {c.text}</div>)}</div>
+                <div className="flex gap-2"><input value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 border rounded-xl px-3 py-1 text-sm" /><button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 text-indigo-600 py-3 rounded-xl font-bold text-sm">✏️ Editar</button>
-                <button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 text-rose-600 py-3 rounded-xl font-bold text-sm">🗑️ Eliminar</button>
-              </div>
+              <div className="flex gap-2"><button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 py-2 rounded-xl">✏️ Editar</button><button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 py-2 rounded-xl">🗑️ Eliminar</button></div>
             </div>
           </div>
         </div>
       )}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border"><div className="flex justify-between items-center mb-3"><h3 className="font-black">📊 Cumplimiento por Responsable</h3><span className="text-xs">Total: {overallApproved}/{overallTotal} ({overallPercent}%)</span></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{complianceData.map(resp => (<div key={resp.id} className={`${resp.bgLight} rounded-xl p-3`}><div className="flex justify-between"><div><div className="flex gap-1"><div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div><span className="font-black">{resp.name}</span></div><span className="text-2xl font-black">{resp.percent}%</span></div><div className="text-right"><span className="text-xs text-zinc-500">Tareas</span><div className="font-bold">{resp.approved}/{resp.total}</div></div></div><div className="h-2 bg-white rounded-full my-2"><div className={`h-full rounded-full ${resp.barColor}`} style={{ width: `${resp.percent}%` }}></div></div><div className="flex justify-between text-[10px] font-bold"><span>✅ {resp.approved}</span><span>⏳ {resp.pending}</span><span>❌ {resp.rejected}</span></div></div>))}</div></div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{pendingByResponsible.map(resp => (<div key={resp.id} className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-[10px] font-black uppercase">Pendientes {resp.name}</p><p className="text-3xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p></div>))}</div>
+      <div className="bg-white rounded-xl p-1 shadow-sm border"><div className="flex flex-wrap gap-1 justify-center">{AGENDA_TABS.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-1 ${activeTab === tab.id ? `${tab.color} text-white shadow-md` : 'bg-zinc-100'}`}><span>{tab.emoji}</span> {tab.label} <span className="ml-1 px-1 rounded-full bg-white/30">{getTaskCount(tab.id)}</span></button>))}</div></div>
+      <div className="flex flex-col md:flex-row gap-3"><input type="text" placeholder="🔍 Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 border rounded-xl px-3 py-2 text-sm" /><select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="dueDate">📅 Fecha límite</option><option value="priority">⚠️ Prioridad</option><option value="createdAt">🕒 Creación</option></select></div>
+      <div className="flex justify-end"><button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 text-white px-5 py-2 rounded-xl text-xs font-black">➕ Nueva Tarea</button></div>
+      {showForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl max-w-lg w-full p-5"><h3 className="font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3><div className="space-y-3"><input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border rounded-xl p-2" /><textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border rounded-xl p-2" /><div className="grid grid-cols-2 gap-2"><select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border rounded-xl p-2">{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select><select name="priority" value={formData.priority} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(PRIORITIES).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="grid grid-cols-2 gap-2"><select name="status" value={formData.status} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select><input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border rounded-xl p-2" /></div></div><div className="flex justify-end gap-3 mt-5"><button onClick={resetForm} className="border rounded-xl px-4 py-1">Cancelar</button><button onClick={saveTask} className="bg-zinc-900 text-white rounded-xl px-4 py-1">Guardar</button></div></div></div>)}
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 border-b"><tr><th className="px-4 py-2 text-[10px]">Título</th><th className="px-4 py-2">Responsable</th><th className="px-4 py-2">Prioridad</th><th className="px-4 py-2">Estado</th><th className="px-4 py-2">Fecha límite</th><th className="px-4 py-2">Creada</th><th className="px-4 py-2">Acciones</th></tr></thead><tbody>{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; return (<React.Fragment key={task.id}><tr className="border-b hover:bg-zinc-50"><td className="px-4 py-2"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm">{task.title}{task.description && <div className="text-[10px] text-zinc-400">{task.description}</div>}{task.status === 'approved' && delayInfo && <div className="text-[9px] text-orange-600">{delayInfo.message}</div>}</button></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}</td><td className="text-xs">{task.createdAtFormatted || '-'}</td><td className="flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50"><td colSpan="7" className="p-3"><div className="space-y-2 max-h-48 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className={`${a?.bgLight} p-2 rounded-lg`}><div className="flex justify-between"><span className="font-bold text-xs">{c.author}</span><span className="text-[9px]">{c.createdAt}</span></div><p className="text-xs">{c.text}</p></div>); })}</div><div className="mt-2 flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-xl px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div></td></tr>)}</React.Fragment>);})}{filteredTasks.length === 0 && <tr><td colSpan="7" className="text-center py-8">No hay tareas</td></tr>}</tbody></table></div>
+      <div className="md:hidden space-y-3 p-2">{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; const isOpen = expandedComments[task.id]; return (<div key={task.id} className="bg-white border rounded-xl p-3"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500">{task.description}</p>}{task.status === 'approved' && delayInfo && <p className="text-[10px] text-orange-600">{delayInfo.message}</p>}</button><div className="flex flex-wrap gap-2 mt-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between text-xs mt-2"><span>📅 {task.dueDate || '-'}</span><span>🕒 {task.createdAtFormatted || '-'}</span></div><div className="flex gap-2 mt-2"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 py-1 rounded-lg text-xs">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 py-1 rounded-lg text-xs">✏️</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 py-1 rounded-lg text-xs">🗑️</button></div>{isOpen && (<div className="mt-2 bg-zinc-50 p-2 rounded-lg space-y-2"><div className="max-h-40 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className="border-b pb-1"><span className="font-bold text-xs">{c.author}</span> <span className="text-[9px]">{c.createdAt}</span><p className="text-xs">{c.text}</p></div>); })}</div><div className="flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-lg px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-lg text-sm">Enviar</button></div></div>)}</div>);})}</div>
+    </div>
+  );
+}
 
-      {/* PANEL DE CUMPLIMIENTO */}
-      <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-zinc-200">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm md:text-base font-black text-zinc-800 uppercase tracking-wider">📊 Cumplimiento por Responsable</h3>
-          <div className="text-[10px] md:text-xs font-bold text-zinc-400">Total: {overallApproved}/{overallTotal} ({overallPercent}%)</div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {complianceData.map(resp => (
-            <div key={resp.id} className={`${resp.bgLight} rounded-xl p-4 transition-all hover:shadow-md`}>
-              <div className="flex justify-between items-start mb-3">
-                <div><div className="flex items-center gap-2"><div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div><h4 className="font-black text-zinc-800">{resp.name}</h4></div><p className="text-2xl md:text-3xl font-black mt-1" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.percent}%</p></div>
-                <div className="text-right"><p className="text-[10px] font-black text-zinc-400 uppercase">Tareas</p><p className="text-sm font-bold">{resp.approved}/{resp.total}</p></div>
-              </div>
-              <div className="h-2 bg-white rounded-full overflow-hidden mb-3"><div className={`h-full ${resp.barColor} rounded-full transition-all duration-500`} style={{ width: `${resp.percent}%` }}></div></div>
-              <div className="flex justify-between text-[10px] font-bold">
-                <div className="text-center flex-1"><div className="text-emerald-600">✅</div><div className="text-zinc-500">{resp.approved}</div><div className="text-zinc-400">Aprobadas</div></div>
-                <div className="text-center flex-1"><div className="text-amber-600">⏳</div><div className="text-zinc-500">{resp.pending}</div><div className="text-zinc-400">Pendientes</div></div>
-                <div className="text-center flex-1"><div className="text-rose-600">❌</div><div className="text-zinc-500">{resp.rejected}</div><div className="text-zinc-400">Rechazadas</div></div>
-              </div>
-            </div>
-          ))}
-        </div>
+// ==================== COMPONENTE PROMPTS IA (NUEVO) ====================
+const PROMPT_CATEGORIES = [
+  { id: 'landing', label: '🚀 Landing Page', color: 'bg-blue-50 border-blue-300 text-blue-700' },
+  { id: 'anuncios', label: '📢 Anuncios Publicitarios', color: 'bg-amber-50 border-amber-300 text-amber-700' },
+  { id: 'diseno', label: '🎨 Reglas de Diseño', color: 'bg-purple-50 border-purple-300 text-purple-700' },
+  { id: 'otros', label: '📦 Otros', color: 'bg-gray-50 border-gray-300 text-gray-700' }
+];
+
+function PromptModule() {
+  const [prompts, setPrompts] = useState([]);
+  const [activeCategory, setActiveCategory] = useState('todos');
+  const [showForm, setShowForm] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(null);
+  const [formData, setFormData] = useState({ name: '', content: '', category: 'landing' });
+  const [notification, setNotification] = useState('');
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const promptsRef = collection(db, 'artifacts', appId, 'public', 'data', 'prompts');
+    const unsubscribe = onSnapshot(promptsRef, (snapshot) => {
+      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPrompts(loaded);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const savePrompt = async () => {
+    if (!formData.name.trim() || !formData.content.trim()) {
+      alert("El nombre y el contenido son obligatorios");
+      return;
+    }
+    const payload = {
+      name: formData.name.trim(),
+      content: formData.content.trim(),
+      category: formData.category,
+      updatedAt: serverTimestamp(),
+      createdBy: auth.currentUser?.uid
+    };
+    try {
+      if (editingPrompt) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', editingPrompt.id), payload);
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'prompts'), { ...payload, createdAt: serverTimestamp() });
+      }
+      resetForm();
+      setNotification(editingPrompt ? '✅ Prompt actualizado' : '✅ Prompt creado');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el prompt");
+    }
+  };
+  const deletePrompt = async (id) => {
+    if (window.confirm("¿Eliminar este prompt?")) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id));
+    }
+  };
+  const resetForm = () => {
+    setFormData({ name: '', content: '', category: 'landing' });
+    setEditingPrompt(null);
+    setShowForm(false);
+  };
+  const editPrompt = (prompt) => {
+    setFormData({ name: prompt.name, content: prompt.content, category: prompt.category || 'landing' });
+    setEditingPrompt(prompt);
+    setShowForm(true);
+  };
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setNotification('📋 Prompt copiado al portapapeles');
+      setTimeout(() => setNotification(''), 2000);
+    }).catch(() => {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setNotification('📋 Prompt copiado');
+      setTimeout(() => setNotification(''), 2000);
+    });
+  };
+
+  const filteredPrompts = activeCategory === 'todos' ? prompts : prompts.filter(p => p.category === activeCategory);
+  const getCategoryLabel = (catId) => PROMPT_CATEGORIES.find(c => c.id === catId)?.label || catId;
+  const getCategoryColor = (catId) => PROMPT_CATEGORIES.find(c => c.id === catId)?.color || 'bg-gray-50 border-gray-300 text-gray-700';
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {notification && <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50 shadow-xl">{notification}</div>}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div><h2 className="text-2xl font-black text-zinc-900">🎨 Prompts IA</h2><p className="text-sm text-zinc-500">Gestiona tus prompts de generación de imágenes por categorías</p></div>
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95">➕ Nuevo Prompt</button>
       </div>
-
-      {/* Tarjetas de tareas pendientes */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {pendingByResponsible.map(resp => (
-          <div key={resp.id} className="bg-white rounded-2xl p-4 shadow-sm border text-center">
-            <p className="text-[9px] md:text-[10px] font-black uppercase text-zinc-500">Pendientes {resp.name}</p>
-            <p className="text-3xl md:text-4xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p>
-          </div>
-        ))}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setActiveCategory('todos')} className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === 'todos' ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}>📋 Todos ({prompts.length})</button>
+        {PROMPT_CATEGORIES.map(cat => {
+          const count = prompts.filter(p => p.category === cat.id).length;
+          return <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === cat.id ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}>{cat.label} ({count})</button>;
+        })}
       </div>
-
-      {/* Pestañas */}
-      <div className="bg-white rounded-xl p-1 shadow-sm border border-zinc-200">
-        <div className="flex flex-wrap gap-1 justify-center">
-          {AGENDA_TABS.map(tab => {
-            const count = getTaskCount(tab.id);
-            return (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 md:px-8 py-2.5 md:py-3 rounded-xl font-black text-[11px] md:text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center gap-2 ${activeTab === tab.id ? `${tab.color} text-white shadow-md` : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}><span className="text-base">{tab.emoji}</span>{tab.label}<span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${activeTab === tab.id ? 'bg-white/20' : 'bg-zinc-200'}`}>{count}</span></button>);
-          })}
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="flex flex-col md:flex-row gap-3">
-        <div className="flex-1 relative"><input type="text" placeholder="🔍 Buscar tarea..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-white border-2 border-zinc-100 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 transition-all" /></div>
-        <div className="flex gap-2">
-          <select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-white border-2 border-zinc-100 rounded-xl px-4 py-3 text-sm font-bold text-zinc-600 outline-none cursor-pointer"><option value="dueDate">📅 Ordenar por fecha límite</option><option value="priority">⚠️ Ordenar por prioridad</option><option value="createdAt">🕒 Ordenar por fecha creación</option></select>
-        </div>
-      </div>
-
-      {/* Botón nueva tarea */}
-      <div className="flex justify-end"><button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 hover:bg-black text-white px-5 md:px-6 py-2.5 md:py-3 rounded-xl font-black text-[10px] md:text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95">➕ Nueva Tarea</button></div>
-
-      {/* Formulario modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg md:text-xl font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
-            <div className="space-y-3 md:space-y-4">
-              <input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <textarea name="description" value={formData.description} onChange={handleFormChange} rows={3} placeholder="Descripción (opcional)" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" />
-              <div className="grid grid-cols-2 gap-2 md:gap-3">
-                <select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-                <select name="priority" value={formData.priority} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select>
-              </div>
-              <div className="grid grid-cols-2 gap-2 md:gap-3">
-                <select name="status" value={formData.status} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm">{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select>
-                <input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border border-zinc-200 rounded-xl p-3 text-sm" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6"><button onClick={resetForm} className="px-4 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button><button onClick={saveTask} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button></div>
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-zinc-200 space-y-4">
+          <h3 className="font-black text-lg">{editingPrompt ? '✏️ Editar Prompt' : '📝 Nuevo Prompt'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className="block text-[10px] font-black text-zinc-500 mb-1">Nombre del Prompt *</label><input name="name" value={formData.name} onChange={handleFormChange} placeholder="Ej. Landing Hero Section" className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900" /></div>
+            <div><label className="block text-[10px] font-black text-zinc-500 mb-1">Categoría *</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900">{PROMPT_CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}</select></div>
           </div>
+          <div><label className="block text-[10px] font-black text-zinc-500 mb-1">Contenido del Prompt *</label><textarea name="content" value={formData.content} onChange={handleFormChange} rows={6} placeholder="Escribe tu prompt aquí..." className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 resize-y font-mono" /></div>
+          <div className="flex justify-end gap-3"><button onClick={resetForm} className="px-5 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button><button onClick={savePrompt} className="px-5 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button></div>
         </div>
       )}
-
-      {/* Lista de tareas - Desktop */}
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-zinc-50 border-b border-zinc-200">
-              <tr><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Título</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Responsable</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Prioridad</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Estado</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Fecha límite</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Creada el</th><th className="px-4 py-3 text-[10px] font-black uppercase text-zinc-500">Acciones</th></tr>
-            </thead>
-            <tbody>
-              {filteredTasks.length === 0 ? (
-                <tr><td colSpan="7" className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</td></tr>
-              ) : (filteredTasks.map(task => {
-                const resp = RESPONSIBLES.find(r => r.id === task.responsible);
-                const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-                const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-                const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-                const delayInfo = task.approvalDelayInfo;
-                return (<React.Fragment key={task.id}><tr className="border-b border-zinc-100 hover:bg-zinc-50 transition"><td className="px-4 py-3"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600 transition-colors">{task.title}{task.description && <div className="text-[10px] text-zinc-400 font-normal mt-0.5 line-clamp-1">{task.description}</div>}{task.status === 'approved' && delayInfo && (<div className={`text-[9px] font-bold mt-0.5 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>)}</button></td><td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{resp?.name}</span></td><td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td className="px-4 py-3"><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="px-4 py-3 text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : 'text-zinc-600'}>{task.dueDate}</span> : '-'}</td><td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">{task.createdAtFormatted || '-'}</td><td className="px-4 py-3 flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800 transition p-1" title="Comentarios">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800 transition p-1" title="Editar">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800 transition p-1" title="Eliminar">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50/80"><td colSpan="7" className="px-4 py-3"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button></div></td></tr>)}</React.Fragment>);
-              }))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Versión Móvil */}
-      <div className="md:hidden space-y-3 p-3">
-        {filteredTasks.length === 0 ? (<div className="text-center py-10 text-zinc-400">No hay tareas {activeTab === 'pending' ? 'pendientes' : activeTab === 'approved' ? 'aprobadas' : 'rechazadas'} con estos filtros.</div>) : (filteredTasks.map(task => {
-          const resp = RESPONSIBLES.find(r => r.id === task.responsible);
-          const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media;
-          const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending;
-          const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date();
-          const isCommentsOpen = expandedComments[task.id];
-          const delayInfo = task.approvalDelayInfo;
-          return (<div key={task.id} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm"><div className="p-4"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black text-base text-zinc-900 mb-2">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{task.description}</p>}{task.status === 'approved' && delayInfo && (<div className={`text-[10px] font-bold mt-1 ${delayInfo.status === 'retraso' ? 'text-orange-600' : 'text-green-600'}`}>{delayInfo.message}</div>)}</button><div className="flex flex-wrap gap-2 mb-3"><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>👤 {resp?.name}</span><span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k, v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between items-center text-xs text-zinc-500 pt-2 border-t border-zinc-100"><div className="flex flex-col"><span className="text-[9px] font-black uppercase">📅 Límite</span><span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate || '-'}</span></div><div className="flex flex-col items-end"><span className="text-[9px] font-black uppercase">🕒 Creada</span><span>{task.createdAtFormatted || '-'}</span></div></div><div className="flex gap-2 mt-3"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1">💬 {task.comments?.length || 0} Comentarios</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl font-bold text-xs">✏️ Editar</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl font-bold text-xs">🗑️</button></div></div>{isCommentsOpen && (<div className="bg-zinc-50/80 px-4 py-3 border-t border-zinc-100"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">💬 Historial de comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-3`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : (<div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>)}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-blue-700 transition">Enviar</button></div></div>)}</div>);
-        }))}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {filteredPrompts.length === 0 ? (
+          <div className="col-span-full text-center py-12 text-zinc-400 bg-white rounded-2xl border border-zinc-200"><p className="text-lg font-black">No hay prompts en esta categoría</p><p className="text-sm mt-1">Crea uno nuevo usando el botón de arriba</p></div>
+        ) : (
+          filteredPrompts.map(prompt => {
+            const categoryStyle = getCategoryColor(prompt.category);
+            return (
+              <div key={prompt.id} className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                <div className="p-4 border-b border-zinc-100 flex justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <input value={prompt.name} onChange={(e) => { const newName = e.target.value; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', prompt.id), { name: newName, updatedAt: serverTimestamp() }); }} className="w-full font-black text-base bg-transparent border-b border-transparent hover:border-zinc-300 focus:border-zinc-900 outline-none transition-all truncate" placeholder="Nombre del prompt" />
+                    <span className={`inline-block mt-1 text-[9px] font-black px-2 py-0.5 rounded-full ${categoryStyle}`}>{getCategoryLabel(prompt.category)}</span>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => editPrompt(prompt)} className="text-zinc-400 hover:text-indigo-600 transition p-1" title="Editar">✏️</button>
+                    <button onClick={() => deletePrompt(prompt.id)} className="text-zinc-400 hover:text-rose-600 transition p-1" title="Eliminar">🗑️</button>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <textarea value={prompt.content} onChange={(e) => { const newContent = e.target.value; updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', prompt.id), { content: newContent, updatedAt: serverTimestamp() }); }} rows={5} className="w-full text-sm font-mono bg-zinc-50 rounded-xl p-3 border border-zinc-100 focus:border-zinc-400 outline-none resize-y transition-all text-zinc-800 leading-relaxed" placeholder="Contenido del prompt..." />
+                </div>
+                <div className="px-4 pb-4 flex gap-2">
+                  <button onClick={() => copyToClipboard(prompt.content)} className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">📋 Copiar Prompt</button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
 }
 
-// --- COMPONENTE PRINCIPAL ---
+// ==================== COMPONENTE PRINCIPAL APP ====================
 export default function App() {
   const [activeModule, setActiveModule] = useState('winners');
   const [user, setUser] = useState(null);
@@ -657,7 +656,6 @@ export default function App() {
   const [sortOrder, setSortOrder] = useState('manual');
   const [supplierFilter, setSupplierFilter] = useState('all');
 
-  // Escuchar autenticación
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -666,12 +664,10 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Escuchar Firestore solo si hay usuario y no estamos en proyección ni agenda
   useEffect(() => {
-    if (!user || activeModule === 'projection' || activeModule === 'agenda') return; 
+    if (!user || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts') return;
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
-    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(loaded);
@@ -683,40 +679,30 @@ export default function App() {
     return () => unsubscribe();
   }, [user, activeModule]);
 
-  // Obtener lista única de proveedores para el filtro
   const uniqueSuppliers = useMemo(() => {
-    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
+    if (activeModule !== 'winners' && activeModule !== 'imports') return [];
     const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
     const list = products.map(p => p[field]).filter(Boolean);
     return ['all', ...new Set(list)];
   }, [products, activeModule]);
 
-  // Lógica de Filtrado y Ordenamiento Combinada
   const displayedProducts = useMemo(() => {
-    if(activeModule !== 'winners' && activeModule !== 'imports') return [];
+    if (activeModule !== 'winners' && activeModule !== 'imports') return [];
     let result = products.filter(p => {
       const matchesTab = p.status === activeTab;
       const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            p.dropiCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            p.chineseSupplier?.toLowerCase().includes(searchTerm.toLowerCase());
-      
       const supplierField = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
       const matchesSupplier = supplierFilter === 'all' || p[supplierField] === supplierFilter;
-
       return matchesTab && matchesSearch && matchesSupplier;
     });
-
     return [...result].sort((a, b) => {
       if (a.isWorking && !b.isWorking) return -1;
       if (!a.isWorking && b.isWorking) return 1;
-
-      if (sortOrder === 'manual' || sortOrder === 'recent') {
-        return (a.order || 0) - (b.order || 0);
-      }
-      
+      if (sortOrder === 'manual' || sortOrder === 'recent') return (a.order || 0) - (b.order || 0);
       const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
       const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
-
       if (sortOrder === 'roi-desc') return valB - valA;
       if (sortOrder === 'roi-asc') return valA - valB;
       return 0;
@@ -724,15 +710,14 @@ export default function App() {
   }, [products, activeTab, searchTerm, supplierFilter, sortOrder, activeModule]);
 
   const handleLogout = () => signOut(auth);
-
   const handleModuleChange = (mod) => {
-    setProducts([]); 
+    setProducts([]);
     setActiveModule(mod);
     setActiveTab('pending');
     setSearchTerm('');
     setSupplierFilter('all');
     setSortOrder('manual');
-    if (mod !== 'projection' && mod !== 'agenda') {
+    if (mod !== 'projection' && mod !== 'agenda' && mod !== 'prompts') {
       setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     }
     setIsCreating(false);
@@ -755,37 +740,27 @@ export default function App() {
     setFormError('');
     if (!newProduct.name || newProduct.name.trim() === '') {
       setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
-      return; 
+      return;
     }
     setIsSaving(true);
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
     const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
-    
     try {
       if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
-      
       const currentDateTime = getCurrentDateTime();
-      
-      const payloadRaw = {
-        ...newProduct,
-        regNumber,
-        order: Date.now(),
-        createdBy: auth.currentUser.uid,
-        createdAtText: currentDateTime
-      };
+      const payloadRaw = { ...newProduct, regNumber, order: Date.now(), createdBy: auth.currentUser.uid, createdAtText: currentDateTime };
       const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
       cleanPayload.createdAt = serverTimestamp();
-      
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
       setIsCreating(false);
       setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
-      setActiveTab('pending'); 
+      setActiveTab('pending');
       setFormError('');
       setNotification('¡Registro guardado en la Nube! ✨');
       setTimeout(() => setNotification(''), 3000);
-    } catch (e) { 
-      console.error("Firebase Save Error:", e); 
+    } catch (e) {
+      console.error("Firebase Save Error:", e);
       setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
     } finally {
       setIsSaving(false);
@@ -796,33 +771,28 @@ export default function App() {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [f]: v }); } catch (e) { console.error(e); }
   };
-
   const updateNestedField = async (id, parent, f, v) => {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const item = products.find(x => x.id === id);
     if (!item) return;
     try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [parent]: { ...item[parent], [f]: v } }); } catch (e) { console.error(e); }
   };
-
   const updateUpsell = async (p, uid, f, v) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
     const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
     try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells }); } catch (e) { console.error(e); }
   };
-
   const resetUpsell = async (p, uid) => {
     const currentUpsells = p.upsells || getInitialWinner().upsells;
     const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
     try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells }); } catch (e) { console.error(e); }
   };
-
   const deleteItem = async (id) => {
     if (window.confirm('¿Estás seguro de borrar este registro de la base de datos?')) {
       const colName = activeModule === 'winners' ? 'products' : 'import_products';
       try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id)); } catch (e) { console.error(e); }
     }
   };
-
   const moveItem = async (id, dir) => {
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const list = displayedProducts;
@@ -831,12 +801,11 @@ export default function App() {
     if (targetIdx >= 0 && targetIdx < list.length) {
       const a = list[idx], b = list[targetIdx];
       try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
       } catch (e) { console.error(e); }
     }
   };
-
   const handleImage = (e, targetId = null, upsellId = null) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -867,21 +836,17 @@ export default function App() {
     };
     reader.readAsDataURL(file);
   };
-
   const updateVariable = async (p, varId, field, value) => {
-    const newVars = (p.variables || getInitialImport().variables).map(v =>
-      v.id === varId ? { ...v, [field]: value } : v
-    );
+    const newVars = (p.variables || getInitialImport().variables).map(v => v.id === varId ? { ...v, [field]: value } : v);
     await updateDocField(p.id, 'variables', newVars);
   };
-
   const updateTestingData = async (p, testId, field, value) => {
     const currentData = p.testingData || getInitialWinner().testingData;
     const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
     await updateDocField(p.id, 'testingData', newData);
   };
 
-  // --- MÓDULO: PROYECCIÓN P&G ---
+  // --- MÓDULO: PROYECCIÓN P&G --- (se mantiene igual)
   const renderProjectionModule = () => {
     const val = (key) => parseFloat(proj[key]) || 0;
     const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
@@ -1241,23 +1206,23 @@ Reporte generado por WinnerProduct OS
 
       <div className="max-w-[1400px] mx-auto">
         
-        {/* NAVEGACIÓN - AGREGADO BOTÓN AGENDA */}
+        {/* NAVEGACIÓN - AGREGADO BOTÓN PROMPTS */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-8 gap-3 md:gap-4">
             <div className="bg-white p-1 rounded-2xl md:rounded-[2rem] shadow-xl border border-zinc-200 flex flex-wrap md:flex-nowrap w-full md:w-auto overflow-hidden">
                 <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Winners</button>
                 <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Importación</button>
                 <button onClick={()=>handleModuleChange('projection')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'projection' ? 'bg-indigo-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-indigo-400/50 hover:text-indigo-600'}`}>Proyección P&G</button>
                 <button onClick={()=>handleModuleChange('agenda')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'agenda' ? 'bg-emerald-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-emerald-600/50 hover:text-emerald-600'}`}>📅 Agenda</button>
+                <button onClick={()=>handleModuleChange('prompts')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'prompts' ? 'bg-rose-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-rose-600/50 hover:text-rose-600'}`}>🎨 Prompts</button>
             </div>
             <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
         </div>
 
         {/* CONTENIDO SEGÚN MÓDULO */}
-        {activeModule === 'agenda' ? (
-          <AgendaModule />
-        ) : activeModule === 'projection' ? (
-          renderProjectionModule()
-        ) : (
+        {activeModule === 'agenda' && <AgendaModule />}
+        {activeModule === 'projection' && renderProjectionModule()}
+        {activeModule === 'prompts' && <PromptModule />}
+        {activeModule !== 'agenda' && activeModule !== 'projection' && activeModule !== 'prompts' && (
           <>
             {/* ÁREA DE FILTROS Y BÚSQUEDA */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 animate-in fade-in">
@@ -1576,130 +1541,130 @@ Reporte generado por WinnerProduct OS
                             </div>
                           )}
 
-                          {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA */}
-                       {!isWinner && p.status === 'approved' && (
-                          <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
-                            <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-                                <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                          {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA - FUNCIONAL CON SALDO PENDIENTE */}
+                          {!isWinner && p.status === 'approved' && (
+                            <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
+                              <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
+                                  <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                    <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
+                                  <div className="flex gap-2">
+                                    <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                    <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
+                                  <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                 </div>
                               </div>
+                              
+                              {/* CÁLCULO DE SALDO PENDIENTE CON ANTICIPO + PAGO TOTAL */}
+                              <div className="bg-indigo-50 rounded-xl p-3">
+                                <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
+                                {(() => {
+                                  const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
+                                  const flete = p.yiwuFreightUSD || 0;
+                                  const totalUSD = prodUSD + flete;
+                                  const trm = p.dollarRate || 0;
+                                  const valorCOP = totalUSD * trm * 1.03;
+                                  const anticipo = p.advancePayment?.amount || 0;
+                                  const pagoTotal = p.totalPayment?.amount || 0;
+                                  const totalPagado = anticipo + pagoTotal;
+                                  const saldoCOP = valorCOP - totalPagado;
+                                  const saldoUSD = saldoCOP / (trm || 1);
+                                  const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
+                                  return (
+                                    <div>
+                                      <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                                        <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
+                                        <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
+                                        <div>💱 TRM: {trm.toLocaleString()} COP</div>
+                                        <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
+                                      </div>
+                                      <div className="mt-2 bg-white rounded-lg p-2">
+                                        <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
+                                        <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
+                                        <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
+                                        <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
+                                        </div>
+                                        <div className="flex justify-between font-bold mt-2">
+                                          <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
+                                          <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
+                                        </div>
+                                        <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
+                                        {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
+                                        {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
+                                        {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
                               <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
+                                <div className="space-y-2">
+                                  {(p.variables || getInitialImport().variables).map(v => (
+                                    <div key={v.id} className="flex gap-2 items-center">
+                                      <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                      <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
+
                               <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-                                <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.values(IMPORT_STATES_LIST).map(state => (
+                                    <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
+                                      {state.emoji} {state.label}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                             </div>
-                            
-                            {/* CÁLCULO DE SALDO PENDIENTE CON ANTICIPO + PAGO TOTAL */}
-                            <div className="bg-indigo-50 rounded-xl p-3">
-                              <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
-                              {(() => {
-                                const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-                                const flete = p.yiwuFreightUSD || 0;
-                                const totalUSD = prodUSD + flete;
-                                const trm = p.dollarRate || 0;
-                                const valorCOP = totalUSD * trm * 1.03;
-                                const anticipo = p.advancePayment?.amount || 0;
-                                const pagoTotal = p.totalPayment?.amount || 0;
-                                const totalPagado = anticipo + pagoTotal;
-                                const saldoCOP = valorCOP - totalPagado;
-                                const saldoUSD = saldoCOP / (trm || 1);
-                                const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
-                                return (
-                                  <div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                      <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-                                      <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
-                                      <div>💱 TRM: {trm.toLocaleString()} COP</div>
-                                      <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
-                                    </div>
-                                    <div className="mt-2 bg-white rounded-lg p-2">
-                                      <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-                                      <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
-                                      <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
-                                      <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
-                                      </div>
-                                      <div className="flex justify-between font-bold mt-2">
-                                        <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
-                                        <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
-                                      </div>
-                                      <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
-                                      {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
-                                      {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
+                          )}
+                        </div>
 
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
-                              <div className="space-y-2">
-                                {(p.variables || getInitialImport().variables).map(v => (
-                                  <div key={v.id} className="flex gap-2 items-center">
-                                    <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
-                              <div className="flex flex-wrap gap-2">
-                                {Object.values(IMPORT_STATES_LIST).map(state => (
-                                  <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
-                                    {state.emoji} {state.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
+                        {/* BUNDLES (solo winners) */}
+                        {isWinner && (
+                          <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
+                            <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
+                            {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
                           </div>
                         )}
                       </div>
-
-                      {/* BUNDLES (solo winners) */}
-                      {isWinner && (
-                        <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
-                          <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
-                          {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
-                        </div>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Modal de creación */}
+        {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
+              <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
             </div>
-          </>
+          </div>
         )}
       </div>
-
-      {/* Modal de creación */}
-      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
-            <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+    );
+  }
