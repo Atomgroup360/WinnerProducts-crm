@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp, Timestamp 
+  onSnapshot, serverTimestamp, Timestamp, setDoc 
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -49,7 +49,7 @@ const IMPORT_STATES_LIST = {
   delivered: { id: 'delivered', label: 'ENTREGADO', emoji: '✅', bgColor: 'bg-green-100 border-green-500' }
 };
 
-// --- FABRICANTES DE ESTADO INICIAL ---
+// --- ESTADOS INICIALES ---
 const getInitialWinner = () => ({
   type: 'winner',
   name: '', dropiCode: '', supplier: '', description: '',
@@ -83,8 +83,7 @@ const getInitialImport = () => ({
 });
 
 const getInitialProjection = () => ({
-  name: '',
-  price: '', productCost: '', freight: '', fulfillment: '', commission: '',
+  name: '', price: '', productCost: '', freight: '', fulfillment: '', commission: '',
   adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
   effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
 });
@@ -132,7 +131,6 @@ const calculateImportMetrics = (p) => {
   return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
 };
 
-// --- COMPRESOR DE IMÁGENES ---
 const compressImage = (base64Str) => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -240,7 +238,6 @@ function LoginScreen({ setErrorExt }) {
         <div className="w-20 h-20 bg-zinc-900 rounded-[1.5rem] flex items-center justify-center text-white text-4xl shadow-xl italic font-black mx-auto mb-6">W</div>
         <h1 className="text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">Winner OS</h1>
         <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-widest uppercase mb-10 text-center w-full">Cloud Management System</p>
-        
         <form onSubmit={handleLogin} className="space-y-6 text-left">
           <div>
             <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Correo Electrónico</label>
@@ -343,7 +340,7 @@ function AgendaModule() {
     } catch (err) { console.error(err); alert("Error al guardar la tarea"); }
   };
   const deleteTask = async (id) => {
-    if (window.confirm("¿Eliminar esta tarea definitivamente? Se borrará de la base de datos.")) {
+    if (window.confirm("¿Eliminar esta tarea definitivamente?")) {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id));
     }
   };
@@ -410,8 +407,8 @@ function AgendaModule() {
         return new Date(a.dueDate) - new Date(b.dueDate);
       }
       if (sortBy === 'priority') {
-        const priorityOrder = { alta: 0, media: 1, baja: 2 };
-        return (priorityOrder[a.priority] || 1) - (priorityOrder[b.priority] || 1);
+        const order = { alta: 0, media: 1, baja: 2 };
+        return (order[a.priority] || 1) - (order[b.priority] || 1);
       }
       return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
     });
@@ -486,12 +483,373 @@ function AgendaModule() {
       <div className="flex flex-col md:flex-row gap-3"><input type="text" placeholder="🔍 Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 border rounded-xl px-3 py-2 text-sm" /><select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="dueDate">📅 Fecha límite</option><option value="priority">⚠️ Prioridad</option><option value="createdAt">🕒 Creación</option></select></div>
       <div className="flex justify-end"><button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 text-white px-5 py-2 rounded-xl text-xs font-black">➕ Nueva Tarea</button></div>
       {showForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl max-w-lg w-full p-5"><h3 className="font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3><div className="space-y-3"><input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border rounded-xl p-2" /><textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border rounded-xl p-2" /><div className="grid grid-cols-2 gap-2"><select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border rounded-xl p-2">{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select><select name="priority" value={formData.priority} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(PRIORITIES).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="grid grid-cols-2 gap-2"><select name="status" value={formData.status} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select><input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border rounded-xl p-2" /></div></div><div className="flex justify-end gap-3 mt-5"><button onClick={resetForm} className="border rounded-xl px-4 py-1">Cancelar</button><button onClick={saveTask} className="bg-zinc-900 text-white rounded-xl px-4 py-1">Guardar</button></div></div></div>)}
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 border-b"><tr><th className="px-4 py-2 text-[10px]">Título</th><th className="px-4 py-2">Responsable</th><th className="px-4 py-2">Prioridad</th><th className="px-4 py-2">Estado</th><th className="px-4 py-2">Fecha límite</th><th className="px-4 py-2">Creada</th><th className="px-4 py-2">Acciones</th></tr></thead><tbody>{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; return (<React.Fragment key={task.id}><tr className="border-b hover:bg-zinc-50"><td className="px-4 py-2"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm">{task.title}{task.description && <div className="text-[10px] text-zinc-400">{task.description}</div>}{task.status === 'approved' && delayInfo && <div className="text-[9px] text-orange-600">{delayInfo.message}</div>}</button></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}</td><td className="text-xs">{task.createdAtFormatted || '-'}</td><td className="flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50"><td colSpan="7" className="p-3"><div className="space-y-2 max-h-48 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className={`${a?.bgLight} p-2 rounded-lg`}><div className="flex justify-between"><span className="font-bold text-xs">{c.author}</span><span className="text-[9px]">{c.createdAt}</span></div><p className="text-xs">{c.text}</p></div>); })}</div><div className="mt-2 flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-xl px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div></td></tr>)}</React.Fragment>);})}{filteredTasks.length === 0 && <tr><td colSpan="7" className="text-center py-8">No hay tareas</td></tr>}</tbody></table></div>
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 border-b"><tr><th className="px-4 py-2 text-[10px]">Título</th><th className="px-4 py-2">Responsable</th><th className="px-4 py-2">Prioridad</th><th className="px-4 py-2">Estado</th><th className="px-4 py-2">Fecha límite</th><th className="px-4 py-2">Creada</th><th className="px-4 py-2">Acciones</th></tr></thead><tbody>{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; return (<React.Fragment key={task.id}><tr className="border-b hover:bg-zinc-50"><td className="px-4 py-2"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm">{task.title}{task.description && <div className="text-[10px] text-zinc-400">{task.description}</div>}{task.status === 'approved' && delayInfo && <div className="text-[9px] text-orange-600">{delayInfo.message}</div>}</button></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}</td><td className="text-xs">{task.createdAtFormatted || '-'}</td><td className="flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50"><td colSpan="7" className="p-3"><div className="space-y-2 max-h-48 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className={`${a?.bgLight} p-2 rounded-lg`}><div className="flex justify-between"><span className="font-bold text-xs">{c.author}</span><span className="text-[9px]">{c.createdAt}</span></div><p className="text-xs">{c.text}</p></div>); })}</div><div className="mt-2 flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-xl px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div></td></tr>)}</React.Fragment>);})}{filteredTasks.length === 0 && <tr><td colSpan="7" className="text-center py-8">No hay tareas</td>}</tr>}</tbody>}</table></div>
       <div className="md:hidden space-y-3 p-2">{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; const isOpen = expandedComments[task.id]; return (<div key={task.id} className="bg-white border rounded-xl p-3"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500">{task.description}</p>}{task.status === 'approved' && delayInfo && <p className="text-[10px] text-orange-600">{delayInfo.message}</p>}</button><div className="flex flex-wrap gap-2 mt-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between text-xs mt-2"><span>📅 {task.dueDate || '-'}</span><span>🕒 {task.createdAtFormatted || '-'}</span></div><div className="flex gap-2 mt-2"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 py-1 rounded-lg text-xs">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 py-1 rounded-lg text-xs">✏️</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 py-1 rounded-lg text-xs">🗑️</button></div>{isOpen && (<div className="mt-2 bg-zinc-50 p-2 rounded-lg space-y-2"><div className="max-h-40 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className="border-b pb-1"><span className="font-bold text-xs">{c.author}</span> <span className="text-[9px]">{c.createdAt}</span><p className="text-xs">{c.text}</p></div>); })}</div><div className="flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-lg px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-lg text-sm">Enviar</button></div></div>)}</div>);})}</div>
     </div>
   );
 }
 
+// ==================== COMPONENTE PROMPTS IA ====================
+const PROMPT_CATEGORIES = [
+  { id: 'landing', label: '🚀 Landing Page', color: 'bg-blue-50 border-blue-300 text-blue-700' },
+  { id: 'anuncios', label: '📢 Anuncios Publicitarios', color: 'bg-amber-50 border-amber-300 text-amber-700' },
+  { id: 'diseno', label: '🎨 Reglas de Diseño', color: 'bg-purple-50 border-purple-300 text-purple-700' },
+  { id: 'otros', label: '📦 Otros', color: 'bg-gray-50 border-gray-300 text-gray-700' }
+];
+
+function PromptModule() {
+  const [prompts, setPrompts] = useState([]);
+  const [activeCategory, setActiveCategory] = useState('todos');
+  const [showForm, setShowForm] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    content: '',
+    category: 'landing'
+  });
+  const [notification, setNotification] = useState('');
+  const [instructions, setInstructions] = useState({});
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const promptsRef = collection(db, 'artifacts', appId, 'public', 'data', 'prompts');
+    const unsubscribePrompts = onSnapshot(promptsRef, (snapshot) => {
+      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
+      setPrompts(loaded);
+    });
+
+    const instructionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'prompt_instructions');
+    const unsubscribeInstructions = onSnapshot(instructionsRef, (snapshot) => {
+      const loaded = {};
+      snapshot.docs.forEach(doc => {
+        loaded[doc.id] = doc.data().text || '';
+      });
+      setInstructions(loaded);
+    });
+
+    return () => {
+      unsubscribePrompts();
+      unsubscribeInstructions();
+    };
+  }, []);
+
+  const saveInstruction = async (categoryId, text) => {
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'prompt_instructions', categoryId);
+      await setDoc(docRef, { text, updatedAt: serverTimestamp() }, { merge: true });
+      setNotification('✅ Instrucción guardada');
+      setTimeout(() => setNotification(''), 2000);
+    } catch (err) {
+      console.error(err);
+      alert('Error al guardar instrucción');
+    }
+  };
+
+  const handleFormChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const savePrompt = async () => {
+    if (!formData.name.trim() || !formData.content.trim()) {
+      alert("El nombre y el contenido son obligatorios");
+      return;
+    }
+    const payload = {
+      name: formData.name.trim(),
+      content: formData.content.trim(),
+      category: formData.category,
+      order: prompts.length,
+      updatedAt: serverTimestamp(),
+      createdBy: auth.currentUser?.uid
+    };
+    try {
+      if (editingPrompt) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', editingPrompt.id), payload);
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'prompts'), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
+      }
+      resetForm();
+      setNotification(editingPrompt ? '✅ Prompt actualizado' : '✅ Prompt creado');
+      setTimeout(() => setNotification(''), 3000);
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el prompt");
+    }
+  };
+
+  const deletePrompt = async (id) => {
+    if (window.confirm("¿Eliminar este prompt definitivamente?")) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id));
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({ name: '', content: '', category: 'landing' });
+    setEditingPrompt(null);
+    setShowForm(false);
+  };
+
+  const editPrompt = (prompt) => {
+    setFormData({
+      name: prompt.name,
+      content: prompt.content,
+      category: prompt.category || 'landing'
+    });
+    setEditingPrompt(prompt);
+    setShowForm(true);
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setNotification('📋 Prompt copiado al portapapeles');
+      setTimeout(() => setNotification(''), 2000);
+    }).catch(() => {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setNotification('📋 Prompt copiado');
+      setTimeout(() => setNotification(''), 2000);
+    });
+  };
+
+  const movePrompt = async (id, direction) => {
+    const index = prompts.findIndex(p => p.id === id);
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= prompts.length) return;
+
+    const updatedPrompts = [...prompts];
+    const [movedItem] = updatedPrompts.splice(index, 1);
+    updatedPrompts.splice(newIndex, 0, movedItem);
+
+    const updates = updatedPrompts.map((p, i) => {
+      return updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', p.id), { order: i });
+    });
+    try {
+      await Promise.all(updates);
+    } catch (err) {
+      console.error(err);
+      alert('Error al reordenar');
+    }
+  };
+
+  const filteredPrompts = activeCategory === 'todos'
+    ? prompts
+    : prompts.filter(p => p.category === activeCategory);
+
+  const getCategoryLabel = (catId) => {
+    const found = PROMPT_CATEGORIES.find(c => c.id === catId);
+    return found ? found.label : catId;
+  };
+
+  const getCategoryColor = (catId) => {
+    const found = PROMPT_CATEGORIES.find(c => c.id === catId);
+    return found ? found.color : 'bg-gray-50 border-gray-300 text-gray-700';
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {notification && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50 shadow-xl">
+          {notification}
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-zinc-900">🎨 Prompts IA</h2>
+          <p className="text-sm text-zinc-500">Gestiona tus prompts de generación de imágenes por categorías</p>
+        </div>
+        <button
+          onClick={() => { resetForm(); setShowForm(true); }}
+          className="bg-zinc-900 hover:bg-black text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95"
+        >
+          ➕ Nuevo Prompt
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setActiveCategory('todos')}
+          className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === 'todos' ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}
+        >
+          📋 Todos ({prompts.length})
+        </button>
+        {PROMPT_CATEGORIES.map(cat => {
+          const count = prompts.filter(p => p.category === cat.id).length;
+          return (
+            <button
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === cat.id ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}
+            >
+              {cat.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {activeCategory !== 'todos' && (
+        <div className="bg-white rounded-2xl p-5 border border-zinc-200 shadow-sm space-y-2">
+          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-wider">📝 Instrucciones / Pasos para {getCategoryLabel(activeCategory)}</label>
+          <div className="flex gap-3 items-start">
+            <textarea
+              value={instructions[activeCategory] || ''}
+              onChange={(e) => {
+                const newText = e.target.value;
+                setInstructions(prev => ({ ...prev, [activeCategory]: newText }));
+              }}
+              rows={3}
+              className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-400 resize-y"
+              placeholder="Escribe los pasos o instrucciones para esta categoría..."
+            />
+            <button
+              onClick={() => saveInstruction(activeCategory, instructions[activeCategory] || '')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap"
+            >
+              Guardar Instrucción
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-zinc-200 space-y-4">
+          <h3 className="font-black text-lg">{editingPrompt ? '✏️ Editar Prompt' : '📝 Nuevo Prompt'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 mb-1">Nombre del Prompt *</label>
+              <input
+                name="name"
+                value={formData.name}
+                onChange={handleFormChange}
+                placeholder="Ej. Landing Hero Section"
+                className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-zinc-500 mb-1">Categoría *</label>
+              <select
+                name="category"
+                value={formData.category}
+                onChange={handleFormChange}
+                className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900"
+              >
+                {PROMPT_CATEGORIES.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-zinc-500 mb-1">Contenido del Prompt *</label>
+            <textarea
+              name="content"
+              value={formData.content}
+              onChange={handleFormChange}
+              rows={6}
+              placeholder="Escribe tu prompt aquí..."
+              className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 resize-y font-mono"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={resetForm} className="px-5 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
+            <button onClick={savePrompt} className="px-5 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {filteredPrompts.length === 0 ? (
+          <div className="col-span-full text-center py-12 text-zinc-400 bg-white rounded-2xl border border-zinc-200">
+            <p className="text-lg font-black">No hay prompts en esta categoría</p>
+            <p className="text-sm mt-1">Crea uno nuevo usando el botón de arriba</p>
+          </div>
+        ) : (
+          filteredPrompts.map((prompt, index) => {
+            const categoryStyle = getCategoryColor(prompt.category);
+            const isFirst = index === 0;
+            const isLast = index === filteredPrompts.length - 1;
+            return (
+              <div
+                key={prompt.id}
+                className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all overflow-hidden group"
+              >
+                <div className="p-4 border-b border-zinc-100 flex justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-base truncate">{prompt.name}</span>
+                      <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full ${categoryStyle}`}>
+                        {getCategoryLabel(prompt.category)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => movePrompt(prompt.id, -1)}
+                      disabled={isFirst}
+                      className={`text-zinc-400 hover:text-indigo-600 transition p-1 ${isFirst ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      title="Mover arriba"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => movePrompt(prompt.id, 1)}
+                      disabled={isLast}
+                      className={`text-zinc-400 hover:text-indigo-600 transition p-1 ${isLast ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      title="Mover abajo"
+                    >
+                      ▼
+                    </button>
+                    <button
+                      onClick={() => editPrompt(prompt)}
+                      className="text-zinc-400 hover:text-indigo-600 transition p-1"
+                      title="Editar"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => deletePrompt(prompt.id)}
+                      className="text-zinc-400 hover:text-rose-600 transition p-1"
+                      title="Eliminar"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  <textarea
+                    value={prompt.content}
+                    readOnly
+                    rows={5}
+                    className="w-full text-sm font-mono bg-zinc-50 rounded-xl p-3 border border-zinc-200 cursor-default text-zinc-800 leading-relaxed resize-none"
+                    placeholder="Contenido del prompt..."
+                  />
+                </div>
+
+                <div className="px-4 pb-4 flex gap-2">
+                  <button
+                    onClick={() => copyToClipboard(prompt.content)}
+                    className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                  >
+                    📋 Copiar Prompt
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ==================== COMPONENTE PRINCIPAL APP ====================
 export default function App() {
@@ -701,12 +1059,10 @@ export default function App() {
     await updateDocField(p.id, 'testingData', newData);
   };
 
-  // --- MÓDULO: PROYECCIÓN P&G --- (se mantiene igual)
   const renderProjectionModule = () => {
     const val = (key) => parseFloat(proj[key]) || 0;
     const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
     const resetProjection = () => setProj(getInitialProjection());
-
     const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
     const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
     const linkClicks = impressions * (val('ctr') / 100);
@@ -724,26 +1080,22 @@ export default function App() {
     const cpaReal = effectiveDeliveries > 0 ? val('adSpend') / effectiveDeliveries : 0;
     const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
     const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
-
     const totalProductCost = effectiveDeliveries * val('productCost');
     const totalFreightCost = val('freight') * dispatchedOrders;
     const totalReturnCost = val('freight') * returns;
     const totalFulfillmentCost = val('fulfillment') * dispatchedOrders;
     const totalCommissionCost = val('commission') * effectiveDeliveries;
-    
     const intermediationCosts = totalProductCost + totalFreightCost + totalReturnCost + totalFulfillmentCost + totalCommissionCost;
     const grossProfit = realRevenue - intermediationCosts - val('adSpend');
     const prorateCampaign = val('activeCampaigns') > 0 ? val('fixedExpenses') / val('activeCampaigns') : 0;
     const netProfit = grossProfit - prorateCampaign;
     const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
     const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
-
     const downloadReport = () => {
-        const productName = proj.name || 'Sin Nombre';
-        const reportContent = `======================================
+      const productName = proj.name || 'Sin Nombre';
+      const reportContent = `======================================
 📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
 ======================================
-
 🎯 MÉTRICAS DE MARKETING:
 - Inversión Facebook:     ${formatCurrency(val('adSpend'))}
 - CPM:                    ${formatCurrency(val('cpm'))}
@@ -755,7 +1107,6 @@ export default function App() {
 - Visitas a la Página:    ${pageVisits.toFixed(0)}
 - Costo por Visita:       ${formatCurrency(costPerVisit)}
 - % Conversión:           ${val('conversionRate').toFixed(2)}%
-
 📦 EMBUDO DE VENTAS Y ENTREGAS:
 - Ventas Generadas (Col1): ${salesCol1.toFixed(2)} pedidos
 - % Efectividad:          ${val('effectiveness').toFixed(2)}%
@@ -763,75 +1114,54 @@ export default function App() {
 - % Devolución:           ${val('returnRate').toFixed(2)}%
 - Total Devoluciones:     ${returns.toFixed(2)} pedidos
 - ENTREGAS EFECTIVAS:     ${effectiveDeliveries.toFixed(2)} pedidos
-
 💳 ANÁLISIS DE ADQUISICIÓN (CPA & ROAS):
 - CPA Facebook:           ${formatCurrency(cpaFb)}
 - CPA Real:               ${formatCurrency(cpaReal)}
 - ROAS Facebook:          ${roasFb.toFixed(2)}
 - ROAS Real ⭐:            ${roasReal.toFixed(2)}
-
 💰 FINANZAS Y COSTOS DE OPERACIÓN:
 - Precio de Venta:        ${formatCurrency(val('price'))}
 - Costo de Producto:      ${formatCurrency(val('productCost'))}
 - Flete por envío:        ${formatCurrency(val('freight'))}
 - Costo Fulfillment:      ${formatCurrency(val('fulfillment'))}
 - Comisión + Fijos:       ${formatCurrency(val('commission'))}
-
 - Facturado Tienda Web:   ${formatCurrency(salesCol2)}
 - Ingresos Reales ⭐:      ${formatCurrency(realRevenue)}
 - Total Intermediación:   ${formatCurrency(intermediationCosts)}
 - Gastos Fijos (Prorrateo): ${formatCurrency(prorateCampaign)}
-
 🏆 RESULTADOS FINALES:
 - Profit Bruto:           ${formatCurrency(grossProfit)}
 - Profit Neto Real:       ${formatCurrency(netProfit)}
 - Margen Bruto:           ${grossMargin.toFixed(2)}%
 - Margen Neto:            ${netMargin.toFixed(2)}%
-
 ======================================
 Reporte generado por WinnerProduct OS
 ======================================`;
-        const blob = new Blob([reportContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+      const blob = new Blob([reportContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     };
-
     return (
       <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
-            <div className="w-full md:flex-1">
-                <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
-                <input 
-                    type="text" 
-                    value={proj.name || ''} 
-                    onChange={(e) => setProj({...proj, name: e.target.value})}
-                    className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" 
-                    placeholder="Ej. Nombre del producto..."
-                />
-            </div>
-            <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-                <button 
-                    onClick={downloadReport}
-                    className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    📄 Descargar Informe
-                </button>
-                <button 
-                    onClick={resetProjection}
-                    className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    Limpiar Datos
-                </button>
-            </div>
+          <div className="w-full md:flex-1">
+            <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
+            <input type="text" value={proj.name || ''} onChange={(e) => setProj({...proj, name: e.target.value})} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" placeholder="Ej. Nombre del producto..." />
+          </div>
+          <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
+            <button onClick={downloadReport} className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0">📄 Descargar Informe</button>
+            <button onClick={resetProjection} className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              Limpiar Datos
+            </button>
+          </div>
         </div>
-
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
@@ -842,7 +1172,6 @@ Reporte generado por WinnerProduct OS
             <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} type="currency" prefix="$" />
           </div>
         </div>
-
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
@@ -850,38 +1179,30 @@ Reporte generado por WinnerProduct OS
             <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} type="currency" prefix="$" />
             <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
             <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
-
             <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} type="number" suffix="%" />
             <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
             <OutputP label="Costo por Clic" value={cpc} type="currency" />
-            
             <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} type="number" suffix="%" />
             <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
             <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
-            
             <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} type="number" suffix="%" />
             <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
             <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
             <OutputP label="CPA Facebook" value={cpaFb} type="currency" customBg="bg-blue-600 border-blue-700 shadow-lg" customText="text-white" />
-
             <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} type="number" suffix="%" />
             <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
             <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
-            
             <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} type="number" suffix="%" />
             <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
             <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
             <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
             <OutputP label="CPA Real" value={cpaReal} type="currency" customBg="bg-orange-500 border-orange-600 shadow-lg" customText="text-white" />
-
             <OutputP label="ROAS FACEBOOK" value={roasFb} type="number" decimals={2} />
             <OutputP label="ROAS REAL ⭐" value={roasReal} type="number" decimals={2} highlight />
           </div>
         </div>
-
         <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
           <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Pérdidas y Ganancias</h2>
-          
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
             <div className="space-y-3">
               <OutputP label="Facturado Tienda Web" value={salesCol2} type="currency" />
@@ -889,7 +1210,6 @@ Reporte generado por WinnerProduct OS
               <OutputP label="Ingresos Totales" value={realRevenue} type="currency" />
               <OutputP label="Inversión Publicidad" value={proj.adSpend} type="currency" />
             </div>
-
             <div className="space-y-3 p-4 md:p-6 bg-rose-50/50 rounded-[1.5rem] border border-rose-100">
               <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
               <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
@@ -897,11 +1217,8 @@ Reporte generado por WinnerProduct OS
               <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
               <OutputP label="Costo Fulfillment" value={totalFulfillmentCost} type="currency" />
               <OutputP label="Costo Comisión" value={totalCommissionCost} type="currency" />
-              <div className="pt-2">
-                <OutputP label="Total Costos Intermediación" value={intermediationCosts} type="currency" highlight />
-              </div>
+              <div className="pt-2"><OutputP label="Total Costos Intermediación" value={intermediationCosts} type="currency" highlight /></div>
             </div>
-
             <div className="space-y-3">
               <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
               <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
@@ -914,27 +1231,22 @@ Reporte generado por WinnerProduct OS
               </div>
             </div>
           </div>
-
           <div className="mt-8 bg-zinc-900 rounded-[2.5rem] p-6 md:p-12 text-white shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
-                    <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                      {formatCurrency(netProfit)}
-                    </p>
-                </div>
-                <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:px-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Bruto</p>
-                    <p className="text-3xl md:text-5xl font-black italic">{grossMargin.toFixed(2)}%</p>
-                </div>
-                <div className="md:pl-8">
-                    <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
-                    <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>
-                      {netMargin.toFixed(2)}%
-                    </p>
-                </div>
-             </div>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
+              <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
+                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
+                <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>{formatCurrency(netProfit)}</p>
+              </div>
+              <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:px-8">
+                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Bruto</p>
+                <p className="text-3xl md:text-5xl font-black italic">{grossMargin.toFixed(2)}%</p>
+              </div>
+              <div className="md:pl-8">
+                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
+                <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>{netMargin.toFixed(2)}%</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -950,18 +1262,10 @@ Reporte generado por WinnerProduct OS
               {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/>
-            </div>
+            <div className="relative"><input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/></div>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label>
-                <input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="ID-000"/>
-              </div>
-              <div>
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor</label>
-                <input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
+              <div><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label><input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="ID-000"/></div>
+              <div><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor</label><input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/></div>
             </div>
           </div>
           <div className="space-y-6">
@@ -976,10 +1280,8 @@ Reporte generado por WinnerProduct OS
             </div>
             <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl text-white shadow-xl">
               <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block leading-none">PVP Sugerido</label>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold opacity-30">$</span>
-                <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/>
-              </div>
+              <div className="flex items-center gap-2"><span className="text-2xl font-bold opacity-30">$</span>
+              <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/></div>
             </div>
           </div>
         </div>
@@ -992,40 +1294,27 @@ Reporte generado por WinnerProduct OS
               {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
               <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
             </div>
-            <div className="relative">
-                <input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/>
-            </div>
+            <div className="relative"><input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label>
-                <input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/>
-              </div>
-              <div className="text-left">
-                <label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label>
-                <input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/>
-              </div>
+              <div className="text-left"><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label><input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/></div>
+              <div className="text-left"><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label><input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/></div>
             </div>
           </div>
           <div className="space-y-4">
             <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4 text-left">
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label>
-                <input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label>
-                <input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label>
-                <input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label>
-                <input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-                <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label>
-                <input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
+              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label><input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
+              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label><input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
+              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label><input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
+              <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label><input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
+              <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label><input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
             </div>
             <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 text-left">
-                <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
-                <div className="grid grid-cols-3 gap-2 px-1">
-                    <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                    <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                </div>
+              <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
+              <div className="grid grid-cols-3 gap-2 px-1">
+                <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
+                <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
+                <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
+              </div>
             </div>
           </div>
         </div>
@@ -1033,493 +1322,242 @@ Reporte generado por WinnerProduct OS
     }
   };
 
-  // === CONTROL DE ACCESO ===
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center">
-        <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
-          <div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div><p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p></div></div>;
+  if (!user) return <LoginScreen />;
 
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  // --- DASHBOARD PRINCIPAL (usuario autenticado) ---
   return (
-    <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans text-zinc-900 overflow-x-hidden">
-      
-      {notification && (
-        <div className="fixed bottom-6 md:bottom-10 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl z-[200] font-bold text-[10px] md:text-xs uppercase tracking-widest animate-in slide-in-from-bottom-10 w-[90%] md:w-auto text-center leading-tight">
-          {notification}
-        </div>
-      )}
-
+    <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans">
+      {notification && <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50">{notification}</div>}
       <div className="max-w-[1400px] mx-auto">
-        
-        {/* NAVEGACIÓN - AGREGADO BOTÓN PROMPTS */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-8 gap-3 md:gap-4">
-            <div className="bg-white p-1 rounded-2xl md:rounded-[2rem] shadow-xl border border-zinc-200 flex flex-wrap md:flex-nowrap w-full md:w-auto overflow-hidden">
-                <button onClick={()=>handleModuleChange('winners')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'winners' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Winners</button>
-                <button onClick={()=>handleModuleChange('imports')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'imports' ? 'bg-zinc-900 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-zinc-400'}`}>Importación</button>
-                <button onClick={()=>handleModuleChange('projection')} className={`flex-1 min-w-[120px] md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'projection' ? 'bg-indigo-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-indigo-400/50 hover:text-indigo-600'}`}>Proyección P&G</button>
-                <button onClick={()=>handleModuleChange('agenda')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'agenda' ? 'bg-emerald-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-emerald-600/50 hover:text-emerald-600'}`}>📅 Agenda</button>
-                <button onClick={()=>handleModuleChange('prompts')} className={`flex-1 md:flex-none md:px-8 py-2.5 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.2em] transition-all duration-500 ${activeModule === 'prompts' ? 'bg-rose-600 text-white shadow-lg rounded-xl md:rounded-[1.5rem] scale-105' : 'text-rose-600/50 hover:text-rose-600'}`}>🎨 Prompts</button>
-            </div>
-            <button onClick={handleLogout} className="text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all">SALIR <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
+          <div className="bg-white p-1 rounded-2xl shadow-xl flex flex-wrap">
+            <button onClick={()=>handleModuleChange('winners')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='winners'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Winners</button>
+            <button onClick={()=>handleModuleChange('imports')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='imports'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Importación</button>
+            <button onClick={()=>handleModuleChange('projection')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='projection'?'bg-indigo-600 text-white':'text-indigo-400'}`}>Proyección P&G</button>
+            <button onClick={()=>handleModuleChange('agenda')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='agenda'?'bg-emerald-600 text-white':'text-emerald-600'}`}>📅 Agenda</button>
+            <button onClick={()=>handleModuleChange('prompts')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='prompts'?'bg-rose-600 text-white':'text-rose-600/70 hover:text-rose-600'}`}>🎨 Prompts</button>
+          </div>
+          <button onClick={handleLogout} className="text-zinc-400 text-[10px] font-black uppercase">SALIR</button>
         </div>
 
-        {/* CONTENIDO SEGÚN MÓDULO */}
         {activeModule === 'agenda' && <AgendaModule />}
-        {activeModule === 'projection' && renderProjectionModule()}
         {activeModule === 'prompts' && <PromptModule />}
-        {activeModule !== 'agenda' && activeModule !== 'projection' && activeModule !== 'prompts' && (
+        {activeModule === 'projection' && renderProjectionModule()}
+        {activeModule !== 'agenda' && activeModule !== 'prompts' && activeModule !== 'projection' && (
           <>
-            {/* ÁREA DE FILTROS Y BÚSQUEDA */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 animate-in fade-in">
-                <div className="md:col-span-2 relative">
-                    <input 
-                        type="text" 
-                        placeholder="Buscar..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:border-zinc-900 outline-none transition-all shadow-sm"
-                    />
-                    <span className="absolute right-4 top-1/2 transform -translate-y-1/2 opacity-20">🔍</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-1 gap-2 md:contents">
-                  <select 
-                      value={supplierFilter}
-                      onChange={(e) => setSupplierFilter(e.target.value)}
-                      className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-[11px] md:text-base font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
-                  >
-                      <option value="all">TODOS PROV.</option>
-                      {uniqueSuppliers.filter(s => s !== 'all').map(s => (
-                          <option key={s} value={s}>{s.toUpperCase()}</option>
-                      ))}
-                  </select>
-                  <select 
-                      value={sortOrder}
-                      onChange={(e) => setSortOrder(e.target.value)}
-                      className="w-full bg-white border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-[11px] md:text-base font-bold text-zinc-600 outline-none shadow-sm cursor-pointer"
-                  >
-                      <option value="manual">ORDEN MANUAL</option>
-                      <option value="roi-desc">ROI ↑</option>
-                      <option value="roi-asc">ROI ↓</option>
-                      <option value="recent">RECIENTES</option>
-                  </select>
-                </div>
+            <div className="grid md:grid-cols-4 gap-3 mb-4">
+              <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="md:col-span-2 bg-white border rounded-xl p-3 text-sm" />
+              <select value={supplierFilter} onChange={(e)=>setSupplierFilter(e.target.value)} className="bg-white border rounded-xl p-3 text-sm"><option value="all">TODOS PROV.</option>{uniqueSuppliers.filter(s=>s!=='all').map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
+              <select value={sortOrder} onChange={(e)=>setSortOrder(e.target.value)} className="bg-white border rounded-xl p-3 text-sm"><option value="manual">ORDEN MANUAL</option><option value="roi-desc">ROI ↑</option><option value="roi-asc">ROI ↓</option><option value="recent">RECIENTES</option></select>
             </div>
-
-            <header className="flex flex-col md:flex-row justify-between items-center mb-4 md:mb-6 gap-3 md:gap-4 bg-white p-3 md:p-6 rounded-xl md:rounded-[2rem] shadow-sm border border-zinc-200/50 relative animate-in fade-in">
-              <div className="flex items-center gap-3 md:gap-5 w-full md:w-auto">
-                <div className="w-10 h-10 md:w-14 md:h-14 bg-zinc-900 rounded-xl md:rounded-[1.2rem] flex items-center justify-center text-white text-xl md:text-2xl shadow-xl italic font-black shrink-0">W</div>
-                <div className="text-left">
-                  <h1 className="text-lg md:text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">{activeModule === 'winners' ? 'Winner OS' : 'Importación'}</h1>
-                  <p className="text-[7px] md:text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest md:tracking-[0.3em]">Sincronizado Cloud</p>
-                </div>
-              </div>
-              <button onClick={() => { setIsCreating(true); setFormError(''); }} className="bg-zinc-900 hover:bg-black text-white w-full md:w-auto px-6 md:px-10 py-3 md:py-4 rounded-xl md:rounded-[1.2rem] shadow-2xl font-black text-[10px] md:text-xs uppercase tracking-widest active:scale-95 transition-all">➕ Crear Registro</button>
+            <header className="bg-white rounded-2xl p-4 flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white text-xl font-black">W</div><h1 className="text-xl font-black">{activeModule==='winners'?'Winner OS':'Importación'}</h1></div>
+              <button onClick={()=>{setIsCreating(true); setFormError('');}} className="bg-zinc-900 text-white px-6 py-2 rounded-xl text-xs font-black">➕ Crear Registro</button>
             </header>
-
-            {/* TABS DE ESTADO */}
-            <div className="flex md:justify-center gap-1.5 md:gap-2 mb-4 md:mb-10 overflow-x-auto no-scrollbar pb-2 animate-in fade-in">
-              {Object.values(activeModule === 'winners' ? WINNER_STATUS : IMPORT_STATUS).map((config) => (
-                <button key={config.id} onClick={() => setActiveTab(config.id)} className={`px-3 md:px-6 py-2 md:py-3.5 rounded-lg md:rounded-[1.2rem] font-black text-[10px] md:text-[11px] whitespace-nowrap uppercase transition-all tracking-wider md:tracking-widest ${activeTab === config.id ? `${config.activeColor} shadow-xl scale-105` : 'bg-white text-zinc-400 border border-zinc-200/50 shadow-sm'}`}>
-                  {config.emoji} {config.label} <span className="ml-1 opacity-40">({products.filter(p => p.status === config.id).length})</span>
-                </button>
+            <div className="flex gap-2 mb-6 overflow-x-auto">
+              {Object.values(activeModule==='winners'?WINNER_STATUS:IMPORT_STATUS).map(c=>(
+                <button key={c.id} onClick={()=>setActiveTab(c.id)} className={`px-4 py-2 rounded-xl text-[11px] font-black ${activeTab===c.id?c.activeColor:'bg-white text-zinc-400'}`}>{c.emoji} {c.label} ({products.filter(p=>p.status===c.id).length})</button>
               ))}
             </div>
-
-            {/* LISTADO DE PRODUCTOS */}
-            <div className="grid grid-cols-1 gap-4 md:gap-12 pb-20 animate-in slide-in-from-bottom-8">
-              {displayedProducts.map((p, idx) => {
-                const isWinner = activeModule === 'winners';
+            <div className="space-y-6">
+              {displayedProducts.map((p,idx)=>{
+                const isWinner = activeModule==='winners';
                 const mWinner = isWinner ? calculateWinnerMetrics(p) : null;
                 const mImport = !isWinner ? calculateImportMetrics(p) : null;
-                const stCfg = (isWinner ? WINNER_STATUS[p.status] : IMPORT_STATUS[p.status]) || (isWinner ? WINNER_STATUS.pending : IMPORT_STATUS.pending);
-
-                let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400 shadow-amber-100 ring-2 ring-amber-500/20' : 'bg-white border-zinc-200/50';
-                if (!isWinner && p.status === 'approved') {
-                  const importState = IMPORT_STATES_LIST[p.importStatus] || IMPORT_STATES_LIST.warehouse;
-                  cardBgClass = importState.bgColor + (p.isWorking ? ' ring-2 ring-amber-500/20' : '');
-                }
-
+                const stCfg = (isWinner?WINNER_STATUS[p.status]:IMPORT_STATUS[p.status]) || (isWinner?WINNER_STATUS.pending:IMPORT_STATUS.pending);
+                let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400' : 'bg-white';
+                if(!isWinner && p.status==='approved') cardBgClass = (IMPORT_STATES_LIST[p.importStatus]||IMPORT_STATES_LIST.warehouse).bgColor;
                 return (
-                  <div 
-                    key={p.id} 
-                    className={`rounded-2xl md:rounded-[3rem] shadow-sm border transition-all duration-500 overflow-hidden ${cardBgClass}`}
-                  >
-                    
-                    <div className={`px-3 md:px-10 py-2 md:py-4 flex justify-between items-center border-b ${p.isWorking ? 'bg-amber-100/50 border-amber-200' : 'bg-zinc-50/20'}`}>
-                       <div className="flex items-center gap-2 md:gap-6 flex-wrap text-left">
-                         <div className="bg-zinc-900 text-white px-2 py-1 rounded-lg text-[8px] md:text-[11px] font-black tracking-widest">{p.regNumber}</div>
-                         
-                         {p.createdAtText && (
-                           <div className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded-lg text-[8px] md:text-[10px] font-mono font-bold tracking-tight">
-                             📅 {p.createdAtText}
-                           </div>
-                         )}
-                         
-                         <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-lg border border-zinc-200 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => updateDocField(p.id, 'isWorking', !p.isWorking)}>
-                            <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-tighter ${p.isWorking ? 'text-amber-600' : 'text-zinc-400'}`}>EN PROCESO</span>
-                            <div className={`w-7 h-4 md:w-9 md:h-5 rounded-full relative transition-colors ${p.isWorking ? 'bg-amber-500' : 'bg-zinc-200'}`}>
-                              <div className={`absolute top-0.5 w-3 h-3 md:w-4 md:h-4 bg-white rounded-full shadow-sm transition-all ${p.isWorking ? 'left-[0.9rem] md:left-[1.2rem]' : 'left-0.5'}`} />
-                            </div>
-                         </div>
-
-                         <span className="font-black text-[8px] md:text-[11px] uppercase tracking-widest text-zinc-500 whitespace-nowrap">{stCfg.emoji} {stCfg.label}</span>
-                         
-                         <div className={`flex items-center bg-white rounded-lg md:rounded-2xl p-0.5 md:p-1 shadow-inner border border-zinc-100 transition-opacity ${sortOrder === 'manual' ? 'opacity-100' : 'opacity-20 pointer-events-none'}`}>
-                            <button onClick={() => moveItem(p.id, -1)} disabled={idx === 0} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M5 15l7-7 7 7"/></svg></button>
-                            <span className="text-[7px] md:text-[10px] font-black text-zinc-400 px-1 md:px-3 whitespace-nowrap">#{idx + 1}</span>
-                            <button onClick={() => moveItem(p.id, 1)} disabled={idx === displayedProducts.length - 1} className="w-6 h-6 md:w-9 md:h-9 flex items-center justify-center hover:bg-zinc-900 hover:text-white rounded-md md:rounded-xl transition-all disabled:opacity-10"><svg className="w-2 md:w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path d="M19 9l-7 7-7-7"/></svg></button>
-                         </div>
-                       </div>
-                       <button onClick={() => deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600 transition-all hover:scale-110 shrink-0"><svg className="w-4 h-4 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+                  <div key={p.id} className={`rounded-2xl shadow-sm border ${cardBgClass} overflow-hidden`}>
+                    <div className="px-4 py-2 flex justify-between items-center border-b bg-zinc-50/20">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="bg-zinc-900 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">{p.regNumber}</div>
+                        {p.createdAtText && <div className="text-[10px] text-zinc-500">📅 {p.createdAtText}</div>}
+                        <div className="flex items-center gap-1 cursor-pointer" onClick={()=>updateDocField(p.id,'isWorking',!p.isWorking)}>
+                          <span className="text-[9px] font-black">{p.isWorking?'🔴 EN PROCESO':'⚪ EN PROCESO'}</span>
+                          <div className={`w-7 h-4 rounded-full ${p.isWorking?'bg-amber-500':'bg-zinc-200'}`}><div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-all ${p.isWorking?'translate-x-3':'translate-x-0'}`}></div></div>
+                        </div>
+                        <span className="text-[10px] font-black">{stCfg.emoji} {stCfg.label}</span>
+                        {sortOrder==='manual' && <div className="flex gap-1"><button onClick={()=>moveItem(p.id,-1)} disabled={idx===0}>▲</button><span className="text-[10px]">#{idx+1}</span><button onClick={()=>moveItem(p.id,1)} disabled={idx===displayedProducts.length-1}>▼</button></div>}
+                      </div>
+                      <button onClick={()=>deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600">🗑️</button>
                     </div>
-
                     <div className="flex flex-col xl:flex-row">
-                       <div className="w-full xl:w-[35%] p-3 md:p-10 border-r border-zinc-100 bg-zinc-50/10 text-left">
-                         <div className="flex flex-col items-center">
-                           <div className="w-20 h-20 md:w-64 md:h-64 aspect-square bg-white rounded-xl md:rounded-[2.5rem] border border-zinc-200 md:mb-6 relative overflow-hidden shadow-sm group/img cursor-pointer shrink-0">
-                             {p.image ? <img src={p.image} className="w-full h-full object-cover" alt="Producto"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-                             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e, p.id)}/>
-                           </div>
-                           <div className="w-full text-center md:text-left mt-3 md:mt-0">
-                             <input value={p.name || ''} onChange={(e)=>updateDocField(p.id, 'name', e.target.value)} className="w-full text-sm md:text-xl font-black bg-transparent border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none md:mb-4 py-1 transition-all text-zinc-900 truncate" placeholder="Nombre..."/>
-                             
-                             <div className="grid grid-cols-2 gap-2 mt-2 md:mt-0 md:mb-6">
-                                {isWinner ? (
-                                  <>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={()=>copyToClipboard(p.dropiCode)}>
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">DROPI 📋</label>
-                                        <input value={p.dropiCode || ''} onChange={(e)=>updateDocField(p.id, 'dropiCode', e.target.value)} className="text-[11px] md:text-sm font-mono font-bold truncate w-full outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none text-left">PROV.</label>
-                                        <input value={p.supplier || ''} onChange={(e)=>updateDocField(p.id, 'supplier', e.target.value)} className="w-full text-[11px] md:text-sm font-bold outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm text-left">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">CH-PROV</label>
-                                        <input value={p.chineseSupplier || ''} onChange={(e)=>updateDocField(p.id, 'chineseSupplier', e.target.value)} className="w-full text-[11px] md:text-sm font-bold outline-none bg-transparent text-zinc-800 truncate"/>
-                                    </div>
-                                    <div className="bg-white border border-zinc-100 p-1.5 md:p-3 rounded-lg md:rounded-2xl shadow-sm text-left">
-                                        <label className="text-[6px] md:text-[8px] font-black text-zinc-400 uppercase tracking-widest block mb-0.5 leading-none">TRM</label>
-                                        <input type="number" value={p.dollarRate || 0} onChange={(e)=>updateDocField(p.id, 'dollarRate', parseFloat(e.target.value)||0)} className="w-full text-[11px] md:text-sm font-mono font-bold outline-none bg-transparent text-zinc-800"/>
-                                    </div>
-                                  </>
-                                )}
-                             </div>
-                           </div>
-                         </div>
-
-                         {isWinner && (
-                           <div className="mt-3">
-                             <button 
-                               onClick={() => setExpandedItems({...expandedItems, [`desc_${p.id}`]: !expandedItems[`desc_${p.id}`]})}
-                               className="w-full flex justify-between items-center px-3 py-2 bg-white border border-zinc-200 rounded-lg text-[9px] font-black text-zinc-500 uppercase tracking-widest shadow-sm hover:bg-zinc-50 transition-colors"
-                             >
-                               <span>Ver Estrategia</span>
-                               <svg className={`w-3 h-3 transition-transform ${expandedItems[`desc_${p.id}`] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" strokeWidth="4"/></svg>
-                             </button>
-                             {expandedItems[`desc_${p.id}`] && (
-                               <textarea 
-                                 value={p.description || ''} 
-                                 onChange={(e)=>updateDocField(p.id, 'description', e.target.value)} 
-                                 rows={3} 
-                                 className="w-full mt-2 text-[12px] md:text-sm bg-white p-3 md:p-6 rounded-xl border border-zinc-100 shadow-inner text-zinc-500 leading-relaxed text-left animate-in fade-in" 
-                                 placeholder="Escribir estrategia..."
-                               />
-                             )}
-                           </div>
-                         )}
-                       </div>
-
-                       <div className="flex-1 p-3 md:p-10 space-y-4 md:space-y-10 relative text-left">
-                          {isWinner ? (
-                            <div className="grid grid-cols-4 md:grid-cols-4 gap-2 md:gap-4">
-                              {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                                <div key={k} className={`p-2 md:p-5 rounded-lg md:rounded-2xl border transition-all hover:bg-white text-left ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-0.5 leading-none">{k}</label>
-                                    <input type="number" value={p.costs?.[k] || 0} onChange={(e)=>updateNestedField(p.id, 'costs', k, parseFloat(e.target.value)||0)} className="w-full font-mono text-[11px] md:text-base font-bold bg-transparent outline-none text-zinc-700"/>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-4 md:grid-cols-4 gap-2 md:gap-4">
-                                {[{k:'prodCostUSD',l:'USD'}, {k:'cbmCostCOP',l:'CBM'}, {k:'unitsQty',l:'Uds'}, {k:'ctnQty',l:'CTN'}, {k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
-                                    <div key={f.k} className={`p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                        <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-0.5 leading-none">{f.l}</label>
-                                        <input type="number" value={p[f.k] || 0} onChange={(e)=>updateDocField(p.id, f.k, parseFloat(e.target.value)||0)} className="w-full font-mono text-[11px] md:text-base font-bold bg-transparent outline-none text-zinc-800 leading-none"/>
-                                    </div>
-                                ))}
-                                <div className={`col-span-2 p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-zinc-50/50 border-zinc-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-zinc-400 uppercase block mb-1 leading-none">Medidas (cm)</label>
-                                    <div className="grid grid-cols-3 gap-1">
-                                        <input type="number" value={p.measures?.width || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'width', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                        <input type="number" value={p.measures?.height || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'height', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                        <input type="number" value={p.measures?.length || 0} onChange={(e)=>updateNestedField(p.id, 'measures', 'length', parseFloat(e.target.value)||0)} className="bg-white border p-1 rounded text-sm font-mono w-full text-zinc-800 outline-none"/>
-                                    </div>
-                                </div>
-                                <div className={`col-span-2 md:col-span-1 p-2 md:p-5 rounded-lg md:rounded-2xl border text-left transition-all flex flex-col justify-center ${p.isWorking ? 'bg-white/70 border-amber-300' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                                    <label className="text-[6px] md:text-[10px] font-black text-indigo-500 uppercase block mb-1 leading-none">TOTAL CBM</label>
-                                    <div className="w-full font-mono text-[11px] md:text-base font-black text-indigo-700 leading-none">{mImport.totalCbm.toFixed(3)}</div>
-                                </div>
-                            </div>
-                          )}
-
-                          {/* DASHBOARD DE RESULTADOS */}
-                          <div className="bg-zinc-900 rounded-xl md:rounded-[3rem] p-5 md:p-10 text-white shadow-2xl relative overflow-hidden">
-                             <div className="absolute top-0 right-0 w-32 md:w-80 h-32 md:h-80 bg-indigo-500/10 rounded-full blur-[60px] md:blur-[120px] -mr-16 md:-mr-40 -mt-16 md:-mt-40"></div>
-                             
-                             {isWinner ? (
-                                <div className="relative z-10 space-y-6 md:space-y-8">
-                                    <div className="flex justify-between items-end border-b border-zinc-800 pb-4 md:pb-8 gap-4 text-left">
-                                        <div className="flex-1">
-                                            <label className="text-[9px] md:text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-4 block leading-none">PVP Sugerido</label>
-                                            <div className="flex items-center gap-1 md:gap-2">
-                                                <span className="text-xl md:text-3xl font-bold opacity-20">$</span>
-                                                <input type="number" value={p.targetPrice || 0} onChange={(e)=>updateDocField(p.id, 'targetPrice', parseFloat(e.target.value)||0)} className="bg-transparent font-black text-2xl md:text-6xl outline-none w-full tracking-tighter focus:text-indigo-400 transition-colors text-white"/>
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-[10px] md:text-[11px] font-bold text-rose-400 uppercase tracking-widest mb-1 italic leading-none">Costos</p>
-                                            <p className="text-lg md:text-3xl font-mono font-bold text-rose-50">{formatCurrency(mWinner.totalCost)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center gap-4">
-                                        <div className="bg-white/5 p-4 md:p-6 rounded-xl md:rounded-[1.8rem] border border-white/5 flex-1 shadow-inner text-left">
-                                            <p className="text-[9px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5 text-left px-1 leading-none">Utilidad Neta</p>
-                                            <p className={`text-2xl md:text-5xl font-mono font-bold px-1 text-left ${mWinner.profit > 0 ? 'text-emerald-400' : 'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</p>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-[10px] md:text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 italic leading-none text-right">Margen ROI</p>
-                                            <p className="text-4xl md:text-7xl font-black italic tracking-tighter leading-none">{mWinner.margin.toFixed(1)}%</p>
-                                        </div>
-                                    </div>
-                                </div>
-                             ) : (
-                                <div className="relative z-10 space-y-5 md:space-y-8">
-                                    <div className="grid grid-cols-2 gap-6 border-b border-zinc-800 pb-4 md:pb-8 text-left">
-                                        <div className="text-left">
-                                            <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">China (1.03x)</p>
-                                            <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.costChinaCOP)}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[9px] md:text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 md:mb-3 leading-none italic">Logística</p>
-                                            <p className="text-lg md:text-3xl font-bold font-mono tracking-tight">{formatCurrency(mImport.nationalizationCOP)}</p>
-                                        </div>
-                                    </div>
-                                    <div className="bg-emerald-500/10 p-4 md:p-10 rounded-xl md:rounded-[3rem] border border-emerald-500/20 flex flex-col md:flex-row justify-between items-center gap-3 transition-all hover:bg-emerald-500/20">
-                                        <div className="text-left w-full md:w-auto">
-                                            <p className="text-[9px] md:text-[12px] font-black text-emerald-400 uppercase tracking-[0.1em] mb-1.5 leading-none">Costo Prod. Colombia</p>
-                                            <p className="text-3xl md:text-7xl font-black text-white leading-none tracking-tighter">{formatCurrency(mImport.unitCostColombia)}</p>
-                                        </div>
-                                        <div className="text-left md:text-right w-full md:w-auto">
-                                            <p className="text-[8px] md:text-[10px] font-bold text-zinc-500 uppercase mb-1 leading-none">Inversión Total</p>
-                                            <p className="text-sm md:text-2xl font-mono opacity-50 italic">{formatCurrency(mImport.totalLandCostCOP)}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                             )}
+                      <div className="w-full xl:w-1/3 p-4 border-r">
+                        <div className="flex flex-col items-center">
+                          <div className="w-32 h-32 bg-white rounded-2xl border relative overflow-hidden cursor-pointer group">
+                            {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <div className="flex items-center justify-center h-full text-2xl opacity-20">IMG</div>}
+                            <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e,p.id)}/>
                           </div>
-
-                          {/* BOTONES DE ESTADO */}
-                          <div className="flex flex-wrap gap-2.5 md:gap-3 justify-center md:justify-start">
-                            {Object.values(isWinner ? WINNER_STATUS : IMPORT_STATUS).map(s=>(
-                              <button key={s.id} onClick={()=>updateDocField(p.id, 'status', s.id)} className={`px-4 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-xl text-[10px] md:text-[11px] font-black border-2 uppercase transition-all whitespace-nowrap active:scale-95 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900 shadow-xl` : 'bg-white border-zinc-100 text-zinc-400'}`}>
-                                {s.emoji} {s.label}
-                              </button>
+                          <input value={p.name||''} onChange={(e)=>updateDocField(p.id,'name',e.target.value)} className="w-full text-center font-bold text-lg mt-2 border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none" placeholder="Nombre..."/>
+                          <div className="grid grid-cols-2 gap-2 w-full mt-2">
+                            {isWinner ? (
+                              <>
+                                <div onClick={()=>copyToClipboard(p.dropiCode)} className="bg-white border p-1 rounded-lg text-center cursor-pointer"><span className="text-[8px] font-black">DROPI</span><input value={p.dropiCode||''} onChange={(e)=>updateDocField(p.id,'dropiCode',e.target.value)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
+                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">PROV.</span><input value={p.supplier||''} onChange={(e)=>updateDocField(p.id,'supplier',e.target.value)} className="w-full text-xs bg-transparent outline-none"/></div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">CH-PROV</span><input value={p.chineseSupplier||''} onChange={(e)=>updateDocField(p.id,'chineseSupplier',e.target.value)} className="w-full text-xs bg-transparent outline-none"/></div>
+                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">TRM</span><input type="number" value={p.dollarRate||0} onChange={(e)=>updateDocField(p.id,'dollarRate',parseFloat(e.target.value)||0)} className="w-full text-xs bg-transparent outline-none"/></div>
+                              </>
+                            )}
+                          </div>
+                          {isWinner && (
+                            <button onClick={()=>setExpandedItems({...expandedItems,[`desc_${p.id}`]:!expandedItems[`desc_${p.id}`]})} className="w-full text-left text-[9px] font-black mt-2 flex justify-between"><span>Ver Estrategia</span><span>{expandedItems[`desc_${p.id}`]?'▲':'▼'}</span></button>
+                          )}
+                          {isWinner && expandedItems[`desc_${p.id}`] && <textarea value={p.description||''} onChange={(e)=>updateDocField(p.id,'description',e.target.value)} rows={2} className="w-full mt-1 text-xs bg-white p-2 rounded border" placeholder="Estrategia..."/>}
+                        </div>
+                      </div>
+                      <div className="flex-1 p-4 space-y-4">
+                        {isWinner ? (
+                          <div className="grid grid-cols-4 gap-2">
+                            {['base','cpa','freight','fulfillment','commission','returns','fixed'].map(k=>(
+                              <div key={k} className="bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">{k}</label><input type="number" value={p.costs?.[k]||0} onChange={(e)=>updateNestedField(p.id,'costs',k,parseFloat(e.target.value)||0)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
                             ))}
                           </div>
-
-                          {/* SECCIÓN DE TESTEO PARA WINNER */}
-                          {isWinner && p.status === 'testing' && (
-                            <div className="mt-6 bg-amber-50/80 rounded-2xl p-4 md:p-6 space-y-4 border border-amber-200">
-                              <h3 className="text-sm font-black text-amber-700 uppercase tracking-widest flex items-center gap-2">🧪 Datos de Testeo</h3>
-                              <div className="space-y-3">
-                                {(p.testingData || getInitialWinner().testingData).map(tester => (
-                                  <div key={tester.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white/50 p-3 rounded-xl">
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Vendedora {tester.id}</label>
-                                      <input
-                                        type="text"
-                                        value={tester.sellerName || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'sellerName', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                        placeholder={`Nombre vendedora ${tester.id}`}
-                                      />
+                        ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                            {[{k:'prodCostUSD',l:'USD'},{k:'cbmCostCOP',l:'CBM'},{k:'unitsQty',l:'Uds'},{k:'ctnQty',l:'CTN'},{k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
+                              <div key={f.k} className="bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">{f.l}</label><input type="number" value={p[f.k]||0} onChange={(e)=>updateDocField(p.id,f.k,parseFloat(e.target.value)||0)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
+                            ))}
+                            <div className="col-span-2 bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">Medidas (cm)</label><div className="flex gap-1"><input type="number" value={p.measures?.width||0} onChange={(e)=>updateNestedField(p.id,'measures','width',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/><input type="number" value={p.measures?.height||0} onChange={(e)=>updateNestedField(p.id,'measures','height',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/><input type="number" value={p.measures?.length||0} onChange={(e)=>updateNestedField(p.id,'measures','length',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/></div></div>
+                            <div className="col-span-2 md:col-span-1 bg-indigo-50 p-2 rounded-lg"><label className="text-[8px] font-black">TOTAL CBM</label><div className="font-mono text-sm font-black">{mImport.totalCbm.toFixed(3)}</div></div>
+                          </div>
+                        )}
+                        <div className="bg-zinc-900 rounded-2xl p-4 text-white relative overflow-hidden">
+                          {isWinner ? (
+                            <div className="space-y-2"><div className="flex justify-between"><div><label className="text-[9px] font-black">PVP Sugerido</label><input type="number" value={p.targetPrice||0} onChange={(e)=>updateDocField(p.id,'targetPrice',parseFloat(e.target.value)||0)} className="bg-transparent text-3xl font-black w-32 outline-none"/></div><div className="text-right"><label className="text-[9px] font-black">Costos</label><div className="text-lg font-mono">{formatCurrency(mWinner.totalCost)}</div></div></div><div className="flex justify-between"><div><label className="text-[9px] font-black">Utilidad Neta</label><div className={`text-2xl font-mono font-black ${mWinner.profit>0?'text-emerald-400':'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</div></div><div><label className="text-[9px] font-black">Margen ROI</label><div className="text-3xl font-black italic">{mWinner.margin.toFixed(1)}%</div></div></div></div>
+                          ) : (
+                            <div className="space-y-2"><div className="flex justify-between"><div><label className="text-[9px] font-black">China (1.03x)</label><div className="text-xl font-mono">{formatCurrency(mImport.costChinaCOP)}</div></div><div><label className="text-[9px] font-black">Logística</label><div className="text-xl font-mono">{formatCurrency(mImport.nationalizationCOP)}</div></div></div><div className="bg-emerald-500/10 p-3 rounded-xl"><div><label className="text-[9px] font-black">Costo Prod. Colombia</label><div className="text-2xl font-black">{formatCurrency(mImport.unitCostColombia)}</div></div><div><label className="text-[8px] font-black">Inversión Total</label><div className="text-xs opacity-50">{formatCurrency(mImport.totalLandCostCOP)}</div></div></div></div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          {Object.values(isWinner?WINNER_STATUS:IMPORT_STATUS).map(s=>(
+                            <button key={s.id} onClick={()=>updateDocField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded-xl text-[10px] font-black border-2 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900` : 'bg-white border-zinc-100 text-zinc-400'}`}>{s.emoji} {s.label}</button>
+                          ))}
+                        </div>
+                        {isWinner && p.status === 'testing' && (
+                          <div className="bg-amber-50 p-3 rounded-xl space-y-2"><h4 className="text-xs font-black">🧪 Datos de Testeo</h4>{(p.testingData||getInitialWinner().testingData).map(t=><div key={t.id} className="grid grid-cols-1 md:grid-cols-3 gap-2"><input value={t.sellerName||''} onChange={(e)=>updateTestingData(p,t.id,'sellerName',e.target.value)} placeholder={`Vendedora ${t.id}`} className="bg-white border rounded-lg p-1 text-sm"/><input type="date" value={t.startDate||''} onChange={(e)=>updateTestingData(p,t.id,'startDate',e.target.value)} className="bg-white border rounded-lg p-1 text-sm"/><input type="date" value={t.endDate||''} onChange={(e)=>updateTestingData(p,t.id,'endDate',e.target.value)} className="bg-white border rounded-lg p-1 text-sm"/></div>)}</div>
+                        )}
+                        {isWinner && p.status === 'rejected' && (
+                          <textarea value={p.rejectionReason||''} onChange={(e)=>updateDocField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full border-rose-200 border rounded-lg p-2 text-sm" placeholder="Motivo de rechazo..."/>
+                        )}
+                        {!isWinner && p.status === 'approved' && (
+                          <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
+                            <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
+                                <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
+                                <div className="flex gap-2">
+                                  <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
+                                <div className="flex gap-2">
+                                  <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                  <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
+                                <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                              </div>
+                            </div>
+                            <div className="bg-indigo-50 rounded-xl p-3">
+                              <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
+                              {(() => {
+                                const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
+                                const flete = p.yiwuFreightUSD || 0;
+                                const totalUSD = prodUSD + flete;
+                                const trm = p.dollarRate || 0;
+                                const valorCOP = totalUSD * trm * 1.03;
+                                const anticipo = p.advancePayment?.amount || 0;
+                                const pagoTotal = p.totalPayment?.amount || 0;
+                                const totalPagado = anticipo + pagoTotal;
+                                const saldoCOP = valorCOP - totalPagado;
+                                const saldoUSD = saldoCOP / (trm || 1);
+                                const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
+                                return (
+                                  <div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                                      <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
+                                      <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
+                                      <div>💱 TRM: {trm.toLocaleString()} COP</div>
+                                      <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
                                     </div>
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha inicio</label>
-                                      <input
-                                        type="date"
-                                        value={tester.startDate || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'startDate', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                      />
+                                    <div className="mt-2 bg-white rounded-lg p-2">
+                                      <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
+                                      <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
+                                      <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
+                                      <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
+                                      </div>
+                                      <div className="flex justify-between font-bold mt-2">
+                                        <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
+                                        <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
+                                      </div>
+                                      <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
+                                      {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
+                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
+                                      {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
                                     </div>
-                                    <div>
-                                      <label className="block text-[9px] font-black text-amber-600 mb-1 uppercase">Fecha finalización</label>
-                                      <input
-                                        type="date"
-                                        value={tester.endDate || ''}
-                                        onChange={(e) => updateTestingData(p, tester.id, 'endDate', e.target.value)}
-                                        className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm text-zinc-800 outline-none focus:border-amber-500"
-                                      />
-                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
+                              <div className="space-y-2">
+                                {(p.variables || getInitialImport().variables).map(v => (
+                                  <div key={v.id} className="flex gap-2 items-center">
+                                    <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
+                                    <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
                                   </div>
                                 ))}
                               </div>
                             </div>
-                          )}
-
-                          {/* MOTIVO DE RECHAZO */}
-                          {isWinner && p.status === 'rejected' && (
-                            <div className="mt-4 w-full">
-                              <label className="text-[9px] font-black text-rose-600 uppercase tracking-widest block mb-2">Motivo de rechazo</label>
-                              <textarea
-                                value={p.rejectionReason || ''}
-                                onChange={(e) => updateDocField(p.id, 'rejectionReason', e.target.value)}
-                                rows={2}
-                                className="w-full p-3 md:p-4 border-2 border-rose-200 bg-white rounded-xl text-sm text-zinc-800 outline-none focus:border-rose-500 transition-all"
-                                placeholder="Explica por qué se rechazó este producto..."
-                              />
-                            </div>
-                          )}
-
-                          {/* GESTIÓN DE COMPRA PARA IMPORTACIÓN APROBADA - FUNCIONAL CON SALDO PENDIENTE */}
-                          {!isWinner && p.status === 'approved' && (
-                            <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
-                              <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-                                  <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-                                  <div className="flex gap-2">
-                                    <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-                                  <div className="flex gap-2">
-                                    <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-                                  <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                              </div>
-                              
-                              {/* CÁLCULO DE SALDO PENDIENTE CON ANTICIPO + PAGO TOTAL */}
-                              <div className="bg-indigo-50 rounded-xl p-3">
-                                <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
-                                {(() => {
-                                  const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-                                  const flete = p.yiwuFreightUSD || 0;
-                                  const totalUSD = prodUSD + flete;
-                                  const trm = p.dollarRate || 0;
-                                  const valorCOP = totalUSD * trm * 1.03;
-                                  const anticipo = p.advancePayment?.amount || 0;
-                                  const pagoTotal = p.totalPayment?.amount || 0;
-                                  const totalPagado = anticipo + pagoTotal;
-                                  const saldoCOP = valorCOP - totalPagado;
-                                  const saldoUSD = saldoCOP / (trm || 1);
-                                  const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
-                                  return (
-                                    <div>
-                                      <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                        <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-                                        <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
-                                        <div>💱 TRM: {trm.toLocaleString()} COP</div>
-                                        <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
-                                      </div>
-                                      <div className="mt-2 bg-white rounded-lg p-2">
-                                        <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-                                        <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
-                                        <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
-                                        <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
-                                        </div>
-                                        <div className="flex justify-between font-bold mt-2">
-                                          <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
-                                          <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
-                                        </div>
-                                        <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
-                                        {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-                                        {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
-                                        {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
-                                <div className="space-y-2">
-                                  {(p.variables || getInitialImport().variables).map(v => (
-                                    <div key={v.id} className="flex gap-2 items-center">
-                                      <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                      <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
-                                <div className="flex flex-wrap gap-2">
-                                  {Object.values(IMPORT_STATES_LIST).map(state => (
-                                    <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
-                                      {state.emoji} {state.label}
-                                    </button>
-                                  ))}
-                                </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
+                              <div className="flex flex-wrap gap-2">
+                                {Object.values(IMPORT_STATES_LIST).map(state => (
+                                  <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
+                                    {state.emoji} {state.label}
+                                  </button>
+                                ))}
                               </div>
                             </div>
-                          )}
-                        </div>
-
-                        {/* BUNDLES (solo winners) */}
-                        {isWinner && (
-                          <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
-                            <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
-                            {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
                           </div>
                         )}
                       </div>
+                      {isWinner && (
+                        <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
+                          <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
+                          {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Modal de creación */}
-        {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && (
-          <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
-              <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          </>
         )}
       </div>
-    );
-  }
+      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
+            <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
