@@ -1,263 +1,1145 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp, Timestamp, setDoc 
+import {
+  getFirestore, collection, addDoc, setDoc, updateDoc, deleteDoc, doc, onSnapshot,
+  Timestamp, serverTimestamp, query, where, writeBatch
 } from 'firebase/firestore';
-import { 
-  getAuth, 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  signOut 
-} from 'firebase/auth';
+import {
+  LayoutDashboard, ClipboardList, Settings, Plus, Trash2, Calendar,
+  TrendingUp, Package, Layers, Truck, Target, Wallet, CheckCircle2,
+  Calculator, Eye, Activity, Pencil, Boxes, ToggleLeft, ToggleRight,
+  ChevronDown, ChevronUp, X, AlertTriangle, Save, BarChart3, Percent,
+  DollarSign, Users, ShoppingBag, ArrowUpRight, ArrowDownRight, Info,
+  Coffee, Moon, Award, ListChecks, CalendarDays, Power, PowerOff,
+  Archive, ArchiveRestore, CircleDollarSign, FileUp, Gauge, RefreshCcw,
+  Settings2, ShieldCheck, TrendingDown, FileText, Copy, Download
+} from 'lucide-react';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import Login from './src/components/Login';
+import { db } from './src/firebase';
 
-// --- CONFIGURACIÓN DE FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyATSpw_uzohLwm7zVUk3X_d6EAsDZNZLK0".trim(),
-  authDomain: "winnerproduct-crm.firebaseapp.com".trim(),
-  projectId: "winnerproduct-crm".trim(),
-  storageBucket: "winnerproduct-crm.firebasestorage.app".trim(),
-  messagingSenderId: "697988179670".trim(),
-  appId: "1:697988179670:web:3910c31426d0d6e4bdcb77".trim()
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'winnerproduct-crm';
-
-// --- CONFIGURACIÓN DE ESTADOS ---
-const WINNER_STATUS = {
-  pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '🕒' },
-  prepared: { id: 'prepared', label: 'Preparado', color: 'bg-blue-50 text-blue-600', activeColor: 'bg-blue-600 text-white', emoji: '📦' },
-  testing: { id: 'testing', label: 'En Testeo', color: 'bg-amber-50 text-amber-600', activeColor: 'bg-amber-500 text-white', emoji: '🧪' },
-  approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '✅' },
-  rejected: { id: 'rejected', label: 'Rechazado', color: 'bg-rose-50 text-rose-600', activeColor: 'bg-rose-600 text-white', emoji: '❌' }
-};
-
-const IMPORT_STATUS = {
-  pending: { id: 'pending', label: 'Pendiente', color: 'bg-zinc-100 text-zinc-600', activeColor: 'bg-zinc-800 text-white', emoji: '⏳' },
-  approved: { id: 'approved', label: 'Aprobado', color: 'bg-emerald-50 text-emerald-600', activeColor: 'bg-emerald-600 text-white', emoji: '🛳️' }
-};
-
-const IMPORT_STATES_LIST = {
-  warehouse: { id: 'warehouse', label: 'EN BODEGA', emoji: '🏭', bgColor: 'bg-slate-100 border-slate-300' },
-  portChina: { id: 'portChina', label: 'EN PUERTO CHINA', emoji: '🚢', bgColor: 'bg-blue-100 border-blue-300' },
-  seaRoute: { id: 'seaRoute', label: 'EN RUTA MARÍTIMA', emoji: '🌊', bgColor: 'bg-cyan-100 border-cyan-300' },
-  portColombia: { id: 'portColombia', label: 'EN PUERTO COLOMBIA', emoji: '⚓', bgColor: 'bg-emerald-100 border-emerald-300' },
-  warehouseColombia: { id: 'warehouseColombia', label: 'EN BODEGA COLOMBIA', emoji: '🏚️', bgColor: 'bg-amber-100 border-amber-300' },
-  delivered: { id: 'delivered', label: 'ENTREGADO', emoji: '✅', bgColor: 'bg-green-100 border-green-500' }
-};
-
-// --- ESTADOS INICIALES ---
-const getInitialWinner = () => ({
-  type: 'winner',
-  name: '', dropiCode: '', supplier: '', description: '',
-  costs: { base: 0, freight: 0, fulfillment: 0, commission: 0, cpa: 0, returns: 0, fixed: 0 },
-  targetPrice: 0, status: 'pending', rejectionReason: '', image: null, order: 0,
-  isWorking: false,
-  createdAtText: '',
-  testingData: Array(5).fill().map((_, i) => ({ id: i+1, sellerName: '', startDate: '', endDate: '' })),
-  upsells: [
-    { id: 1, name: '', cost: 0, price: 0, image: null },
-    { id: 2, name: '', cost: 0, price: 0, image: null },
-    { id: 3, name: '', cost: 0, price: 0, image: null },
-    { id: 4, name: '', cost: 0, price: 0, image: null },
-    { id: 5, name: '', cost: 0, price: 0, image: null }
-  ]
-});
-
-const getInitialImport = () => ({
-  type: 'import',
-  name: '', chineseSupplier: '', dollarRate: 0, prodCostUSD: 0, cbmCostCOP: 0,
-  unitsQty: 0, ctnQty: 0, yiwuFreightUSD: 0, status: 'pending', image: null, order: 0,
-  isWorking: false,
-  createdAtText: '',
-  measures: { width: 0, height: 0, length: 0 },
-  purchaseDate: '',
-  advancePayment: { amount: 0, date: '' },
-  totalPayment: { amount: 0, date: '' },
-  actualQuantity: 0,
-  variables: Array(5).fill().map((_, i) => ({ id: i+1, name: '', qty: 0 })),
-  importStatus: 'warehouse'
-});
-
-const getInitialProjection = () => ({
-  name: '', price: '', productCost: '', freight: '', fulfillment: '', commission: '',
-  adSpend: '', cpm: '', ctr: '', loadSpeed: '', conversionRate: '',
-  effectiveness: '', returnRate: '', fixedExpenses: '', activeCampaigns: 1
-});
-
-// --- AYUDANTES ---
-const formatCurrency = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0);
-
-const getCurrentDateTime = () => {
+// ─── HELPERS CON ZONA HORARIA COLOMBIA (UTC-5) ───────────────────────────────
+const todayColombia = () => {
   const now = new Date();
-  const day = now.getDate().toString().padStart(2, '0');
-  const month = (now.getMonth() + 1).toString().padStart(2, '0');
-  const year = now.getFullYear();
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  const seconds = now.getSeconds().toString().padStart(2, '0');
-  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  const colombiaDate = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  return colombiaDate.toISOString().split('T')[0];
 };
 
-const calculateWinnerMetrics = (p) => {
-  if (!p) return { totalCost: 0, totalPrice: 0, profit: 0, margin: 0, activeUpsells: 0 };
-  const c = p.costs || {};
-  const baseCost = (parseFloat(c.base)||0) + (parseFloat(c.freight)||0) + (parseFloat(c.fulfillment)||0) +
-    (parseFloat(c.commission)||0) + (parseFloat(c.cpa)||0) + (parseFloat(c.returns)||0) + (parseFloat(c.fixed)||0);
-  const basePrice = parseFloat(p.targetPrice) || 0;
-  const upsells = p.upsells || [];
-  const uCost = upsells.reduce((sum, u) => sum + (parseFloat(u.cost)||0), 0);
-  const uPrice = upsells.reduce((sum, u) => sum + (parseFloat(u.price)||0), 0);
-  const totalCost = baseCost + uCost;
-  const totalPrice = basePrice + uPrice;
-  const profit = totalPrice - totalCost;
-  const margin = totalPrice > 0 ? (profit / totalPrice) * 100 : 0;
-  return { totalCost, totalPrice, profit, margin, activeUpsells: upsells.filter(u => u.name).length };
+const parseColombiaDate = (dateStr) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0);
 };
 
-const calculateImportMetrics = (p) => {
-  if (!p) return { cbmPerCtn: 0, totalCbm: 0, costChinaCOP: 0, nationalizationCOP: 0, totalLandCostCOP: 0, unitCostColombia: 0 };
-  const m = p.measures || { width: 0, height: 0, length: 0 };
-  const cbmPerCtn = (parseFloat(m.width) * parseFloat(m.height) * parseFloat(m.length)) / 1000000;
-  const totalCbm = cbmPerCtn * (parseFloat(p.ctnQty) || 0);
-  const costChinaUSD = ((parseFloat(p.prodCostUSD) || 0) * (parseFloat(p.unitsQty) || 0)) + (parseFloat(p.yiwuFreightUSD) || 0);
-  const costChinaCOP = costChinaUSD * (parseFloat(p.dollarRate) || 0) * 1.03;
-  const nationalizationCOP = totalCbm * (parseFloat(p.cbmCostCOP) || 0);
-  const totalLandCostCOP = costChinaCOP + nationalizationCOP;
-  const unitCostColombia = (parseFloat(p.unitsQty) > 0) ? totalLandCostCOP / parseFloat(p.unitsQty) : 0;
-  return { cbmPerCtn, totalCbm, costChinaCOP, nationalizationCOP, totalLandCostCOP, unitCostColombia };
-};
+const fmt = (v) => new Intl.NumberFormat('es-CO', {
+  style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0
+}).format(v || 0);
 
-const compressImage = (base64Str) => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 800;
-      const MAX_HEIGHT = 800;
-      let width = img.width;
-      let height = img.height;
-      if (width > height) {
-        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-      } else {
-        if (height > MAX_HEIGHT) { width = Math.round((width * MAX_HEIGHT) / height); height = MAX_HEIGHT; }
+const fmtDec = (v, d = 2, max = null) => new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: d,
+  maximumFractionDigits: max !== null ? max : d
+}).format(v || 0);
+
+const fmtN = (v) => new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 6
+}).format(v || 0);
+
+// ─── MOTOR DE CÁLCULO (global, ranking y detalle temporal) ───────────────────
+function getConfigAtDate(configs, productId, dateStr) {
+  const allVersions = configs.filter(c => c.id === productId || c.previousVersionId === productId);
+  if (allVersions.length <= 1) return configs.find(c => c.id === productId);
+  const date = parseColombiaDate(dateStr);
+  let activeConfig = null;
+  let closestValidFrom = null;
+  for (const config of allVersions) {
+    const validFrom = config.validFrom ? parseColombiaDate(config.validFrom) : null;
+    if (!validFrom) { if (!activeConfig) activeConfig = config; continue; }
+    if (validFrom <= date) {
+      if (!closestValidFrom || validFrom > closestValidFrom) {
+        closestValidFrom = validFrom;
+        activeConfig = config;
       }
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7)); 
-    };
-  });
-};
-
-// --- COMPONENTES P&G ---
-const InputP = ({ label, value, onChange, type="number", prefix="", suffix="" }) => {
-  let displayVal = value;
-  if (type === 'currency') {
-     displayVal = value ? new Intl.NumberFormat('es-CO').format(value) : '';
-  }
-  const handleInput = (e) => {
-     if (type === 'currency') {
-        const numericString = e.target.value.replace(/\D/g, '');
-        onChange(numericString !== '' ? parseFloat(numericString) : '');
-     } else {
-        onChange(e.target.value !== '' ? parseFloat(e.target.value) : '');
-     }
-  };
-  return (
-    <div className="bg-emerald-50/70 p-3 md:p-4 rounded-xl md:rounded-2xl border-2 border-emerald-100 focus-within:border-emerald-400 transition-colors shadow-sm">
-      <label className="text-[9px] md:text-[11px] font-black text-emerald-700 uppercase block mb-1 md:mb-2">{label} ✎</label>
-      <div className="flex items-center gap-1">
-        {prefix && <span className="text-emerald-600 font-bold">{prefix}</span>}
-        <input 
-          type={type === 'currency' ? 'text' : type} 
-          value={displayVal} 
-          onChange={handleInput}
-          className="w-full bg-transparent text-sm md:text-base font-bold text-emerald-950 outline-none font-mono placeholder:text-emerald-300"
-          placeholder="0"
-        />
-        {suffix && <span className="text-emerald-600 font-bold">{suffix}</span>}
-      </div>
-    </div>
-  );
-};
-
-const OutputP = ({ label, value, type="currency", decimals=2, highlight=false, customBg, customText }) => {
-  let displayValue = 0;
-  const numValue = parseFloat(value) || 0;
-  if (type === "currency") displayValue = formatCurrency(numValue);
-  else if (type === "number") displayValue = numValue.toFixed(decimals);
-  else if (type === "percent") displayValue = `${numValue.toFixed(decimals)}%`;
-
-  let baseBg = customBg || (highlight ? 'bg-zinc-900 border-zinc-900 shadow-xl' : 'bg-zinc-50 border-zinc-200 shadow-inner');
-  let baseText = customText || (highlight ? 'text-white' : 'text-zinc-800');
-  let labelText = customText ? 'text-white/80' : (highlight ? 'text-zinc-400' : 'text-zinc-500');
-
-  return (
-    <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl border text-left ${baseBg}`}>
-      <label className={`text-[8px] md:text-[10px] font-black uppercase block mb-1 md:mb-2 ${labelText}`}>{label}</label>
-      <div className={`font-mono text-sm md:text-lg font-black truncate ${baseText}`}>
-        {displayValue}
-      </div>
-    </div>
-  );
-};
-
-// --- COMPONENTE LOGIN ---
-function LoginScreen({ setErrorExt }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.error(err);
-      let msg = 'Credenciales inválidas.';
-      if (err.code === 'auth/network-request-failed') msg = 'Error de red o API restringida.';
-      setError(msg);
-      setErrorExt(msg);
-    } finally {
-      setLoading(false);
     }
+  }
+  return activeConfig || configs.find(c => c.id === productId);
+}
+
+function isProductActiveOnDate(product, dateStr) {
+  if (!product) return false;
+  const active = product.activo !== false;
+  const deactivationDate = product.fechaDesactivacion ? parseColombiaDate(product.fechaDesactivacion) : null;
+  const checkDate = parseColombiaDate(dateStr);
+  if (!active && deactivationDate && deactivationDate <= checkDate) return false;
+  return true;
+}
+
+function calcularStats(records, configs) {
+  const activeRecords = records.filter(r => !r.restDay);
+  let s = {
+    grossOrd: 0, grossUnits: 0, grossRev: 0,
+    realShipped: 0, estimatedReturns: 0, finalDeliveries: 0,
+    unitsRegistradas: 0,
+    unitsShippedReal: 0,
+    unitsReturnedReal: 0,
+    unitsDeliveredReal: 0,
+    totalFreightCost: 0, totalFulfillment: 0,
+    productCostTotal: 0, totalCommissions: 0, totalFixedCosts: 0, totalAds: 0,
+    realRev: 0,
+    net: 0,
+    aov: 0,
+    cpaEquilibrioPonderado: 0,
+    rankingVendedoras: [],
+    detalleProductos: []
   };
 
+  let totalCpaEquilibrioPonderado = 0;
+  let totalOrdenesParaCpaEq = 0;
+  const vendedorasStats = {};
+  const productosFechas = {};
+
+  activeRecords.forEach(r => {
+    const c = getConfigAtDate(configs, r.configId, r.date);
+    if (!c) return;
+
+    const recordMonth = r.date.substring(0, 7);
+    let effectiveness = parseFloat(c.effectiveness) || 95;
+    let returnRate = parseFloat(c.returnRate) || 20;
+    if (c.monthlyIER && Array.isArray(c.monthlyIER)) {
+      const monthlyAdjust = c.monthlyIER.find(adj => adj.month === recordMonth);
+      if (monthlyAdjust) {
+        effectiveness = parseFloat(monthlyAdjust.effectiveness) || effectiveness;
+        returnRate = parseFloat(monthlyAdjust.returnRate) || returnRate;
+      }
+    }
+    const eff = Math.min(Math.max(effectiveness, 0), 100) / 100;
+    const ret = Math.min(Math.max(returnRate, 0), 100) / 100;
+    const IER = eff * (1 - ret);
+
+    const orders = parseFloat(r.orders) || 0;
+    const units = parseFloat(r.units) || 0;
+    const revenue = parseFloat(r.revenue) || 0;
+
+    const wasActive = isProductActiveOnDate(c, r.date);
+
+    let ads = 0;
+    if (wasActive) {
+      ads = parseFloat(r.adSpend) > 0
+        ? parseFloat(r.adSpend)
+        : (c.fixedAdSpend ? parseFloat(c.dailyAdSpend) || 0 : 0);
+    }
+
+    const avgUnits = orders > 0 ? units / orders : 1;
+    const shipped = orders * eff;
+    const returns_ = shipped * ret;
+    const deliveries = shipped * (1 - ret);
+    const unitsRegistradas = units;
+    const unitsShipped = shipped * avgUnits;
+    const unitsReturned = returns_ * avgUnits;
+    const unitsDelivered = deliveries * avgUnits;
+
+    const extraUnitCharge = parseFloat(c.extraUnitCharge) || 0;
+    const extraUnits = Math.max(avgUnits - 1, 0);
+    const fleteBase = parseFloat(c.freight) || 0;
+    const fleteUnit = fleteBase + extraUnits * extraUnitCharge;
+    const freightTotal = shipped * fleteUnit;
+    const fulfillTotal = shipped * (parseFloat(c.fulfillment) || 0);
+    const mercanciaNeto = (parseFloat(c.productCost) || 0) * unitsDelivered;
+    const commissions = deliveries * (parseFloat(c.commission) || 0);
+    const fixedCosts = deliveries * (parseFloat(c.fixedCosts) || 0);
+    const realRevenue = revenue * IER;
+
+    s.grossOrd += orders;
+    s.grossUnits += units;
+    s.grossRev += revenue;
+    s.realShipped += shipped;
+    s.estimatedReturns += returns_;
+    s.finalDeliveries += deliveries;
+    s.unitsRegistradas += unitsRegistradas;
+    s.unitsShippedReal += unitsShipped;
+    s.unitsReturnedReal += unitsReturned;
+    s.unitsDeliveredReal += unitsDelivered;
+    s.totalFreightCost += freightTotal;
+    s.totalFulfillment += fulfillTotal;
+    s.productCostTotal += mercanciaNeto;
+    s.totalCommissions += commissions;
+    s.totalFixedCosts += fixedCosts;
+    s.totalAds += ads;
+    s.realRev += realRevenue;
+
+    const cpaEq = parseFloat(c.cpaEquilibrio) || 0;
+    totalCpaEquilibrioPonderado += cpaEq * orders;
+    totalOrdenesParaCpaEq += orders;
+
+    const vendor = c.vendedora;
+    if (!vendedorasStats[vendor]) {
+      vendedorasStats[vendor] = {
+        vendedora: vendor,
+        pedidos: 0,
+        recaudoNeto: 0,
+        utilidad: 0,
+        totalGrossOrd: 0,
+        totalIER: 0
+      };
+    }
+    vendedorasStats[vendor].pedidos += orders;
+    vendedorasStats[vendor].recaudoNeto += realRevenue;
+    vendedorasStats[vendor].utilidad += (realRevenue - mercanciaNeto - freightTotal - fulfillTotal - commissions - fixedCosts - ads);
+    vendedorasStats[vendor].totalGrossOrd += orders;
+    vendedorasStats[vendor].totalIER += IER * orders;
+
+    if (!productosFechas[r.configId]) {
+      productosFechas[r.configId] = {
+        configId: r.configId,
+        vendedora: c.vendedora,
+        productName: c.productName,
+        primerRegistro: r.date,
+        ultimoRegistro: r.date,
+        activo: c.activo !== false,
+        fechaCreacion: c.fechaCreacion,
+        fechaDesactivacion: c.fechaDesactivacion,
+        fixedAdSpend: c.fixedAdSpend === true
+      };
+    } else {
+      const p = productosFechas[r.configId];
+      if (r.date < p.primerRegistro) p.primerRegistro = r.date;
+      if (r.date > p.ultimoRegistro) p.ultimoRegistro = r.date;
+    }
+  });
+
+  s.net = s.realRev
+    - s.productCostTotal
+    - s.totalFreightCost
+    - s.totalFulfillment
+    - s.totalCommissions
+    - s.totalFixedCosts
+    - s.totalAds;
+
+  s.ierGlobal = s.grossOrd > 0 ? (s.finalDeliveries / s.grossOrd) * 100 : 0;
+  s.freteRealXEntrega = s.finalDeliveries > 0 ? s.totalFreightCost / s.finalDeliveries : 0;
+  if (s.finalDeliveries > 0) {
+    s.cpaReal = s.totalAds / s.finalDeliveries;
+  } else if (s.totalAds > 0 && s.finalDeliveries === 0) {
+    s.cpaReal = s.totalAds;
+  } else {
+    s.cpaReal = 0;
+  }
+  s.roas = s.totalAds > 0 ? s.realRev / s.totalAds : 0;
+  s.avgUnitsPerOrder = s.grossOrd > 0 ? s.grossUnits / s.grossOrd : 0;
+  s.avgUnitsPerDelivery = s.finalDeliveries > 0 ? s.unitsDeliveredReal / s.finalDeliveries : 0;
+  s.costMercXEntrega = s.finalDeliveries > 0 ? s.productCostTotal / s.finalDeliveries : 0;
+  s.pctProductosEntregados = s.unitsRegistradas > 0 ? (s.unitsDeliveredReal / s.unitsRegistradas) * 100 : 0;
+  s.recaudoEficiencia = s.grossRev > 0 ? (s.realRev / s.grossRev) * 100 : 0;
+  s.aov = s.grossOrd > 0 ? s.grossRev / s.grossOrd : 0;
+  s.cpaEquilibrioPonderado = totalOrdenesParaCpaEq > 0 ? totalCpaEquilibrioPonderado / totalOrdenesParaCpaEq : 0;
+
+  const rankingData = Object.values(vendedorasStats).map(v => ({
+    ...v,
+    ierPromedio: v.totalGrossOrd > 0 ? (v.totalIER / v.totalGrossOrd) * 100 : 0
+  }));
+  rankingData.sort((a, b) => b.utilidad - a.utilidad);
+  s.rankingVendedoras = rankingData;
+
+  s.detalleProductos = Object.values(productosFechas).sort((a, b) => a.vendedora.localeCompare(b.vendedora) || a.productName.localeCompare(b.productName));
+  s.totalOrders = s.grossOrd;
+  s.totalAdsValue = s.totalAds;
+
+  return s;
+}
+
+// ─── COMPONENTES UI ──────────────────────────────────────────────────────────
+const Card = ({ children, className = '', dark = false }) => (
+  <div className={`rounded-3xl border p-4 md:p-6 ${dark ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-slate-100 shadow-sm'} ${className}`}>
+    {children}
+  </div>
+);
+
+const Label = ({ children, className = '' }) => (
+  <p className={`text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5 ${className}`}>{children}</p>
+);
+
+const InputField = ({ label, type = 'text', value, onChange, placeholder, className = '', dark = false, disabled = false }) => (
+  <div className="space-y-1">
+    {label && <Label className={dark ? 'text-zinc-500' : ''}>{label}</Label>}
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={`w-full px-4 py-3 rounded-2xl font-semibold text-sm outline-none transition-all
+        ${dark
+          ? 'bg-zinc-800 border border-zinc-700 text-white placeholder:text-zinc-600 focus:border-emerald-500 disabled:opacity-50'
+          : 'bg-slate-50 border-2 border-transparent focus:border-emerald-400 text-slate-900 disabled:bg-slate-100 disabled:opacity-70'
+        } ${className}`}
+    />
+  </div>
+);
+
+const Stat = ({ label, value, sub, accent = false, big = false, dark = false, highlight = false }) => (
+  <div className={`p-3 md:p-4 rounded-2xl ${accent ? 'bg-emerald-500 text-white' : highlight ? 'bg-blue-50 border border-blue-100' : dark ? 'bg-zinc-800' : 'bg-slate-50'}`}>
+    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${accent ? 'text-emerald-100' : highlight ? 'text-blue-500' : dark ? 'text-zinc-500' : 'text-slate-400'}`}>{label}</p>
+    <p className={`font-black font-mono leading-none ${big ? 'text-xl md:text-2xl' : 'text-base md:text-lg'} ${accent ? 'text-white' : highlight ? 'text-blue-700' : dark ? 'text-white' : 'text-slate-900'}`}>{value}</p>
+    {sub && <p className={`text-[9px] mt-1 font-semibold ${accent ? 'text-emerald-100' : highlight ? 'text-blue-400' : dark ? 'text-zinc-500' : 'text-slate-400'}`}>{sub}</p>}
+  </div>
+);
+
+// ─── VISTA 1: CONFIGURACIÓN (ESTRATEGIAS) ────────────────────────────────────
+const EMPTY_CONFIG = {
+  vendedora: '', productName: '',
+  targetProfit: '', productCost: '', freight: '', fulfillment: '',
+  commission: '', returnRate: '20', effectiveness: '95',
+  fixedCosts: '', priceSingle: '', dailyAdSpend: '', fixedAdSpend: true,
+  extraUnitCharge: '',
+  cpaEquilibrio: '',
+  activo: true,
+  fechaCreacion: todayColombia(),
+  fechaDesactivacion: '',
+  monthlyIER: [],
+  permiteRegistrosResiduales: false
+};
+
+function VistaConfig({ configs, onSaved }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(EMPTY_CONFIG);
+  const [expandedV, setExpandedV] = useState({});
+
+  const grouped = useMemo(() => configs.reduce((a, c) => {
+    if (!a[c.vendedora]) a[c.vendedora] = [];
+    a[c.vendedora].push(c);
+    return a;
+  }, {}), [configs]);
+
+  const openNew = () => { setEditId(null); setForm({ ...EMPTY_CONFIG, fechaCreacion: todayColombia(), monthlyIER: [] }); setShowForm(true); };
+  const openNewForVendor = (vendedora) => {
+    setEditId(null);
+    setForm({ ...EMPTY_CONFIG, vendedora, fechaCreacion: todayColombia(), monthlyIER: [] });
+    setExpandedV(x => ({ ...x, [vendedora]: true }));
+    setShowForm(true);
+  };
+  const openEdit = (p) => { setEditId(p.id); setForm({ ...p }); setShowForm(true); };
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    if (!form.vendedora.trim() || !form.productName.trim()) return;
+    const data = { ...form };
+    if (!data.fechaCreacion) data.fechaCreacion = todayColombia();
+    if (data.activo === false && !data.fechaDesactivacion) data.fechaDesactivacion = todayColombia();
+    if (data.activo === true) data.fechaDesactivacion = '';
+    if (editId) await updateDoc(doc(db, 'sales_configs', editId), data);
+    else await addDoc(collection(db, 'sales_configs'), { ...data, createdAt: Date.now() });
+    setShowForm(false);
+    onSaved?.();
+  };
+
+  const remove = async (id) => {
+    if (window.confirm('¿Eliminar esta estrategia?')) await deleteDoc(doc(db, 'sales_configs', id));
+    onSaved?.();
+  };
+
+  const toggleV = (v) => setExpandedV(x => ({ ...x, [v]: !x[v] }));
+
+  const previewProfit = useMemo(() => {
+    const eff = parseFloat(form.effectiveness) / 100 || 0.95;
+    const ret = parseFloat(form.returnRate) / 100 || 0.20;
+    const IER = eff * (1 - ret);
+    const precio = parseFloat(form.priceSingle) || 0;
+    const costo = parseFloat(form.productCost) || 0;
+    const flete = parseFloat(form.freight) || 0;
+    const full = parseFloat(form.fulfillment) || 0;
+    const com = parseFloat(form.commission) || 0;
+    const fijos = parseFloat(form.fixedCosts) || 0;
+    const ads = parseFloat(form.dailyAdSpend) || 0;
+    const ingreso = precio * IER;
+    const costos = costo + (flete / (IER || 1)) + full + com + fijos + ads;
+    return ingreso - costos;
+  }, [form]);
+
+  const isPrefilledVendor = showForm && !editId && form.vendedora && configs.some(c => c.vendedora === form.vendedora);
+
   return (
-    <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-zinc-200/50 animate-in zoom-in-95 duration-300 text-center">
-        <div className="w-20 h-20 bg-zinc-900 rounded-[1.5rem] flex items-center justify-center text-white text-4xl shadow-xl italic font-black mx-auto mb-6">W</div>
-        <h1 className="text-3xl font-black tracking-tighter uppercase italic text-zinc-900 leading-none">Winner OS</h1>
-        <p className="text-zinc-400 text-[10px] font-bold mt-2 tracking-widest uppercase mb-10 text-center w-full">Cloud Management System</p>
-        <form onSubmit={handleLogin} className="space-y-6 text-left">
-          <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Correo Electrónico</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-base focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="admin@winneros.com"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1 leading-none">Contraseña</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-2xl p-4 text-base focus:outline-none focus:border-zinc-900 transition-all text-zinc-700 outline-none" placeholder="••••••••"/>
-          </div>
-          {error && <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl text-rose-600 text-[11px] font-bold uppercase text-center leading-tight">⚠️ {error}</div>}
-          <button type="submit" disabled={loading} className="w-full bg-zinc-900 hover:bg-black text-white font-black py-5 rounded-2xl text-xs shadow-2xl transition-all uppercase tracking-[0.2em] active:scale-[0.98] disabled:opacity-50">
-            {loading ? 'Validando...' : 'Entrar al Sistema'}
-          </button>
-        </form>
+    <div className="space-y-6 md:space-y-8 anim-fade">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-zinc-900">Estrategias</h2>
+          <p className="text-xs text-slate-400 font-semibold mt-1 uppercase tracking-widest">Módulo 1 · Vendedoras y Productos</p>
+        </div>
+        <button onClick={openNew} className="flex items-center gap-2 bg-zinc-950 text-white px-4 md:px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-zinc-800 active:scale-95 transition-all shadow-lg"><Plus size={16} /> Nueva Vendedora + Producto</button>
       </div>
+
+      {Object.keys(grouped).length === 0 ? (
+        <Card className="text-center py-16 text-slate-300"><Users size={48} className="mx-auto mb-4 opacity-30" /><p className="font-black uppercase text-sm">Sin estrategias aún</p><p className="text-xs mt-1">Crea la primera estrategia para comenzar</p></Card>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(grouped).map(([vendedora, productos]) => (
+            <Card key={vendedora} className="overflow-hidden p-0">
+              <div className="flex items-center justify-between gap-3 p-4 md:p-5 bg-white">
+                <div onClick={() => toggleV(vendedora)} className="flex-1 flex items-center gap-3 cursor-pointer select-none">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-2xl bg-emerald-500 flex items-center justify-center text-white font-black text-sm shrink-0">{vendedora[0]?.toUpperCase()}</div>
+                  <div><p className="font-black text-xs md:text-sm uppercase tracking-wide">{vendedora}</p><p className="text-[10px] text-slate-400 font-semibold">{productos.length} producto{productos.length > 1 ? 's' : ''}</p></div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); openNewForVendor(vendedora); }} className="flex items-center gap-1 bg-emerald-500 text-zinc-950 px-3 py-2 rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest hover:bg-emerald-400"><Plus size={12} /> Producto</button>
+                  <button type="button" onClick={() => toggleV(vendedora)} className="p-1 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors">{expandedV[vendedora] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+                </div>
+              </div>
+              {expandedV[vendedora] && (
+                <div className="border-t border-slate-100 divide-y divide-slate-100">
+                  {[...productos].sort((a, b) => {
+  const aActive = a.activo !== false;
+  const bActive = b.activo !== false;
+  if (aActive && !bActive) return -1;
+  if (!aActive && bActive) return 1;
+  return (a.productName || '').localeCompare(b.productName || '');
+}).map(p => {
+  const isActive = p.activo !== false;
+  return (
+    <div key={p.id} className={`p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-3 transition-all ${!isActive ? 'bg-slate-100 opacity-70' : ''}`}>
+      <div className="flex-1 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className={`font-black uppercase text-xs md:text-sm ${!isActive ? 'text-slate-500 line-through' : 'text-emerald-600'}`}>{p.productName}</p>
+          {!isActive && <span className="flex items-center gap-1 text-[9px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full"><PowerOff size={10} /> INACTIVO</span>}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-[8px] md:text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-1 rounded-lg uppercase">EFF {p.effectiveness}%</span>
+          <span className="text-[8px] md:text-[9px] font-black bg-rose-50 text-rose-500 px-2 py-1 rounded-lg uppercase">DEV {p.returnRate}%</span>
+          <span className="text-[8px] md:text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg uppercase">IER {(parseFloat(p.effectiveness) / 100 * (1 - parseFloat(p.returnRate) / 100) * 100).toFixed(1)}%</span>
+          <span className="text-[8px] md:text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-1 rounded-lg uppercase">Flete {fmt(p.freight)}</span>
+          {p.extraUnitCharge && parseFloat(p.extraUnitCharge) > 0 && <span className="text-[8px] md:text-[9px] font-black bg-yellow-50 text-yellow-600 px-2 py-1 rounded-lg uppercase">Extra x2+ {fmt(p.extraUnitCharge)}</span>}
+          <span className="text-[8px] md:text-[9px] font-black bg-amber-50 text-amber-600 px-2 py-1 rounded-lg uppercase">Meta {fmt(p.targetProfit)}</span>
+          {p.cpaEquilibrio && parseFloat(p.cpaEquilibrio) > 0 && <span className="text-[8px] md:text-[9px] font-black bg-purple-50 text-purple-600 px-2 py-1 rounded-lg uppercase">CPA Eq {fmt(p.cpaEquilibrio)}</span>}
+        </div>
+        <div className="grid grid-cols-3 gap-1 md:gap-2">
+          <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Costo Unit</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.productCost)}</p></div>
+          <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Comisión</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.commission)}</p></div>
+          <div className="text-center bg-slate-50 p-1 md:p-2 rounded-xl"><p className="text-[7px] md:text-[8px] text-slate-400 uppercase font-black">Fijos/Ent</p><p className="font-black text-[10px] md:text-xs text-slate-700">{fmt(p.fixedCosts)}</p></div>
+        </div>
+        <div className="text-[8px] text-slate-400 font-mono flex gap-2 flex-wrap">
+          {p.fechaCreacion && <span>📅 Creación: {parseColombiaDate(p.fechaCreacion).toLocaleDateString('es-CO')}</span>}
+          {p.fechaDesactivacion && <span className="text-red-400">🔴 Desactivado: {parseColombiaDate(p.fechaDesactivacion).toLocaleDateString('es-CO')}</span>}
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={() => openEdit(p)} className="p-2 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 text-slate-400 transition-colors"><Pencil size={14} /></button>
+        <button onClick={() => remove(p.id)} className="p-2 rounded-xl hover:bg-rose-50 hover:text-rose-500 text-slate-400 transition-colors"><Trash2 size={14} /></button>
+      </div>
+    </div>
+  );
+})}
+
+                  
+                  <div className="p-4 bg-slate-50/60"><button onClick={() => openNewForVendor(vendedora)} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-emerald-200 text-emerald-600 bg-white px-4 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50"><Plus size={14} /> Agregar nuevo producto a {vendedora}</button></div>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 bg-zinc-950/90 backdrop-blur-xl flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white w-full max-w-4xl rounded-2xl sm:rounded-3xl p-3 sm:p-6 md:p-8 max-h-[95vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base sm:text-xl md:text-2xl font-black italic uppercase">
+                  {editId ? 'Editar' : isPrefilledVendor ? `Nuevo Producto · ${form.vendedora}` : 'Nueva'} Estrategia
+                </h3>
+                <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
+                  {isPrefilledVendor ? `Agregando producto a vendedora existente` : 'Define parámetros de costo por producto'}
+                </p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="p-2 rounded-xl hover:bg-slate-100"><X size={20} /></button>
+            </div>
+
+            {isPrefilledVendor && (
+              <div className="mb-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-black text-xs shrink-0">{form.vendedora[0]?.toUpperCase()}</div>
+                <div>
+                  <p className="text-[10px] font-black text-emerald-700 uppercase">{form.vendedora}</p>
+                  <p className="text-[8px] text-emerald-500 font-semibold">Vendedora ya registrada · solo configura el nuevo producto</p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {!isPrefilledVendor && <InputField label="Nombre Vendedora" value={form.vendedora} onChange={e => setField('vendedora', e.target.value)} placeholder="Ej: CAMILA PEREIRA" />}
+              <InputField label="Nombre Producto" value={form.productName} onChange={e => setField('productName', e.target.value)} placeholder="Ej: CEPILLO PRO X2" />
+              <InputField label="Fecha de Creación" type="date" value={form.fechaCreacion} onChange={e => setField('fechaCreacion', e.target.value)} />
+
+              <div className="bg-zinc-950 text-white p-3 sm:p-4 rounded-xl flex flex-col gap-2 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {form.activo ? <Power size={16} className="text-emerald-400" /> : <PowerOff size={16} className="text-red-400" />}
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest">Estado del Producto</p>
+                      <p className="text-[7px] text-zinc-400">Si lo desactivas, podrás elegir la fecha</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setField('activo', !form.activo)} className="flex items-center gap-1 text-[8px] font-black uppercase">
+                    {form.activo ? <><ToggleRight size={24} className="text-emerald-400" /><span className="text-emerald-400">ACTIVO</span></> : <><ToggleLeft size={24} className="text-red-400" /><span className="text-red-400">INACTIVO</span></>}
+                  </button>
+                </div>
+                {!form.activo && (
+                  <>
+                    <InputField label="Fecha de Desactivación" type="date" value={form.fechaDesactivacion} onChange={e => setField('fechaDesactivacion', e.target.value)} />
+                    <div className="flex items-center justify-between bg-white/10 rounded-xl p-3">
+                      <div className="flex items-center gap-2">
+                        <Package size={14} className="text-yellow-400" />
+                        <div>
+                          <p className="text-[9px] font-black uppercase tracking-widest">Permitir registros residuales</p>
+                          <p className="text-[7px] text-zinc-400">Ventas que llegan después de la desactivación</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setField('permiteRegistrosResiduales', !form.permiteRegistrosResiduales)} className="flex items-center gap-1 text-[8px] font-black uppercase">
+                        {form.permiteRegistrosResiduales ? <><ToggleRight size={22} className="text-emerald-400" /><span className="text-emerald-400">SÍ</span></> : <><ToggleLeft size={22} className="text-zinc-500" /><span className="text-zinc-500">NO</span></>}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl space-y-1">
+                <Label className="text-emerald-700 text-[9px]">% Efectividad</Label>
+                <input type="number" value={form.effectiveness} onChange={e => setField('effectiveness', e.target.value)} className="w-full bg-transparent font-black text-2xl text-emerald-800 outline-none" />
+                <p className="text-[7px] text-emerald-600 font-semibold">Pedidos que salen</p>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-100 p-3 rounded-xl space-y-1">
+                <Label className="text-rose-600 text-[9px]">% Devolución</Label>
+                <input type="number" value={form.returnRate} onChange={e => setField('returnRate', e.target.value)} className="w-full bg-transparent font-black text-2xl text-rose-700 outline-none" />
+                <p className="text-[7px] text-rose-500 font-semibold">Del despachado, % que regresa</p>
+              </div>
+
+              <div className="bg-zinc-950 text-white p-3 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-2 sm:col-span-2">
+                <div>
+                  <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Índice de Efectividad Real (IER)</p>
+                  <p className="text-[8px] text-zinc-400">De cada 100 pedidos, ¿cuántos se pagan?</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-black font-mono text-emerald-400">{((parseFloat(form.effectiveness) || 95) / 100 * (1 - (parseFloat(form.returnRate) || 20) / 100) * 100).toFixed(1)}%</p>
+                </div>
+              </div>
+
+              <InputField label="Precio Venta (1 und)" type="number" value={form.priceSingle} onChange={e => setField('priceSingle', e.target.value)} placeholder="Ej: 79000" />
+              <InputField label="Costo Unitario Producto" type="number" value={form.productCost} onChange={e => setField('productCost', e.target.value)} placeholder="Ej: 18000" />
+              <InputField label="Flete Base por Guía" type="number" value={form.freight} onChange={e => setField('freight', e.target.value)} placeholder="Ej: 9500" />
+              <InputField label="Cargo extra x unidad adicional" type="number" value={form.extraUnitCharge} onChange={e => setField('extraUnitCharge', e.target.value)} placeholder="Ej: 5000" />
+              <InputField label="Fulfillment por guía" type="number" value={form.fulfillment} onChange={e => setField('fulfillment', e.target.value)} placeholder="Ej: 1500" />
+              <InputField label="Comisión por Entrega" type="number" value={form.commission} onChange={e => setField('commission', e.target.value)} placeholder="Ej: 3000" />
+              <InputField label="Costos Fijos x Entrega" type="number" value={form.fixedCosts} onChange={e => setField('fixedCosts', e.target.value)} placeholder="Ej: 2000" />
+              <InputField label="Meta Utilidad Mensual" type="number" value={form.targetProfit} onChange={e => setField('targetProfit', e.target.value)} placeholder="Ej: 4000000" />
+              <InputField label="CPA Equilibrio (por pedido)" type="number" value={form.cpaEquilibrio} onChange={e => setField('cpaEquilibrio', e.target.value)} placeholder="Ej: 15000" />
+
+              <div className="bg-zinc-950 text-white p-3 rounded-xl space-y-2 sm:col-span-2">
+                <div className="flex justify-between items-center">
+                  <Label className="text-zinc-500 text-[9px]">Inversión Ads Diaria</Label>
+                  <button onClick={() => setField('fixedAdSpend', !form.fixedAdSpend)} className="flex items-center gap-1 text-[8px] font-black uppercase">
+                    {form.fixedAdSpend ? <><ToggleRight size={20} className="text-emerald-400" /><span className="text-emerald-400">FIJA</span></> : <><ToggleLeft size={20} className="text-zinc-500" /><span className="text-zinc-500">MANUAL</span></>}
+                  </button>
+                </div>
+                <input type="number" value={form.dailyAdSpend} onChange={e => setField('dailyAdSpend', e.target.value)} placeholder="$ 0" className="w-full bg-transparent text-emerald-400 font-black text-xl outline-none placeholder:text-zinc-700" />
+                <p className="text-[7px] text-zinc-600 font-semibold">
+                  {form.fixedAdSpend ? '✓ FIJA: Se aplica automáticamente a cada registro diario' : '⚠ MANUAL: Debes ingresar el valor en cada cierre diario'}
+                </p>
+              </div>
+
+              {form.priceSingle && form.productCost && (
+                <div className={`p-3 rounded-xl border-2 ${previewProfit >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'} sm:col-span-2`}>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-1">Preview Utilidad Estimada por Pedido Registrado</p>
+                  <p className={`text-xl md:text-2xl font-black font-mono ${previewProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmt(previewProfit)}</p>
+                  <p className="text-[7px] text-slate-400 mt-1">Aplicando IER, fletes y todos los costos</p>
+                </div>
+              )}
+
+              <div className="sm:col-span-2 border-t border-slate-200 pt-3 mt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <Label className="text-slate-600 text-[9px] flex items-center gap-1">📅 Ajustes mensuales (Efectividad/Devolución)</Label>
+                  <button type="button" onClick={() => {
+                    const newMonth = prompt("Ingrese el mes (formato YYYY-MM, ej: 2025-04):");
+                    if (newMonth && /^\d{4}-\d{2}$/.test(newMonth)) {
+                      const current = form.monthlyIER || [];
+                      if (!current.find(a => a.month === newMonth)) {
+                        setForm(prev => ({ ...prev, monthlyIER: [...current, { month: newMonth, effectiveness: prev.effectiveness, returnRate: prev.returnRate }] }));
+                      } else alert("Ya existe un ajuste para ese mes");
+                    } else if (newMonth) alert("Formato inválido. Use YYYY-MM");
+                  }} className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full flex items-center justify-center gap-1">
+                    <Plus size={10} /> Agregar mes
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {(form.monthlyIER && form.monthlyIER.length > 0) ? (
+                    form.monthlyIER.map((adj, idx) => (
+                      <div key={idx} className="flex flex-wrap items-center gap-2 bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[9px] font-black bg-slate-200 px-2 py-1 rounded-lg w-16 text-center">{adj.month}</span>
+                        <input type="number" value={adj.effectiveness} onChange={(e) => { const newAdj = [...form.monthlyIER]; newAdj[idx].effectiveness = e.target.value; setForm(prev => ({ ...prev, monthlyIER: newAdj })); }} className="flex-1 min-w-[70px] px-2 py-1 rounded-lg text-xs bg-white border" placeholder="Eff %" />
+                        <input type="number" value={adj.returnRate} onChange={(e) => { const newAdj = [...form.monthlyIER]; newAdj[idx].returnRate = e.target.value; setForm(prev => ({ ...prev, monthlyIER: newAdj })); }} className="flex-1 min-w-[70px] px-2 py-1 rounded-lg text-xs bg-white border" placeholder="Ret %" />
+                        <button onClick={() => { const newAdj = form.monthlyIER.filter((_, i) => i !== idx); setForm(prev => ({ ...prev, monthlyIER: newAdj })); }} className="text-rose-500 hover:text-rose-700 p-1"><Trash2 size={12} /></button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[8px] text-slate-400 text-center py-2">Sin ajustes mensuales. Se usarán los valores base.</p>
+                  )}
+                </div>
+                <p className="text-[7px] text-slate-400 mt-2">💡 Los ajustes mensuales sobrescriben la efectividad y devolución para ese mes completo.</p>
+              </div>
+            </div>
+
+            <button onClick={save} disabled={!form.vendedora.trim() || !form.productName.trim()} className="w-full mt-5 bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-emerald-400 active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2"><Save size={16} /> {editId ? 'Actualizar Estrategia' : isPrefilledVendor ? `Agregar Producto a ${form.vendedora}` : 'Guardar Estrategia'}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ==================== COMPONENTE AGENDA ====================
+// ─── VISTA 2: REGISTRO DIARIO (CIERRES) ──────────────────────────────────────
+function VistaRegistro({ configs, months, activeTab }) {
+  const [selectedDate, setSelectedDate] = useState(todayColombia());
+  const [selectedVendor, setSelectedVendor] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [form, setForm] = useState({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+  const [editingRec, setEditingRec] = useState(null);
+  const [savedMsg, setSavedMsg] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [filterVendor, setFilterVendor] = useState('all');
+  const [mostrarInactivos, setMostrarInactivos] = useState(false);
+
+  const grouped = useMemo(() => configs.reduce((a, c) => {
+    if (!a[c.vendedora]) a[c.vendedora] = [];
+    a[c.vendedora].push(c);
+    return a;
+  }, {}), [configs]);
+  const vendors = useMemo(() => Object.keys(grouped).sort(), [grouped]);
+
+  const productsOfVendor = useMemo(() => {
+    if (!selectedVendor) return [];
+    const productos = grouped[selectedVendor] || [];
+    const fechaRegistro = selectedDate;
+    const activosEnFecha = [];
+    const residuales = [];
+    productos.forEach(p => {
+      if (p.fechaCreacion && p.fechaCreacion > fechaRegistro) return;
+      const estabaActivo = isProductActiveOnDate(p, fechaRegistro);
+      if (estabaActivo) activosEnFecha.push(p);
+      else if (p.permiteRegistrosResiduales === true) residuales.push({ ...p, esResidual: true });
+    });
+    if (mostrarInactivos) return [...activosEnFecha, ...residuales];
+    return activosEnFecha;
+  }, [selectedVendor, grouped, selectedDate, mostrarInactivos]);
+
+  const selectedConfig = useMemo(() => selectedProductId ? configs.find(c => c.id === selectedProductId) : null, [selectedProductId, configs]);
+  const extraUnitCharge = parseFloat(selectedConfig?.extraUnitCharge) || 0;
+
+  const monthId = selectedDate.substring(0, 7);
+  const monthDoc = months.find(m => m.id === monthId);
+  const dayRecords = useMemo(() => (monthDoc?.records || []).filter(r => r.date === selectedDate), [monthDoc, selectedDate]);
+
+  const summary = useMemo(() => {
+    let activeProducts = [];
+    const filterFn = (c) => {
+      const fechaCreacion = c.fechaCreacion ? parseColombiaDate(c.fechaCreacion) : null;
+      const fechaCierre = parseColombiaDate(selectedDate);
+      if (fechaCreacion && fechaCreacion > fechaCierre) return false;
+      if (c.activo === false && c.fechaDesactivacion && parseColombiaDate(c.fechaDesactivacion) <= fechaCierre) return false;
+      return true;
+    };
+    if (filterVendor === 'all') activeProducts = configs.filter(filterFn);
+    else activeProducts = configs.filter(c => c.vendedora === filterVendor && filterFn(c));
+    const registeredProductIds = new Set(dayRecords.map(r => r.configId));
+    const registeredActive = activeProducts.filter(p => registeredProductIds.has(p.id)).length;
+    const totalActive = activeProducts.length;
+    return { totalActive, registeredActive, missing: totalActive - registeredActive };
+  }, [dayRecords, configs, filterVendor, selectedDate]);
+
+  const recordsByVendor = useMemo(() => {
+    const map = new Map();
+    dayRecords.forEach(rec => {
+      const config = configs.find(c => c.id === rec.configId);
+      if (!config) return;
+      const vendor = config.vendedora;
+      if (!map.has(vendor)) map.set(vendor, []);
+      map.get(vendor).push({ ...rec, config });
+    });
+    return map;
+  }, [dayRecords, configs]);
+
+  const filteredDayRecords = useMemo(() => {
+    if (filterVendor === 'all') return dayRecords;
+    return recordsByVendor.get(filterVendor) || [];
+  }, [dayRecords, recordsByVendor, filterVendor]);
+
+  const { ultimoDia, diasFaltantes } = useMemo(() => {
+    let maxDate = null;
+    const fechasConRegistros = new Set();
+    months.forEach(month => {
+      month.records?.forEach(record => {
+        if (!record.restDay) {
+          fechasConRegistros.add(record.date);
+          if (record.date > (maxDate || '')) maxDate = record.date;
+        }
+      });
+    });
+    if (!maxDate) return { ultimoDia: null, diasFaltantes: [] };
+    const hoy = todayColombia();
+    const allDates = [];
+    let current = parseColombiaDate(maxDate);
+    const end = parseColombiaDate(hoy);
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      if (!fechasConRegistros.has(dateStr) && dateStr !== maxDate) allDates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+    return {
+      ultimoDia: maxDate,
+      diasFaltantes: allDates.map(d => ({ fecha: d, nombre: parseColombiaDate(d).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' }) }))
+    };
+  }, [months]);
+
+  const diferenciaDias = ultimoDia ? Math.floor((parseColombiaDate(todayColombia()) - parseColombiaDate(ultimoDia)) / (1000 * 60 * 60 * 24)) : null;
+
+  const setFormField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleVendorChange = (vendor) => {
+    setSelectedVendor(vendor);
+    setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+  const handleProductChange = (productId) => {
+    setSelectedProductId(productId);
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  const save = async () => {
+    setErrorMsg('');
+    if (!selectedVendor || !selectedProductId) { alert("Debes seleccionar una vendedora y un producto."); return; }
+    if (!editingRec) {
+      const exists = dayRecords.some(r => r.configId === selectedProductId);
+      if (exists) {
+        const config = configs.find(c => c.id === selectedProductId);
+        setErrorMsg(`❌ Ya existe un registro para ${config?.vendedora || selectedVendor} - ${config?.productName || 'Desconocido'} en esta fecha. Puedes editarlo o eliminarlo.`);
+        return;
+      }
+    }
+    let orders = form.orders, units = form.units, revenue = form.revenue, adSpend = form.adSpend;
+    if (selectedConfig?.fixedAdSpend) adSpend = selectedConfig.dailyAdSpend || "0";
+    if (form.restDay) {
+      orders = '0'; units = '0'; revenue = '0'; adSpend = '0';
+      setFormField('orders', '0'); setFormField('units', '0'); setFormField('revenue', '0');
+      if (!selectedConfig?.fixedAdSpend) setFormField('adSpend', '0');
+    } else {
+      if (!orders || !units || !revenue) {
+        alert("Completa todos los campos obligatorios (guías, unidades y recaudo) o activa 'Día de descanso'.");
+        return;
+      }
+    }
+    const rec = { configId: selectedProductId, orders, units, revenue, adSpend, date: selectedDate, id: editingRec?.id || Date.now().toString(), savedAt: Date.now(), restDay: form.restDay };
+    const ref = doc(db, 'sales_months', monthId);
+    const existing = months.find(m => m.id === monthId);
+    let records = existing?.records || [];
+    if (editingRec) {
+      records = records.map(r => r.id === editingRec.id ? rec : r);
+      await setDoc(ref, { records });
+      setEditingRec(null);
+    } else {
+      records = [...records, rec];
+      if (existing) await updateDoc(ref, { records });
+      else await setDoc(ref, { records });
+    }
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setSavedMsg(true);
+    setTimeout(() => setSavedMsg(false), 2500);
+  };
+
+  const startEdit = (r) => {
+    const config = configs.find(c => c.id === r.configId);
+    if (config) {
+      setSelectedVendor(config.vendedora);
+      setSelectedProductId(r.configId);
+      setForm({ orders: r.orders, units: r.units, revenue: r.revenue, adSpend: r.adSpend || '', restDay: r.restDay || false });
+      setEditingRec(r);
+      setErrorMsg('');
+    }
+  };
+
+  const deleteRec = async (id) => {
+    if (!window.confirm('¿Eliminar este registro?')) return;
+    const ref = doc(db, 'sales_months', monthId);
+    const existing = months.find(m => m.id === monthId);
+    const records = (existing?.records || []).filter(r => r.id !== id);
+    await setDoc(ref, { records });
+    if (editingRec?.id === id) cancelEdit();
+  };
+
+  const cancelEdit = () => {
+    setEditingRec(null);
+    setSelectedVendor(''); setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  const avgUnits = (!form.restDay && form.orders && form.units && parseFloat(form.orders) > 0) ? (parseFloat(form.units) / parseFloat(form.orders)).toFixed(2) : null;
+  const extraPerGuide = avgUnits && parseFloat(avgUnits) > 1 && extraUnitCharge > 0 ? (parseFloat(avgUnits) - 1) * extraUnitCharge : 0;
+
+  const moveDate = (days) => {
+    const date = parseColombiaDate(selectedDate);
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    setSelectedDate(`${year}-${month}-${day}`);
+    setEditingRec(null);
+    setSelectedVendor(''); setSelectedProductId('');
+    setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false });
+    setErrorMsg('');
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 anim-slide">
+      <div><h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter">Cierre Diario</h2><p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-1">Módulo 2 · Registro de Operación</p></div>
+
+      {ultimoDia && (
+        <div className={`rounded-2xl p-3 md:p-4 border-l-8 shadow-sm ${diferenciaDias > 1 ? 'bg-amber-50 border-amber-400 text-amber-800' : 'bg-blue-50 border-blue-400 text-blue-800'}`}>
+          <div className="flex flex-col md:flex-row justify-between items-start gap-3">
+            <div className="flex items-start gap-3"><CalendarDays size={18} className="mt-0.5 flex-shrink-0" /><div>
+              <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-70">Último día registrado</p>
+              <p className="font-black text-xs md:text-base">{parseColombiaDate(ultimoDia).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}</p>
+              <p className="text-[8px] md:text-[9px] font-semibold mt-1">{diferenciaDias === 0 && ' ✅ Hoy ya hay actividad.'}{diferenciaDias === 1 && ' ⚠️ Ayer fue el último día. Hoy aún no hay registros.'}{diferenciaDias > 1 && ` ❗ Han pasado ${diferenciaDias} días sin registrar.`}</p>
+            </div></div>
+            {diasFaltantes.length > 0 && <div className="bg-white/80 rounded-xl p-2 max-h-32 overflow-y-auto text-[10px] w-full md:w-auto"><p className="font-black uppercase text-[8px] flex items-center gap-1"><ListChecks size={10} /> Días sin registrar:</p><ul className="mt-1 space-y-0.5">{diasFaltantes.slice(0, 4).map(d => <li key={d.fecha} className="text-[9px]">📅 {d.nombre}</li>)}{diasFaltantes.length > 4 && <li className="text-[8px] text-amber-600">... y {diasFaltantes.length - 4} más</li>}</ul></div>}
+          </div>
+        </div>
+      )}
+
+      <Card className={`space-y-4 md:space-y-5 ${editingRec ? 'border-2 border-amber-400' : ''}`}>
+        {editingRec && <div className="flex items-center gap-2 text-amber-600 text-[10px] font-black uppercase bg-amber-50 px-3 py-2 rounded-xl"><Pencil size={12} /> Editando registro · <button onClick={cancelEdit} className="text-slate-500 underline ml-auto">Cancelar</button></div>}
+        {errorMsg && <div className="flex items-center gap-2 text-rose-600 text-[10px] font-black uppercase bg-rose-50 px-3 py-2 rounded-xl border border-rose-200"><AlertTriangle size={12} /> {errorMsg}</div>}
+
+        <div className="bg-zinc-950 px-4 py-3 rounded-2xl text-white space-y-3">
+          <div className="flex items-center gap-2"><Calendar size={16} className="text-emerald-400" /><div><p className="text-[8px] font-black text-zinc-500 uppercase">Fecha del Registro · Selección libre (Hora Colombia)</p><p className="text-[8px] text-zinc-600">Cualquier día pasado, presente o futuro</p></div></div>
+          <div className="space-y-2"><input type="date" value={selectedDate} onChange={(e) => { if (e.target.value) { setSelectedDate(e.target.value); setEditingRec(null); setSelectedVendor(''); setSelectedProductId(''); setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false }); setErrorMsg(''); } }} className="w-full bg-white text-zinc-950 font-black text-sm md:text-base rounded-xl px-3 py-2 cursor-pointer border-2 border-emerald-400" /><div className="grid grid-cols-3 gap-1"><button onClick={() => moveDate(-1)} className="bg-white/10 text-emerald-400 px-2 py-1.5 rounded-xl text-[9px] font-black">Día anterior</button><button onClick={() => { setSelectedDate(todayColombia()); setEditingRec(null); setSelectedVendor(''); setSelectedProductId(''); setForm({ orders: '', units: '', revenue: '', adSpend: '', restDay: false }); setErrorMsg(''); }} className="bg-emerald-500 text-zinc-950 px-2 py-1.5 rounded-xl text-[9px] font-black">Hoy</button><button onClick={() => moveDate(1)} className="bg-white/10 text-emerald-400 px-2 py-1.5 rounded-xl text-[9px] font-black">Día siguiente</button></div></div>
+          <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2"><p className="text-[9px] text-zinc-500 font-black uppercase">Registrando en: <span className="text-emerald-400">{parseColombiaDate(selectedDate).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}</span></p></div>
+        </div>
+
+        <div className={`rounded-xl p-3 flex items-center justify-between ${form.restDay ? 'bg-amber-100 border-2 border-amber-300' : 'bg-slate-100'}`}>
+          <div className="flex items-center gap-2"><Coffee size={16} className="text-amber-600" /><div><p className="text-[9px] font-black uppercase">Día de descanso / Sin campaña</p><p className="text-[8px] text-slate-500">Los campos se guardarán como 0.</p></div></div>
+          <button onClick={() => setFormField('restDay', !form.restDay)} className="flex items-center gap-1 text-[8px] font-black">{form.restDay ? (<><ToggleRight size={22} className="text-amber-500" /><span className="text-amber-600">DESCANSO</span></>) : (<><ToggleLeft size={22} className="text-slate-400" /><span className="text-slate-500">Activo</span></>)}</button>
+        </div>
+
+        <div className="space-y-1.5"><Label>Vendedora</Label><select value={selectedVendor} onChange={(e) => handleVendorChange(e.target.value)} disabled={!!editingRec} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 font-semibold text-sm outline-none focus:border-emerald-400 disabled:bg-slate-100"><option value="">Seleccionar vendedora...</option>{vendors.map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+        <div className="space-y-1.5"><Label>Producto</Label><select value={selectedProductId} onChange={(e) => handleProductChange(e.target.value)} disabled={!selectedVendor || !!editingRec} className="w-full px-3 py-2.5 rounded-xl bg-slate-50 font-semibold text-sm outline-none focus:border-emerald-400 disabled:bg-slate-100"><option value="">Seleccionar producto...</option>{productsOfVendor.map(p => <option key={p.id} value={p.id} className={p.esResidual ? 'text-red-500 line-through' : ''}>{p.productName} {p.esResidual && '(INACTIVO - residual)'}</option>)}</select>{editingRec && <p className="text-[8px] text-amber-600 mt-1">⚠ No puedes cambiar vendedora ni producto mientras editas.</p>}</div>
+
+        <div className="flex items-center gap-2 mt-2 mb-2"><input type="checkbox" id="mostrarInactivos" checked={mostrarInactivos} onChange={(e) => setMostrarInactivos(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500" /><label htmlFor="mostrarInactivos" className="text-[10px] font-black uppercase text-slate-500">📦 Mostrar productos inactivos (ventas residuales)</label></div>
+
+        {selectedConfig && !selectedConfig.fixedAdSpend && (<div className="bg-zinc-950 text-white px-4 py-3 rounded-xl space-y-1"><Label className="text-zinc-500 text-[9px]">Inversión Ads de Hoy (MANUAL)</Label><input type="number" value={form.adSpend} onChange={e => setFormField('adSpend', e.target.value)} placeholder="$ 0" disabled={form.restDay} className={`w-full bg-transparent font-black text-xl outline-none ${form.restDay ? 'text-zinc-500 line-through' : 'text-emerald-400'}`} />{form.restDay && <p className="text-[8px] text-amber-400">Se guardará como 0.</p>}</div>)}
+        {selectedConfig?.fixedAdSpend && (<div className="flex items-center gap-2 text-emerald-600 text-[8px] font-black bg-emerald-50 px-3 py-2 rounded-xl uppercase"><ToggleRight size={14} /> Ads fijo: {fmt(selectedConfig.dailyAdSpend)} · Se aplica automático</div>)}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-slate-50 p-3 rounded-xl space-y-1"><div className="flex items-center gap-2 text-slate-400"><Package size={12} /><Label className="!mb-0">Total Guías</Label></div><input type="number" value={form.orders} onChange={e => setFormField('orders', e.target.value)} placeholder="0" disabled={form.restDay} className={`w-full bg-transparent font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-slate-900'}`} />{form.restDay && <p className="text-[7px] text-amber-500">→ 0</p>}</div>
+          <div className="bg-slate-50 p-3 rounded-xl space-y-1"><div className="flex items-center gap-2 text-slate-400"><Layers size={12} /><Label className="!mb-0">Total Unidades</Label></div><input type="number" value={form.units} onChange={e => setFormField('units', e.target.value)} placeholder="0" disabled={form.restDay} className={`w-full bg-transparent font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-slate-900'}`} />{form.restDay && <p className="text-[7px] text-amber-500">→ 0</p>}</div>
+        </div>
+
+        {!form.restDay && avgUnits && (<div className="text-center space-y-0.5"><p className="text-[9px] text-slate-400 font-black uppercase">Promedio: <span className="text-emerald-600">{avgUnits} unid/guía</span></p>{extraUnitCharge > 0 && parseFloat(avgUnits) > 1 && (<p className="text-[8px] font-bold text-yellow-600">Extra: {fmt(extraUnitCharge)} × {fmtN(parseFloat(avgUnits) - 1)} = {fmt(extraPerGuide)}</p>)}</div>)}
+
+        <div className="space-y-1.5"><Label>Recaudo Bruto Total del Día</Label><input type="number" value={form.revenue} onChange={e => setFormField('revenue', e.target.value)} placeholder="$ 0" disabled={form.restDay} className={`w-full px-4 py-4 rounded-xl bg-slate-50 border-2 border-emerald-100 focus:border-emerald-400 font-black text-2xl outline-none ${form.restDay ? 'text-slate-400 line-through' : 'text-emerald-700'}`} />{form.restDay && <p className="text-[8px] text-amber-500 text-center">→ 0</p>}</div>
+
+        <button onClick={save} disabled={!selectedVendor || !selectedProductId} className="w-full bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-400 disabled:opacity-30 flex items-center justify-center gap-2"><Save size={14} /> {editingRec ? 'Actualizar' : 'Guardar'}</button>
+        {savedMsg && <div className="flex justify-center gap-2 text-emerald-600 text-[10px] font-black"><CheckCircle2 size={12} /> ¡Guardado!</div>}
+      </Card>
+
+      {summary.totalActive > 0 && (
+        <Card className={`p-3 text-center ${summary.missing === 0 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className="flex items-center justify-center gap-2"><CheckCircle2 size={16} className={summary.missing === 0 ? 'text-green-600' : 'text-amber-600'} /><span className="text-[11px] font-black uppercase tracking-wider">{summary.missing === 0 ? '✅ TODOS LOS PRODUCTOS ACTIVOS REGISTRADOS' : `⚠️ FALTAN ${summary.missing} PRODUCTO${summary.missing !== 1 ? 'S' : ''} POR REGISTRAR`}</span></div>
+          <p className="text-[10px] font-semibold mt-1">Registrados hoy: <strong>{summary.registeredActive}</strong> de <strong>{summary.totalActive}</strong> productos activos en esta fecha</p>
+        </Card>
+      )}
+
+      {dayRecords.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Registros del día</p><select value={filterVendor} onChange={(e) => setFilterVendor(e.target.value)} className="text-[10px] font-black uppercase bg-white border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-emerald-400"><option value="all">TODAS LAS VENDEDORAS</option>{Array.from(recordsByVendor.keys()).sort().map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+          {filteredDayRecords.length === 0 ? <Card className="text-center py-8 text-slate-400 text-[10px]">No hay registros para la vendedora seleccionada en esta fecha.</Card> : <div className="space-y-2">{filteredDayRecords.map(r => {
+            const c = configs.find(x => x.id === r.configId);
+            const eff = parseFloat(c?.effectiveness || 95) / 100;
+            const ret = parseFloat(c?.returnRate || 20) / 100;
+            const IER = eff * (1 - ret);
+            const orders = parseFloat(r.orders) || 0;
+            const units = parseFloat(r.units) || 0;
+            const avgU = orders > 0 ? units / orders : 1;
+            const deliveries = orders * IER;
+            const unitsDelivered = deliveries * avgU;
+            return (
+              <Card key={r.id} className={`flex flex-col sm:flex-row sm:items-center gap-2 ${r.restDay ? 'bg-slate-100' : ''}`}>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-1"><span className="font-black text-emerald-600 text-xs">{c?.vendedora}</span><span className="text-slate-300">·</span><span className="font-semibold text-xs">{c?.productName}</span>{r.restDay && <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1 rounded-full"><Moon size={8} /> DESCANSO</span>}</div>
+                  <div className="flex flex-wrap gap-1 mt-1"><span className="text-[8px] font-black bg-slate-100 px-1.5 py-0.5 rounded">{r.orders} guías</span><span className="text-[8px] font-black bg-slate-100 px-1.5 py-0.5 rounded">{r.units} unid</span><span className="text-[8px] font-black bg-emerald-50 px-1.5 py-0.5 rounded">{fmtN(deliveries)} entregas</span><span className="text-[8px] font-black bg-blue-50 px-1.5 py-0.5 rounded">{fmtN(unitsDelivered)} prod.</span><span className="text-[8px] font-black bg-zinc-100 px-1.5 py-0.5 rounded">{fmt(r.revenue)}</span></div>
+                </div>
+                <div className="flex gap-1 justify-end"><button onClick={() => startEdit(r)} className="p-1.5 rounded hover:bg-amber-50"><Pencil size={12} /></button><button onClick={() => deleteRec(r.id)} className="p-1.5 rounded hover:bg-rose-50"><Trash2 size={12} /></button></div>
+              </Card>
+            );
+          })}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VISTA 3: DASHBOARD (CORREGIDO) ─────────────────────────────────────────
+function VistaDashboard({ configs, months }) {
+  const [filter, setFilter] = useState({ startDate: todayColombia(), endDate: todayColombia() });
+  const [selectedVendors, setSelectedVendors] = useState([]);
+  const [selectedProductsByVendor, setSelectedProductsByVendor] = useState({});
+
+  useEffect(() => {
+    const savedStartDate = localStorage.getItem('dashboard_filters_startDate');
+    const savedEndDate = localStorage.getItem('dashboard_filters_endDate');
+    const savedVendors = localStorage.getItem('dashboard_selectedVendors');
+    const savedProducts = localStorage.getItem('dashboard_selectedProductsByVendor');
+    if (savedStartDate) setFilter(f => ({ ...f, startDate: savedStartDate }));
+    if (savedEndDate) setFilter(f => ({ ...f, endDate: savedEndDate }));
+    if (savedVendors) setSelectedVendors(JSON.parse(savedVendors));
+    if (savedProducts) setSelectedProductsByVendor(JSON.parse(savedProducts));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_filters_startDate', filter.startDate);
+    localStorage.setItem('dashboard_filters_endDate', filter.endDate);
+    localStorage.setItem('dashboard_selectedVendors', JSON.stringify(selectedVendors));
+    localStorage.setItem('dashboard_selectedProductsByVendor', JSON.stringify(selectedProductsByVendor));
+  }, [filter.startDate, filter.endDate, selectedVendors, selectedProductsByVendor]);
+
+  const getProductsWithRecordsInRange = useMemo(() => {
+    const productsMap = new Map();
+    const allRecords = months.flatMap(m => m.records || []);
+    const startDate = filter.startDate;
+    const endDate = filter.endDate;
+    allRecords.forEach(record => {
+      if (record.date < startDate || record.date > endDate) return;
+      const config = configs.find(c => c.id === record.configId);
+      if (!config) return;
+      const vendor = config.vendedora;
+      if (!productsMap.has(vendor)) productsMap.set(vendor, new Map());
+      if (!productsMap.get(vendor).has(config.id)) productsMap.get(vendor).set(config.id, config);
+    });
+    const result = new Map();
+    for (const [vendor, productMap] of productsMap.entries()) result.set(vendor, Array.from(productMap.values()));
+    return result;
+  }, [months, configs, filter.startDate, filter.endDate]);
+
+  const availableVendors = useMemo(() => Array.from(getProductsWithRecordsInRange.keys()).sort(), [getProductsWithRecordsInRange]);
+
+  const filteredRecords = useMemo(() => {
+    const all = months.flatMap(m => m.records || []);
+    return all.filter(r => {
+      const c = configs.find(x => x.id === r.configId);
+      if (!c) return false;
+      if (r.date < filter.startDate || r.date > filter.endDate) return false;
+      if (selectedVendors.length > 0 && !selectedVendors.includes(c.vendedora)) return false;
+      const vendorProducts = selectedProductsByVendor[c.vendedora];
+      if (vendorProducts && vendorProducts.length > 0 && !vendorProducts.includes(r.configId)) return false;
+      return true;
+    });
+  }, [months, configs, filter.startDate, filter.endDate, selectedVendors, selectedProductsByVendor]);
+
+  const { targetProfit, cantidadProductos } = useMemo(() => {
+    const productIds = new Set();
+    filteredRecords.forEach(r => productIds.add(r.configId));
+    let totalMetas = 0;
+    for (const pid of productIds) {
+      const producto = configs.find(c => c.id === pid);
+      if (producto) totalMetas += parseFloat(producto.targetProfit) || 0;
+    }
+    return { targetProfit: totalMetas, cantidadProductos: productIds.size };
+  }, [filteredRecords, configs]);
+
+  useEffect(() => {
+    const newSelected = {};
+    for (const vendor of selectedVendors) {
+      const availableProducts = getProductsWithRecordsInRange.get(vendor) || [];
+      const currentSelected = selectedProductsByVendor[vendor] || [];
+      const validSelected = currentSelected.filter(pid => availableProducts.some(p => p.id === pid));
+      if (validSelected.length > 0) newSelected[vendor] = validSelected;
+    }
+    setSelectedProductsByVendor(newSelected);
+  }, [filter.startDate, filter.endDate, getProductsWithRecordsInRange, selectedVendors]);
+
+  const setF = (k, v) => setFilter(f => ({ ...f, [k]: v }));
+
+  const [openSections, setOpenSections] = useState({
+    embudo: false, costos: false, ranking: false, proyeccion: false,
+    analisisProductos: false, comparativaVendedoras: false, productosRevision: true
+  });
+  const toggleSection = (section) => setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
+
+  const stats = useMemo(() => calcularStats(filteredRecords, configs), [filteredRecords, configs]);
+
+  // Días activos corregidos
+  const activeDays = useMemo(() => {
+    const activeRecords = filteredRecords.filter(r => {
+      if (r.restDay) return false;
+      const orders = parseFloat(r.orders) || 0;
+      if (orders > 0) return true;
+      const producto = configs.find(c => c.id === r.configId);
+      if (producto?.fixedAdSpend === true) return true;
+      const ads = parseFloat(r.adSpend) || 0;
+      return ads > 0;
+    });
+    const uniqueDates = new Set(activeRecords.map(r => r.date));
+    return uniqueDates.size;
+  }, [filteredRecords, configs]);
+
+  const avgDiario = activeDays > 0 ? stats.net / activeDays : 0;
+  const proyeccion30 = avgDiario * 30;
+
+  let semaforo = { color: 'bg-rose-500', texto: 'REVISIÓN', emoji: '🔴', textColor: 'text-rose-500' };
+  const umbralExcelente = cantidadProductos * 1_000_000;
+  if (proyeccion30 >= umbralExcelente) semaforo = { color: 'bg-emerald-500', texto: 'EXCELENTE', emoji: '🟢', textColor: 'text-emerald-500' };
+  else if (proyeccion30 >= targetProfit && targetProfit > 0) semaforo = { color: 'bg-blue-500', texto: 'BIEN', emoji: '🔵', textColor: 'text-blue-500' };
+
+  let cpaColor = '', cpaMensaje = '';
+  if (stats.cpaReal > stats.cpaEquilibrioPonderado) { cpaColor = 'bg-red-100 border-red-500 text-red-700'; cpaMensaje = '⚠️ CPA por encima del equilibrio → No rentable'; }
+  else if (stats.cpaReal <= stats.cpaEquilibrioPonderado * 0.75) { cpaColor = 'bg-green-100 border-green-500 text-green-700'; cpaMensaje = '🚀 CPA excelente (25%+ por debajo) → ESCALAR'; }
+  else { cpaColor = 'bg-yellow-100 border-yellow-500 text-yellow-700'; cpaMensaje = '✅ CPA por debajo del equilibrio → Rentable'; }
+
+  const costItems = [
+    { label: 'Costo de Mercancía', value: stats.productCostTotal, note: `${fmtN(stats.unitsDeliveredReal)} unid. entregadas`, icon: Package },
+    { label: 'Fletes Totales', value: stats.totalFreightCost, note: 'Incluye cargos extra', icon: Truck },
+    { label: 'Fulfillment', value: stats.totalFulfillment, note: 'Por guía despachada', icon: Boxes },
+    { label: 'Comisiones', value: stats.totalCommissions, note: 'Solo entregas exitosas', icon: DollarSign },
+    { label: 'Costos Fijos', value: stats.totalFixedCosts, note: 'Prorrateo por entrega', icon: Activity },
+    { label: 'Publicidad', value: stats.totalAds, note: 'Meta Ads', icon: Target }
+  ];
+  const totalCostos = costItems.reduce((s, i) => s + i.value, 0);
+
+  // PRODUCTOS EN REVISIÓN (con días activos corregidos)
+  const productosEnRevision = useMemo(() => {
+    if (filteredRecords.length === 0) return [];
+    const productosMap = new Map();
+    filteredRecords.forEach(record => {
+      const config = configs.find(c => c.id === record.configId);
+      if (!config) return;
+      if (!productosMap.has(record.configId)) {
+        productosMap.set(record.configId, {
+          configId: record.configId,
+          vendedora: config.vendedora,
+          productName: config.productName,
+          targetProfit: parseFloat(config.targetProfit) || 0,
+          isActive: config.activo !== false,
+          fixedAdSpend: config.fixedAdSpend === true,
+          records: []
+        });
+      }
+      productosMap.get(record.configId).records.push(record);
+    });
+    const resultados = [];
+    for (const [configId, producto] of productosMap) {
+      const { records, vendedora, productName, targetProfit, isActive, fixedAdSpend } = producto;
+      const statsProd = calcularStats(records, configs);
+      // Días activos del producto con la misma regla
+      const activeRecords = records.filter(r => {
+        if (r.restDay) return false;
+        const orders = parseFloat(r.orders) || 0;
+        if (orders > 0) return true;
+        if (fixedAdSpend) return true;
+        const ads = parseFloat(r.adSpend) || 0;
+        return ads > 0;
+      });
+      const activeDaysProd = new Set(activeRecords.map(r => r.date)).size;
+      const avgDiarioProd = activeDaysProd > 0 ? statsProd.net / activeDaysProd : 0;
+      const proyeccion30Prod = avgDiarioProd * 30;
+      let estado = { texto: 'REVISIÓN', emoji: '🔴', color: 'bg-rose-500', textColor: 'text-rose-500' };
+      if (proyeccion30Prod >= 1_000_000) estado = { texto: 'EXCELENTE', emoji: '🟢', color: 'bg-emerald-500', textColor: 'text-emerald-500' };
+      else if (proyeccion30Prod >= targetProfit && targetProfit > 0) estado = { texto: 'BIEN', emoji: '🔵', color: 'bg-blue-500', textColor: 'text-blue-500' };
+      if (estado.texto === 'REVISIÓN') {
+        resultados.push({
+          configId, vendedora, productName, targetProfit,
+          proyeccion30: proyeccion30Prod, avgDiario: avgDiarioProd,
+          utilidadPeriodo: statsProd.net, ier: statsProd.ierGlobal, roas: statsProd.roas,
+          cpaReal: statsProd.cpaReal,
+          cpaEquilibrio: parseFloat(configs.find(c => c.id === configId)?.cpaEquilibrio) || 0,
+          pedidos: statsProd.grossOrd, entregas: statsProd.finalDeliveries,
+          diasActivos: activeDaysProd, estado, isActive
+        });
+      }
+    }
+    const activos = resultados.filter(p => p.isActive).sort((a, b) => a.proyeccion30 - b.proyeccion30);
+    const inactivos = resultados.filter(p => !p.isActive).sort((a, b) => a.proyeccion30 - b.proyeccion30);
+    return [...activos, ...inactivos];
+  }, [filteredRecords, configs, targetProfit]);
+
+  const SectionHeader = ({ title, icon: Icon, section, totalItems = null }) => (
+    <button onClick={() => toggleSection(section)} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">
+      <div className="flex items-center gap-1.5 md:gap-2"><Icon size={14} className="text-emerald-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-700">{title}</span>{totalItems !== null && totalItems > 0 && <span className="text-[8px] md:text-[9px] font-black bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded-full">{totalItems}</span>}</div>
+      {openSections[section] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+    </button>
+  );
+
+  return (
+    <div className="space-y-6 md:space-y-8 anim-fade">
+      <div><h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter">Dashboard General</h2><p className="text-[10px] md:text-xs text-slate-400 font-black uppercase tracking-widest mt-1">Módulo 3 · Análisis de Rendimiento</p></div>
+
+      <Card className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1"><Label><Calendar size={10} className="inline mr-1" />Desde</Label><input type="date" value={filter.startDate} onChange={e => setF('startDate', e.target.value)} className="w-full px-3 py-2 bg-slate-50 rounded-xl font-bold text-sm outline-none" /></div>
+          <div className="space-y-1"><Label><Calendar size={10} className="inline mr-1" />Hasta</Label><input type="date" value={filter.endDate} onChange={e => setF('endDate', e.target.value)} className="w-full px-3 py-2 bg-slate-50 rounded-xl font-bold text-sm outline-none" /></div>
+        </div>
+        <div className="space-y-2"><Label>Vendedoras (múltiple)</Label><div className="flex flex-wrap gap-2">{availableVendors.map(v => (<button key={v} onClick={() => { if (selectedVendors.includes(v)) { setSelectedVendors(selectedVendors.filter(vv => vv !== v)); const ns = { ...selectedProductsByVendor }; delete ns[v]; setSelectedProductsByVendor(ns); } else { setSelectedVendors([...selectedVendors, v]); } }} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${selectedVendors.includes(v) ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'}`}>{v}</button>))}</div></div>
+        {selectedVendors.length > 0 && (<div className="space-y-3 border-t pt-3"><Label>Productos con registros en el período (inactivos se muestran tachados)</Label>{selectedVendors.map(vendor => { const productsForVendor = getProductsWithRecordsInRange.get(vendor) || []; return (<div key={vendor} className="bg-slate-50 p-3 rounded-xl"><p className="text-[9px] font-black uppercase mb-2">{vendor}</p><div className="flex flex-wrap gap-1"><button onClick={() => setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: productsForVendor.map(p => p.id) }))} className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">Todos</button><button onClick={() => { const ns = { ...selectedProductsByVendor }; delete ns[vendor]; setSelectedProductsByVendor(ns); }} className="text-[8px] font-black bg-red-100 text-red-700 px-2 py-1 rounded-full">Ninguno</button>{productsForVendor.map(product => { const isActiveNow = product.activo !== false; return (<button key={product.id} onClick={() => { const curr = selectedProductsByVendor[vendor] || []; if (curr.includes(product.id)) setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: curr.filter(id => id !== product.id) })); else setSelectedProductsByVendor(prev => ({ ...prev, [vendor]: [...curr, product.id] })); }} className={`text-[8px] font-black px-2 py-1 rounded-full flex items-center gap-1 transition-all ${(selectedProductsByVendor[vendor] || []).includes(product.id) ? 'bg-blue-500 text-white' : isActiveNow ? 'bg-white border border-slate-300 text-slate-600' : 'bg-gray-200 border border-gray-400 text-gray-500 line-through'}`}>{!isActiveNow && <PowerOff size={10} />}{product.productName}{!isActiveNow && <span className="text-[6px] font-black ml-1">(inactivo)</span>}</button>); })}</div><p className="text-[7px] text-slate-400 mt-2">* Productos inactivos visibles para revisar su historial en el rango seleccionado.</p></div>); })}</div>)}
+        <div className="col-span-2 flex flex-wrap items-center gap-1 bg-slate-50 px-3 py-2 rounded-xl"><Info size={12} className="text-slate-400 shrink-0" /><p className="text-[8px] md:text-[9px] font-black text-slate-400">Analizando <span className="text-emerald-600">{activeDays} día{activeDays !== 1 ? 's' : ''} activo{activeDays !== 1 ? 's' : ''}</span> (excluye descansos) · Proyección a 30 días = promedio diario × 30</p></div>
+        <div className="col-span-2 flex justify-end mt-2"><button onClick={() => { localStorage.removeItem('dashboard_filters_startDate'); localStorage.removeItem('dashboard_filters_endDate'); localStorage.removeItem('dashboard_selectedVendors'); localStorage.removeItem('dashboard_selectedProductsByVendor'); window.location.reload(); }} className="w-full sm:w-auto text-[10px] sm:text-[9px] font-black bg-red-100 text-red-600 px-3 py-2 sm:py-1.5 rounded-full hover:bg-red-200 transition-colors flex items-center justify-center gap-1"><span>🗑️</span> Resetear filtros guardados</button></div>
+      </Card>
+
+      {filteredRecords.length === 0 || activeDays === 0 ? <Card className="text-center py-12 text-slate-300"><BarChart3 size={32} className="mx-auto mb-3 opacity-30" /><p className="font-black uppercase text-sm">Sin datos activos en este rango</p></Card> : (<>
+        <div className={`rounded-xl p-3 md:p-5 border-2 ${cpaColor} shadow-md`}>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div><Label className="text-inherit opacity-70">CPA REAL PROMEDIO</Label><p className="text-xl md:text-3xl font-black font-mono">{fmt(stats.cpaReal)}</p><p className="text-[8px] md:text-[9px] font-semibold">Costo por adquisición real</p></div>
+            <div className="text-center"><Label className="text-inherit opacity-70">CPA EQUILIBRIO PONDERADO</Label>{stats.totalOrders === 0 && stats.totalAdsValue > 0 ? (<div className="flex flex-col items-center"><p className="text-lg md:text-2xl font-black font-mono text-amber-600">N/A</p><p className="text-[8px] md:text-[9px] font-semibold text-amber-600">⚠️ Sin pedidos en el período</p></div>) : (<><p className="text-lg md:text-2xl font-black font-mono">{fmt(stats.cpaEquilibrioPonderado)}</p><p className="text-[8px] md:text-[9px] font-semibold">Basado en cada producto</p></>)}</div>
+            <div className="text-right"><div className="inline-block px-2 py-1 rounded-lg bg-white/50 backdrop-blur-sm"><p className="text-[8px] md:text-[10px] font-black">{cpaMensaje}</p></div></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+          <Card className="border-l-4 border-l-slate-400"><Label>💰 Recaudo Bruto Total</Label><p className="text-xl md:text-3xl font-black">{fmt(stats.grossRev)}</p></Card>
+          <Card className="bg-amber-50 border-l-4 border-l-amber-400"><Label>⚠ Ajuste por IER</Label><p className="text-xl md:text-3xl font-black text-amber-600">- {fmt(stats.grossRev - stats.realRev)}</p></Card>
+          <Card className="bg-emerald-50 border-l-4 border-l-emerald-500"><Label>✅ Recaudo Neto Real</Label><p className="text-xl md:text-3xl font-black text-emerald-700">{fmt(stats.realRev)}</p></Card>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+          <Stat label="AOV" value={fmt(stats.aov)} sub={`${fmtN(stats.grossOrd)} pedidos`} highlight />
+          <Stat label="Flete x Entrega" value={fmt(stats.freteRealXEntrega)} sub={`${fmtN(stats.finalDeliveries)} entregas`} />
+          <Stat label="ROAS" value={`${fmtDec(stats.roas, 4)}x`} />
+          <Stat label="Utilidad Neta" value={fmt(stats.net)} sub={`${stats.net >= 0 ? '💰' : '⚠️'}`} />
+          <Stat label="Profit / Día" value={fmt(avgDiario)} sub={`${activeDays} días`} highlight />
+        </div>
+
+        {/* EMBUDO */}
+        <div className="space-y-2"><SectionHeader title="EMBUDO OPERATIVO Y PRODUCTOS" icon={Activity} section="embudo" />{openSections.embudo && (<Card><div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4"><div><Label>Pedidos Registrados</Label><p className="text-xl font-black">{fmtN(stats.grossOrd)}</p><p className="text-[8px]">{fmtN(stats.grossUnits)} unidades</p></div><div><Label>Guías Despachadas</Label><p className="text-xl font-black text-blue-600">{fmtN(stats.realShipped)}</p></div><div><Label>Devoluciones Est.</Label><p className="text-xl font-black text-rose-500">{fmtN(stats.estimatedReturns)}</p></div><div><Label>Entregas Finales</Label><p className="text-xl font-black text-emerald-600">{fmtN(stats.finalDeliveries)}</p><p className="text-[8px]">IER {fmtDec(stats.ierGlobal, 2)}%</p></div></div><div className="p-3 bg-slate-50 rounded-xl"><p className="text-[8px] font-black uppercase mb-2">📦 Unidades físicas</p><div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs"><div><span className="text-[8px] text-slate-500">Registradas:</span> <span className="font-black ml-1">{fmtN(stats.unitsRegistradas)}</span></div><div><span className="text-[8px] text-slate-500">Enviadas:</span> <span className="font-black ml-1 text-blue-600">{fmtN(stats.unitsShippedReal)}</span></div><div><span className="text-[8px] text-slate-500">Devueltas:</span> <span className="font-black ml-1 text-rose-500">{fmtN(stats.unitsReturnedReal)}</span></div><div><span className="text-[8px] text-slate-500">Entregadas:</span> <span className="font-black ml-1 text-emerald-600">{fmtN(stats.unitsDeliveredReal)}</span></div><div><span className="text-[8px] text-slate-500">% Entregado:</span> <span className="font-black ml-1">{fmtDec(stats.pctProductosEntregados, 1)}%</span></div></div></div></Card>)}</div>
+
+        {/* COSTOS */}
+        <div className="space-y-2"><SectionHeader title="RADIOGRAFÍA DE COSTOS" icon={Calculator} section="costos" />{openSections.costos && (<Card className="space-y-0 p-0 overflow-hidden">{costItems.map((item,i) => (<div key={i} className="flex items-center gap-2 md:gap-4 px-4 py-3 border-b border-slate-50 last:border-0"><div className="w-6 h-6 md:w-8 md:h-8 rounded-xl bg-slate-100 flex items-center justify-center"><item.icon size={12} /></div><div className="flex-1"><p className="text-[11px] md:text-xs font-black">{item.label}</p><p className="text-[7px] md:text-[9px] text-slate-400">{item.note}</p></div><p className="font-black font-mono text-xs md:text-sm">{fmt(item.value)}</p></div>))}<div className="flex items-center gap-2 md:gap-4 px-4 py-3 bg-slate-900 text-white"><div className="flex-1"><p className="text-[11px] md:text-xs font-black uppercase">Total Costos</p></div><p className="font-black font-mono text-sm md:text-lg text-rose-400">{fmt(totalCostos)}</p></div></Card>)}</div>
+
+        {/* RANKING */}
+        <div className="space-y-2"><SectionHeader title="RANKING DE VENDEDORAS" icon={Award} section="ranking" totalItems={stats.rankingVendedoras?.length} />{openSections.ranking && (<div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs md:text-sm"><thead className="bg-slate-100 text-[8px] md:text-[9px] font-black uppercase text-slate-500"><tr><th className="p-2 rounded-l-xl">#</th><th className="p-2">Vendedora</th><th className="p-2 text-right">Pedidos</th><th className="p-2 text-right">Recaudo Neto</th><th className="p-2 text-right">Utilidad</th><th className="p-2 text-right">IER</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.rankingVendedoras?.map((v,idx) => (<tr key={v.vendedora} className="hover:bg-slate-50"><td className="p-2 font-black text-emerald-600">{idx+1}</td><td className="p-2 font-bold uppercase">{v.vendedora}</td><td className="p-2 text-right font-mono">{fmtN(v.pedidos)}</td><td className="p-2 text-right font-mono">{fmt(v.recaudoNeto)}</td><td className={`p-2 text-right font-mono ${v.utilidad >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{fmt(v.utilidad)}</td><td className="p-2 text-right font-mono">{fmtDec(v.ierPromedio,2)}%</td></tr>))}</tbody></table></div>)}</div>
+
+        {/* PROYECCIÓN */}
+        <div className="space-y-2"><SectionHeader title="UTILIDAD Y PROYECCIÓN" icon={TrendingUp} section="proyeccion" />{openSections.proyeccion && (<div className="flex flex-col md:grid md:grid-cols-2 gap-4"><Card dark className="space-y-3"><Label className="text-zinc-500">Utilidad Neta Período</Label><p className={`text-2xl md:text-4xl font-black font-mono ${stats.net >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmt(stats.net)}</p><div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800 text-xs"><div><p className="text-[8px] text-zinc-500">Ingresos Reales</p><p className="font-black text-white">{fmt(stats.realRev)}</p></div><div><p className="text-[8px] text-zinc-500">Total Costos</p><p className="font-black text-rose-400">{fmt(totalCostos)}</p></div><div><p className="text-[8px] text-zinc-500">Margen Neto</p><p className="font-black text-emerald-400">{stats.realRev > 0 ? fmtDec((stats.net / stats.realRev) * 100) : '0.00'}%</p></div><div><p className="text-[8px] text-zinc-500">Profit / Día</p><p className="font-black text-white">{fmt(avgDiario)}</p></div></div></Card><div className={`rounded-2xl p-4 text-white shadow-xl ${semaforo.color === 'bg-emerald-500' ? 'bg-emerald-600' : semaforo.color === 'bg-blue-500' ? 'bg-blue-600' : 'bg-rose-600'}`}><div><p className="text-[8px] font-black opacity-60">Proyección 30 Días</p><p className="text-[8px] opacity-50 mt-0.5">({fmt(avgDiario)}/día × 30)</p></div><p className="text-2xl md:text-4xl font-black">{fmt(proyeccion30)}</p><div className="bg-white/20 px-3 py-2 rounded-xl mt-2"><p className="text-sm md:text-lg font-black">{semaforo.emoji} {semaforo.texto}</p>{targetProfit > 0 && <p className="text-[8px] opacity-70">Meta: {fmt(targetProfit)} · 1M excelente</p>}</div><div className="flex justify-between text-[8px] font-black opacity-60 mt-3"><span>Días activos: {activeDays}</span><span>IER: {fmtDec(stats.ierGlobal, 2)}%</span></div></div>{targetProfit > 0 && (<Card className="col-span-2"><div className="flex justify-between text-xs"><Label>Avance vs Meta</Label><span className={`text-xs font-black ${semaforo.textColor}`}>{fmtDec((proyeccion30 / targetProfit) * 100, 2)}%</span></div><div className="h-2 bg-slate-100 rounded-full overflow-hidden mt-1"><div className={`h-full rounded-full ${semaforo.color === 'bg-emerald-500' ? 'bg-emerald-500' : semaforo.color === 'bg-blue-500' ? 'bg-blue-500' : 'bg-rose-500'}`} style={{ width: `${Math.min((proyeccion30 / targetProfit) * 100, 100)}%` }} /></div></Card>)}</div>)}</div>
+
+        {/* PRODUCTOS EN REVISIÓN */}
+        <div className="space-y-2"><button onClick={() => toggleSection('productosRevision')} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border-l-4 border-red-500"><div className="flex items-center gap-1.5 md:gap-2"><AlertTriangle size={14} className="text-red-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-red-700">🚨 PRODUCTOS EN REVISIÓN ({productosEnRevision.length})</span></div>{openSections.productosRevision ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>{openSections.productosRevision && (<Card className="overflow-hidden p-0">{productosEnRevision.length === 0 ? <div className="p-6 text-center text-green-600 flex items-center justify-center gap-2"><CheckCircle2 size={20} /><span className="font-black text-sm">✅ No hay productos en revisión en este período</span></div> : (<div className="overflow-x-auto"><table className="w-full text-left border-collapse text-[10px] md:text-sm"><thead className="bg-red-50 text-[7px] md:text-[8px] font-black uppercase text-red-700"><tr><th className="p-2 md:p-3">Vendedora</th><th className="p-2 md:p-3">Producto</th><th className="p-2 md:p-3 text-right">Utilidad Período</th><th className="p-2 md:p-3 text-right">Proy. 30 días</th><th className="p-2 md:p-3 text-right">Meta Mensual</th><th className="p-2 md:p-3 text-right">% Meta</th><th className="p-2 md:p-3 text-right">IER</th><th className="p-2 md:p-3 text-right">ROAS</th><th className="p-2 md:p-3 text-right">CPA</th><th className="p-2 md:p-3">⚠️ Alertas</th></tr></thead><tbody className="divide-y divide-slate-100">{productosEnRevision.map(p => { const porcentajeMeta = p.targetProfit > 0 ? (p.proyeccion30 / p.targetProfit) * 100 : 0; const alertas = []; if (p.utilidadPeriodo < 0) alertas.push('💰 pérdida'); if (p.ier < 70) alertas.push(`📉 IER ${fmtDec(p.ier,1)}%`); if (p.roas < 1.5 && p.roas > 0) alertas.push(`📊 ROAS ${fmtDec(p.roas,2)}x`); if (p.cpaEquilibrio > 0 && p.cpaReal > p.cpaEquilibrio) alertas.push('🎯 CPA alto'); if (p.pedidos === 0) alertas.push('⚠️ sin pedidos'); if (!p.isActive) alertas.push('🔴 PRODUCTO DESACTIVADO'); return (<tr key={p.configId} className={`hover:bg-red-50/50 transition ${!p.isActive ? 'opacity-75 bg-gray-50' : ''}`}><td className="p-2 md:p-3 font-black text-red-700 uppercase text-[9px] md:text-xs">{p.vendedora}</td><td className={`p-2 md:p-3 font-semibold text-[9px] md:text-xs ${!p.isActive ? 'line-through text-gray-500' : ''}`}>{p.productName}{!p.isActive && <span className="ml-2 text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">⚠️ DESACTIVADO</span>}</td><td className={`p-2 md:p-3 text-right font-mono font-black ${p.utilidadPeriodo < 0 ? 'text-red-600' : 'text-amber-600'}`}>{fmt(p.utilidadPeriodo)}</td><td className="p-2 md:p-3 text-right font-mono font-black text-red-600">{fmt(p.proyeccion30)}</td><td className="p-2 md:p-3 text-right font-mono">{fmt(p.targetProfit)}</td><td className="p-2 md:p-3 text-right font-mono font-black"><span className={porcentajeMeta < 50 ? 'text-red-600' : 'text-amber-600'}>{fmtDec(porcentajeMeta, 1)}%</span></td><td className="p-2 md:p-3 text-right font-mono">{fmtDec(p.ier, 1)}%</td><td className="p-2 md:p-3 text-right font-mono">{fmtDec(p.roas, 2)}x</td><td className="p-2 md:p-3 text-right font-mono">{fmt(p.cpaReal)}</td><td className="p-2 md:p-3"><div className="flex flex-wrap gap-1">{alertas.map((a,i) => <span key={i} className={`text-[7px] md:text-[8px] font-black px-1.5 py-0.5 rounded-full ${a.includes('DESACTIVADO') ? 'bg-gray-300 text-gray-700' : 'bg-red-100 text-red-600'}`}>{a}</span>)}</div></td></tr>); })}</tbody></table>{productosEnRevision.some(p => !p.isActive) && (<div className="p-3 bg-gray-100 text-[8px] font-black text-gray-600 flex items-center gap-2 border-t"><Info size={12} /><span>📌 Los productos tachados están DESACTIVADOS. Su historial se muestra solo para referencia, pero ya no requieren acción.</span></div>)}</div>)}</Card>)}</div>
+
+        {/* ANÁLISIS TEMPORAL POR PRODUCTO */}
+        <div className="space-y-2"><SectionHeader title="ANÁLISIS TEMPORAL POR PRODUCTO" icon={CalendarDays} section="analisisProductos" totalItems={stats.detalleProductos.length} />{openSections.analisisProductos && (<div className="overflow-x-auto"><table className="w-full text-left border-collapse text-[10px] md:text-sm"><thead className="bg-slate-100 text-[7px] md:text-[8px] font-black uppercase text-slate-500"><tr><th className="p-2">Vendedora</th><th className="p-2">Producto</th><th className="p-2">Primer registro</th><th className="p-2">Último registro</th><th className="p-2">Fecha creación</th><th className="p-2">Fecha desactivación</th><th className="p-2">Días activos</th><th className="p-2">Estado</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.detalleProductos.map(p => { const diasActivos = Math.floor((parseColombiaDate(p.ultimoRegistro) - parseColombiaDate(p.primerRegistro)) / (1000*60*60*24)) + 1; const isActive = p.activo !== false; return (<tr key={p.configId} className="hover:bg-slate-50"><td className="p-2 font-bold uppercase text-[9px] md:text-xs">{p.vendedora}</td><td className={`p-2 font-semibold text-[9px] md:text-xs ${!isActive ? 'text-slate-400 line-through' : ''}`}>{p.productName}</td><td className="p-2 font-mono text-[8px] md:text-[10px]">{parseColombiaDate(p.primerRegistro).toLocaleDateString('es-CO')}</td><td className="p-2 font-mono text-[8px] md:text-[10px]">{parseColombiaDate(p.ultimoRegistro).toLocaleDateString('es-CO')}</td><td className="p-2 font-mono text-[8px] md:text-[10px]">{p.fechaCreacion ? parseColombiaDate(p.fechaCreacion).toLocaleDateString('es-CO') : '-'}</td><td className="p-2 font-mono text-[8px] md:text-[10px]">{p.fechaDesactivacion ? parseColombiaDate(p.fechaDesactivacion).toLocaleDateString('es-CO') : '-'}</td><td className="p-2 font-mono text-[8px] md:text-[10px]">{diasActivos} días</td><td className="p-2">{!isActive ? <span className="text-[8px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><PowerOff size={10} /> INACTIVO</span> : <span className="text-[8px] font-black bg-green-100 text-green-600 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Power size={10} /> ACTIVO</span>}</td></tr>); })}</tbody></table></div>)}</div>
+
+        {/* COMPARATIVA ENTRE VENDEDORAS */}
+        <div className="space-y-2"><button onClick={() => toggleSection('comparativaVendedoras')} className="w-full flex items-center justify-between py-2 px-3 md:py-3 md:px-4 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors"><div className="flex items-center gap-1.5 md:gap-2"><Users size={14} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-indigo-700">📊 COMPARATIVA ENTRE VENDEDORAS</span></div>{openSections.comparativaVendedoras ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>{openSections.comparativaVendedoras && (<Card className="overflow-x-auto"><table className="w-full text-left border-collapse text-[10px] md:text-sm"><thead className="bg-indigo-50 text-[7px] md:text-[8px] font-black uppercase text-indigo-700"><tr><th className="p-2 md:p-3">Vendedora</th><th className="p-2 md:p-3 text-right">Inversión Ads</th><th className="p-2 md:p-3 text-right">CPA Promedio</th><th className="p-2 md:p-3 text-right">Utilidad Período</th><th className="p-2 md:p-3 text-right">Proy. 30 días</th><th className="p-2 md:p-3 text-right">Facturación Real</th><th className="p-2 md:p-3 text-right">ROAS</th><th className="p-2 md:p-3 text-right">IER</th></tr></thead><tbody className="divide-y divide-slate-100">{selectedVendors.length === 0 ? (<tr><td colSpan="8" className="p-4 text-center text-slate-400">Selecciona al menos una vendedora en los filtros para ver la comparativa.</td></tr>) : selectedVendors.map(vendor => { const vendorRecords = filteredRecords.filter(r => { const c = configs.find(x => x.id === r.configId); return c && c.vendedora === vendor; }); const vendorStats = calcularStats(vendorRecords, configs); const activeDaysV = new Set(vendorRecords.filter(r => !r.restDay).map(r => r.date)).size; const proy30 = activeDaysV > 0 ? (vendorStats.net / activeDaysV) * 30 : 0; return (<tr key={vendor} className="hover:bg-indigo-50/50"><td className="p-2 md:p-3 font-black uppercase text-indigo-700">{vendor}</td><td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.totalAds)}</td><td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.cpaReal)}</td><td className={`p-2 md:p-3 text-right font-mono font-black ${vendorStats.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{fmt(vendorStats.net)}</td><td className="p-2 md:p-3 text-right font-mono font-black">{fmt(proy30)}</td><td className="p-2 md:p-3 text-right font-mono">{fmt(vendorStats.realRev)}</td><td className="p-2 md:p-3 text-right font-mono">{fmtDec(vendorStats.roas, 2)}x</td><td className="p-2 md:p-3 text-right font-mono">{fmtDec(vendorStats.ierGlobal, 1)}%</td></tr>); })}</tbody></table>{selectedVendors.length > 0 && (<div className="p-3 bg-indigo-50 text-[8px] font-black text-indigo-600 flex justify-between"><span>Período: {filter.startDate} al {filter.endDate}</span><span>Registros analizados: {filteredRecords.length}</span></div>)}</Card>)}</div>
+      </>)}
+    </div>
+  );
+}
+
+// ==================== AGENDA ====================
 const RESPONSIBLES = [
   { id: 'david', name: 'David', color: 'blue', bgLight: 'bg-blue-50', bgDark: 'bg-blue-600', borderColor: 'border-blue-200' },
   { id: 'julian', name: 'Julián', color: 'purple', bgLight: 'bg-purple-50', bgDark: 'bg-purple-600', borderColor: 'border-purple-200' },
@@ -283,6 +1165,7 @@ const AGENDA_TABS = [
 ];
 
 function AgendaModule() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
   const [showForm, setShowForm] = useState(false);
@@ -293,67 +1176,48 @@ function AgendaModule() {
   const [expandedComments, setExpandedComments] = useState({});
   const [newComment, setNewComment] = useState({});
   const [sortBy, setSortBy] = useState('dueDate');
-  const [approvalModal, setApprovalModal] = useState({ show: false, taskId: null, justification: '' });
+  const [approvalModal, setApprovalModal] = useState({ show: false, taskId: null, justification: '', dueDate: null });
   const [formData, setFormData] = useState({
     title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: ''
   });
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks');
-    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
+    if (!user) return;
+    const unsubscribe = onSnapshot(collection(db, 'agenda_tasks'), (snapshot) => {
       const loaded = snapshot.docs.map(doc => {
         const data = doc.data();
         let createdAtFormatted = '';
-        if (data.createdAt?.toDate) {
-          const d = data.createdAt.toDate();
-          createdAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-        }
+        if (data.createdAt?.toDate) { const d = data.createdAt.toDate(); createdAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; }
         let dueDateStr = data.dueDate?.toDate ? data.dueDate.toDate().toISOString().split('T')[0] : '';
         let approvedAtFormatted = '';
-        if (data.approvedAt?.toDate) {
-          const d = data.approvedAt.toDate();
-          approvedAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-        }
+        if (data.approvedAt?.toDate) { const d = data.approvedAt.toDate(); approvedAtFormatted = `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; }
         return { id: doc.id, ...data, createdAtFormatted, dueDate: dueDateStr, approvedAtFormatted, comments: data.comments || [] };
       });
       setTasks(loaded);
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleFormChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
   const saveTask = async () => {
     if (!formData.title.trim()) { alert("El título es obligatorio"); return; }
-    const payload = {
-      title: formData.title.trim(), description: formData.description.trim(), responsible: formData.responsible,
-      priority: formData.priority, status: formData.status, dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : null,
-      updatedAt: serverTimestamp(), createdBy: auth.currentUser?.uid
-    };
+    const payload = { title: formData.title.trim(), description: formData.description.trim(), responsible: formData.responsible, priority: formData.priority, status: formData.status, dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : null, updatedAt: serverTimestamp(), createdBy: user?.uid };
     try {
-      if (editingTask) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', editingTask.id), payload);
-      } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks'), { ...payload, createdAt: serverTimestamp(), comments: [] });
-      }
+      if (editingTask) await updateDoc(doc(db, 'agenda_tasks', editingTask.id), payload);
+      else await addDoc(collection(db, 'agenda_tasks'), { ...payload, createdAt: serverTimestamp(), comments: [] });
       resetForm();
     } catch (err) { console.error(err); alert("Error al guardar la tarea"); }
   };
-  const deleteTask = async (id) => {
-    if (window.confirm("¿Eliminar esta tarea definitivamente?")) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', id));
-    }
-  };
+
+  const deleteTask = async (id) => { if (window.confirm("¿Eliminar esta tarea?")) await deleteDoc(doc(db, 'agenda_tasks', id)); };
   const handleStatusChange = async (taskId, newStatus, taskDueDate) => {
-    if (newStatus === 'approved') {
-      setApprovalModal({ show: true, taskId, justification: '', dueDate: taskDueDate });
-    } else {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
-    }
+    if (newStatus === 'approved') setApprovalModal({ show: true, taskId, justification: '', dueDate: taskDueDate });
+    else await updateDoc(doc(db, 'agenda_tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
   };
   const confirmApproval = async () => {
     const { taskId, justification, dueDate } = approvalModal;
-    if (!justification.trim()) { alert("Debes escribir una justificación para aprobar la tarea"); return; }
+    if (!justification.trim()) { alert("Debes escribir una justificación"); return; }
     const now = new Date();
     const approvedAt = Timestamp.fromDate(now);
     const approvedAtFormatted = now.toLocaleString('es-CO');
@@ -365,1199 +1229,5271 @@ function AgendaModule() {
       else delayInfo = { status: 'justo', message: '🎯 Completado justo a tiempo' };
     } else delayInfo = { status: 'sin_fecha', message: '📅 Sin fecha límite definida' };
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), {
-        status: 'approved', approvedAt, approvedAtFormatted, approvalJustification: justification.trim(), approvalDelayInfo: delayInfo, updatedAt: serverTimestamp()
-      });
-      setApprovalModal({ show: false, taskId: null, justification: '' });
+      await updateDoc(doc(db, 'agenda_tasks', taskId), { status: 'approved', approvedAt, approvedAtFormatted, approvalJustification: justification.trim(), approvalDelayInfo: delayInfo, updatedAt: serverTimestamp() });
+      setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null });
     } catch (err) { console.error(err); alert("Error al guardar la aprobación"); }
   };
+
   const addComment = async (taskId) => {
     const commentText = newComment[taskId]?.trim();
     if (!commentText) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const responsibleName = RESPONSIBLES.find(r => r.id === task.responsible)?.name || 'Usuario';
-    const comment = {
-      id: Date.now().toString(), text: commentText, author: responsibleName, authorId: task.responsible,
-      createdAt: new Date().toLocaleString('es-CO')
-    };
-    const updatedComments = [...(task.comments || []), comment];
+    const comment = { id: Date.now().toString(), text: commentText, author: responsibleName, authorId: task.responsible, createdAt: new Date().toLocaleString('es-CO') };
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'agenda_tasks', taskId), { comments: updatedComments, updatedAt: serverTimestamp() });
+      await updateDoc(doc(db, 'agenda_tasks', taskId), { comments: [...(task.comments || []), comment], updatedAt: serverTimestamp() });
       setNewComment(prev => ({ ...prev, [taskId]: '' }));
     } catch (err) { console.error(err); alert("Error al guardar el comentario"); }
   };
-  const resetForm = () => {
-    setFormData({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' });
-    setEditingTask(null); setShowForm(false);
-  };
-  const editTask = (task) => {
-    setFormData({ title: task.title, description: task.description || '', responsible: task.responsible, priority: task.priority || 'media', status: task.status, dueDate: task.dueDate || '' });
-    setEditingTask(task); setShowForm(true);
-  };
+
+  const resetForm = () => { setFormData({ title: '', description: '', responsible: 'david', priority: 'media', status: 'pending', dueDate: '' }); setEditingTask(null); setShowForm(false); };
+  const editTask = (task) => { setFormData({ title: task.title, description: task.description || '', responsible: task.responsible, priority: task.priority || 'media', status: task.status, dueDate: task.dueDate || '' }); setEditingTask(task); setShowForm(true); };
   const toggleComments = (taskId) => setExpandedComments(prev => ({ ...prev, [taskId]: !prev[taskId] }));
 
-  const filteredTasks = tasks
-    .filter(t => t.status === activeTab)
-    .filter(t => filterResponsible === 'all' || t.responsible === filterResponsible)
-    .filter(t => t.title?.toLowerCase().includes(searchTerm.toLowerCase()) || t.description?.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => {
-      if (sortBy === 'dueDate') {
-        if (!a.dueDate) return 1; if (!b.dueDate) return -1;
-        return new Date(a.dueDate) - new Date(b.dueDate);
-      }
-      if (sortBy === 'priority') {
-        const order = { alta: 0, media: 1, baja: 2 };
-        return (order[a.priority] || 1) - (order[b.priority] || 1);
-      }
-      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-    });
+  const filteredTasks = tasks.filter(t => t.status === activeTab).filter(t => filterResponsible === 'all' || t.responsible === filterResponsible).filter(t => t.title?.toLowerCase().includes(searchTerm.toLowerCase()) || t.description?.toLowerCase().includes(searchTerm.toLowerCase())).sort((a,b) => {
+    if (sortBy === 'dueDate') { if (!a.dueDate) return 1; if (!b.dueDate) return -1; return new Date(a.dueDate) - new Date(b.dueDate); }
+    if (sortBy === 'priority') { const order = { alta:0, media:1, baja:2 }; return (order[a.priority]||1) - (order[b.priority]||1); }
+    return (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0);
+  });
 
   const getTaskCount = (status) => tasks.filter(t => t.status === status).length;
-  const getComplianceByResponsible = () => {
-    return RESPONSIBLES.map(resp => {
-      const userTasks = tasks.filter(t => t.responsible === resp.id);
-      const total = userTasks.length;
-      const approved = userTasks.filter(t => t.status === 'approved').length;
-      const rejected = userTasks.filter(t => t.status === 'rejected').length;
-      const pending = total - approved - rejected;
-      const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
-      let barColor = 'bg-emerald-500';
-      if (percent < 30) barColor = 'bg-rose-500';
-      else if (percent < 70) barColor = 'bg-amber-500';
-      return { ...resp, total, approved, rejected, pending, percent, barColor };
-    });
-  };
+  const getComplianceByResponsible = () => RESPONSIBLES.map(resp => {
+    const userTasks = tasks.filter(t => t.responsible === resp.id);
+    const total = userTasks.length; const approved = userTasks.filter(t => t.status === 'approved').length;
+    const rejected = userTasks.filter(t => t.status === 'rejected').length; const pending = total - approved - rejected;
+    const percent = total === 0 ? 0 : Math.round((approved / total) * 100);
+    let barColor = 'bg-emerald-500'; if (percent < 30) barColor = 'bg-rose-500'; else if (percent < 70) barColor = 'bg-amber-500';
+    return { ...resp, total, approved, rejected, pending, percent, barColor };
+  });
+
   const complianceData = getComplianceByResponsible();
-  const overallTotal = tasks.length;
-  const overallApproved = tasks.filter(t => t.status === 'approved').length;
+  const overallTotal = tasks.length; const overallApproved = tasks.filter(t => t.status === 'approved').length;
   const overallPercent = overallTotal === 0 ? 0 : Math.round((overallApproved / overallTotal) * 100);
   const pendingByResponsible = RESPONSIBLES.map(resp => ({ ...resp, total: tasks.filter(t => t.status === 'pending' && t.responsible === resp.id).length }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {approvalModal.show && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })}>
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-xl font-black text-green-600 mb-4">✅ Aprobar Tarea</h3>
-            <textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas..." className="w-full border rounded-xl p-3 text-sm mb-4" autoFocus />
-            <div className="flex gap-3">
-              <button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '' })} className="flex-1 border rounded-xl py-2">Cancelar</button>
-              <button onClick={confirmApproval} className="flex-1 bg-green-600 text-white rounded-xl py-2">Confirmar</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {selectedTask && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}>
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h3 className="font-black">{selectedTask.title}</h3><button onClick={() => setSelectedTask(null)} className="text-2xl">&times;</button></div>
-            <div className="p-4 space-y-3">
-              <div className="bg-zinc-50 p-3 rounded-xl"><p className="text-xs font-black">📝 Descripción</p><p>{selectedTask.description || 'Sin descripción'}</p></div>
-              {selectedTask.status === 'approved' && selectedTask.approvalJustification && (
-                <div className="bg-green-50 p-3 rounded-xl border border-green-200">
-                  <p className="text-xs font-black text-green-700">✅ Aprobada el: {selectedTask.approvedAtFormatted}</p>
-                  <p className="text-xs font-bold">{selectedTask.approvalDelayInfo?.message}</p>
-                  <p className="text-xs mt-1">Justificación: {selectedTask.approvalJustification}</p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="font-black">Responsable:</span> {RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name}</div>
-                <div><span className="font-black">Prioridad:</span> {PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</div>
-                <div><span className="font-black">Estado:</span> {TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</div>
-                <div><span className="font-black">Fecha límite:</span> {selectedTask.dueDate || '-'}</div>
-              </div>
-              <div className="bg-zinc-50 p-3 rounded-xl">
-                <p className="text-xs font-black">💬 Comentarios ({selectedTask.comments?.length || 0})</p>
-                <div className="max-h-32 overflow-y-auto space-y-1 my-2">{selectedTask.comments?.map(c => <div key={c.id} className="text-xs border-b pb-1"><b>{c.author}</b> ({c.createdAt}): {c.text}</div>)}</div>
-                <div className="flex gap-2"><input value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 border rounded-xl px-3 py-1 text-sm" /><button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div>
-              </div>
-              <div className="flex gap-2"><button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 py-2 rounded-xl">✏️ Editar</button><button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 py-2 rounded-xl">🗑️ Eliminar</button></div>
-            </div>
-          </div>
-        </div>
-      )}
+      {approvalModal.show && (<div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null })}><div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}><h3 className="text-xl font-black text-green-600 mb-4">✅ Aprobar Tarea</h3><textarea value={approvalModal.justification} onChange={(e) => setApprovalModal(prev => ({ ...prev, justification: e.target.value }))} rows={4} placeholder="Describe las acciones realizadas..." className="w-full border rounded-xl p-3 text-sm mb-4" autoFocus /><div className="flex gap-3"><button onClick={() => setApprovalModal({ show: false, taskId: null, justification: '', dueDate: null })} className="flex-1 border rounded-xl py-2">Cancelar</button><button onClick={confirmApproval} className="flex-1 bg-green-600 text-white rounded-xl py-2">Confirmar</button></div></div></div>)}
+
+      {selectedTask && (<div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-40 p-4" onClick={() => setSelectedTask(null)}><div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}><div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h3 className="font-black">{selectedTask.title}</h3><button onClick={() => setSelectedTask(null)} className="text-2xl">&times;</button></div><div className="p-4 space-y-3"><div className="bg-zinc-50 p-3 rounded-xl"><p className="text-xs font-black">📝 Descripción</p><p>{selectedTask.description || 'Sin descripción'}</p></div>{selectedTask.status === 'approved' && selectedTask.approvalJustification && (<div className="bg-green-50 p-3 rounded-xl border border-green-200"><p className="text-xs font-black text-green-700">✅ Aprobada el: {selectedTask.approvedAtFormatted}</p><p className="text-xs font-bold">{selectedTask.approvalDelayInfo?.message}</p><p className="text-xs mt-1">Justificación: {selectedTask.approvalJustification}</p></div>)}<div className="grid grid-cols-2 gap-2 text-sm"><div><span className="font-black">Responsable:</span> {RESPONSIBLES.find(r => r.id === selectedTask.responsible)?.name}</div><div><span className="font-black">Prioridad:</span> {PRIORITIES[selectedTask.priority]?.emoji} {PRIORITIES[selectedTask.priority]?.label}</div><div><span className="font-black">Estado:</span> {TASK_STATUS[selectedTask.status]?.emoji} {TASK_STATUS[selectedTask.status]?.label}</div><div><span className="font-black">Fecha límite:</span> {selectedTask.dueDate || '-'}</div></div><div className="bg-zinc-50 p-3 rounded-xl"><p className="text-xs font-black">💬 Comentarios ({selectedTask.comments?.length || 0})</p><div className="max-h-32 overflow-y-auto space-y-1 my-2">{selectedTask.comments?.map(c => <div key={c.id} className="text-xs border-b pb-1"><b>{c.author}</b> ({c.createdAt}): {c.text}</div>)}</div><div className="flex gap-2 mt-2"><input value={newComment[selectedTask.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [selectedTask.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 border rounded-xl px-3 py-1 text-sm" /><button onClick={() => addComment(selectedTask.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div></div><div className="flex gap-2"><button onClick={() => { setSelectedTask(null); editTask(selectedTask); }} className="flex-1 bg-indigo-50 py-2 rounded-xl">✏️ Editar</button><button onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }} className="flex-1 bg-rose-50 py-2 rounded-xl">🗑️ Eliminar</button></div></div></div></div>)}
+
       <div className="bg-white rounded-2xl p-4 shadow-sm border"><div className="flex justify-between items-center mb-3"><h3 className="font-black">📊 Cumplimiento por Responsable</h3><span className="text-xs">Total: {overallApproved}/{overallTotal} ({overallPercent}%)</span></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{complianceData.map(resp => (<div key={resp.id} className={`${resp.bgLight} rounded-xl p-3`}><div className="flex justify-between"><div><div className="flex gap-1"><div className={`w-3 h-3 rounded-full ${resp.barColor}`}></div><span className="font-black">{resp.name}</span></div><span className="text-2xl font-black">{resp.percent}%</span></div><div className="text-right"><span className="text-xs text-zinc-500">Tareas</span><div className="font-bold">{resp.approved}/{resp.total}</div></div></div><div className="h-2 bg-white rounded-full my-2"><div className={`h-full rounded-full ${resp.barColor}`} style={{ width: `${resp.percent}%` }}></div></div><div className="flex justify-between text-[10px] font-bold"><span>✅ {resp.approved}</span><span>⏳ {resp.pending}</span><span>❌ {resp.rejected}</span></div></div>))}</div></div>
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{pendingByResponsible.map(resp => (<div key={resp.id} className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-[10px] font-black uppercase">Pendientes {resp.name}</p><p className="text-3xl font-black" style={{ color: resp.color === 'blue' ? '#2563eb' : (resp.color === 'purple' ? '#9333ea' : '#16a34a') }}>{resp.total}</p></div>))}</div>
+
       <div className="bg-white rounded-xl p-1 shadow-sm border"><div className="flex flex-wrap gap-1 justify-center">{AGENDA_TABS.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-4 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-1 ${activeTab === tab.id ? `${tab.color} text-white shadow-md` : 'bg-zinc-100'}`}><span>{tab.emoji}</span> {tab.label} <span className="ml-1 px-1 rounded-full bg-white/30">{getTaskCount(tab.id)}</span></button>))}</div></div>
-      <div className="flex flex-col md:flex-row gap-3"><input type="text" placeholder="🔍 Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 border rounded-xl px-3 py-2 text-sm" /><select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="dueDate">📅 Fecha límite</option><option value="priority">⚠️ Prioridad</option><option value="createdAt">🕒 Creación</option></select></div>
+
+      <div className="flex flex-col md:flex-row gap-3"><input type="text" placeholder="🔍 Buscar tarea..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 border rounded-xl px-3 py-2 text-sm" /><select value={filterResponsible} onChange={(e) => setFilterResponsible(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="all">👥 Todos</option>{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>👤 {r.name}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-xl px-3 py-2 text-sm"><option value="dueDate">📅 Fecha límite</option><option value="priority">⚠️ Prioridad</option><option value="createdAt">🕒 Creación</option></select></div>
+
       <div className="flex justify-end"><button onClick={() => { resetForm(); setShowForm(true); }} className="bg-zinc-900 text-white px-5 py-2 rounded-xl text-xs font-black">➕ Nueva Tarea</button></div>
+
       {showForm && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl max-w-lg w-full p-5"><h3 className="font-black mb-4">{editingTask ? 'Editar Tarea' : 'Nueva Tarea'}</h3><div className="space-y-3"><input name="title" value={formData.title} onChange={handleFormChange} placeholder="Título *" className="w-full border rounded-xl p-2" /><textarea name="description" value={formData.description} onChange={handleFormChange} rows={2} placeholder="Descripción" className="w-full border rounded-xl p-2" /><div className="grid grid-cols-2 gap-2"><select name="responsible" value={formData.responsible} onChange={handleFormChange} className="border rounded-xl p-2">{RESPONSIBLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select><select name="priority" value={formData.priority} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(PRIORITIES).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="grid grid-cols-2 gap-2"><select name="status" value={formData.status} onChange={handleFormChange} className="border rounded-xl p-2">{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select><input type="date" name="dueDate" value={formData.dueDate} onChange={handleFormChange} className="border rounded-xl p-2" /></div></div><div className="flex justify-end gap-3 mt-5"><button onClick={resetForm} className="border rounded-xl px-4 py-1">Cancelar</button><button onClick={saveTask} className="bg-zinc-900 text-white rounded-xl px-4 py-1">Guardar</button></div></div></div>)}
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 border-b"><tr><th className="px-4 py-2 text-[10px]">Título</th><th className="px-4 py-2">Responsable</th><th className="px-4 py-2">Prioridad</th><th className="px-4 py-2">Estado</th><th className="px-4 py-2">Fecha límite</th><th className="px-4 py-2">Creada</th><th className="px-4 py-2">Acciones</th></tr></thead><tbody>{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; return (<React.Fragment key={task.id}><tr className="border-b hover:bg-zinc-50"><td className="px-4 py-2"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm">{task.title}{task.description && <div className="text-[10px] text-zinc-400">{task.description}</div>}{task.status === 'approved' && delayInfo && <div className="text-[9px] text-orange-600">{delayInfo.message}</div>}</button></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span></td><td><span className={`px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}</td><td className="text-xs">{task.createdAtFormatted || '-'}</td><td className="flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600">🗑️</button></td></tr>{expandedComments[task.id] && (<tr className="bg-zinc-50"><td colSpan="7" className="p-3"><div className="space-y-2 max-h-48 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className={`${a?.bgLight} p-2 rounded-lg`}><div className="flex justify-between"><span className="font-bold text-xs">{c.author}</span><span className="text-[9px]">{c.createdAt}</span></div><p className="text-xs">{c.text}</p></div>); })}</div><div className="mt-2 flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-xl px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-xl text-sm">Enviar</button></div></td></tr>)}</React.Fragment>);})}{filteredTasks.length === 0 && <tr><td colSpan="7" className="text-center py-8">No hay tareas</td>}</tr>}</tbody>}</table></div>
-      <div className="md:hidden space-y-3 p-2">{filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const delayInfo = task.approvalDelayInfo; const isOpen = expandedComments[task.id]; return (<div key={task.id} className="bg-white border rounded-xl p-3"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500">{task.description}</p>}{task.status === 'approved' && delayInfo && <p className="text-[10px] text-orange-600">{delayInfo.message}</p>}</button><div className="flex flex-wrap gap-2 mt-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100' : resp?.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'}`}>{resp?.name}</span><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between text-xs mt-2"><span>📅 {task.dueDate || '-'}</span><span>🕒 {task.createdAtFormatted || '-'}</span></div><div className="flex gap-2 mt-2"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 py-1 rounded-lg text-xs">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 py-1 rounded-lg text-xs">✏️</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 py-1 rounded-lg text-xs">🗑️</button></div>{isOpen && (<div className="mt-2 bg-zinc-50 p-2 rounded-lg space-y-2"><div className="max-h-40 overflow-y-auto">{task.comments?.map(c => { const a = RESPONSIBLES.find(r => r.id === c.authorId); return (<div key={c.id} className="border-b pb-1"><span className="font-bold text-xs">{c.author}</span> <span className="text-[9px]">{c.createdAt}</span><p className="text-xs">{c.text}</p></div>); })}</div><div className="flex gap-2"><input value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Comentario..." className="flex-1 border rounded-lg px-2 py-1 text-sm" /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-3 rounded-lg text-sm">Enviar</button></div></div>)}</div>);})}</div>
+
+      <div className="hidden md:block bg-white rounded-2xl shadow-sm border overflow-x-auto"><table className="w-full text-left"><thead className="bg-zinc-50 border-b"><tr><th className="px-4 py-2 text-[10px] font-black uppercase">Título</th><th className="px-4 py-2 text-[10px] font-black uppercase">Responsable</th><th className="px-4 py-2 text-[10px] font-black uppercase">Prioridad</th><th className="px-4 py-2 text-[10px] font-black uppercase">Estado</th><th className="px-4 py-2 text-[10px] font-black uppercase">Fecha límite</th><th className="px-4 py-2 text-[10px] font-black uppercase">Creada</th><th className="px-4 py-2 text-[10px] font-black uppercase">Acciones</th></tr></thead><tbody>{filteredTasks.length === 0 ? <tr><td colSpan="7" className="text-center py-8 text-zinc-400">No hay tareas</td></tr> : filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const isCommentsOpen = expandedComments[task.id]; return (<React.Fragment key={task.id}><tr className="border-b hover:bg-zinc-50 transition"><td className="px-4 py-2"><button onClick={() => setSelectedTask(task)} className="font-bold text-sm text-left hover:text-indigo-600">{task.title}{task.description && <div className="text-[10px] text-zinc-400 font-normal">{task.description}</div>}{task.status === 'approved' && task.approvalDelayInfo && <div className="text-[9px] text-orange-600">{task.approvalDelayInfo.message}</div>}</button></td><td className="px-4 py-2"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{resp?.name}</span></td><td className="px-4 py-2"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span></td><td className="px-4 py-2"><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></td><td className="px-4 py-2 text-sm">{task.dueDate ? <span className={isOverdue ? 'text-rose-600 font-bold' : ''}>{task.dueDate}</span> : '-'}</td><td className="px-4 py-2 text-xs text-zinc-500">{task.createdAtFormatted || '-'}</td><td className="px-4 py-2 flex gap-1"><button onClick={() => toggleComments(task.id)} className="text-blue-600 hover:text-blue-800" title="Comentarios">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="text-indigo-600 hover:text-indigo-800" title="Editar">✏️</button><button onClick={() => deleteTask(task.id)} className="text-rose-600 hover:text-rose-800" title="Eliminar">🗑️</button></td></tr>{isCommentsOpen && (<tr className="bg-zinc-50/80"><td colSpan="7" className="px-4 py-3"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase">💬 Comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-2`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border rounded-xl px-3 py-2 text-sm" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold">Enviar</button></div></td></tr>)}</React.Fragment>); })}</tbody></table></div>
+
+      <div className="md:hidden space-y-3 p-2">{filteredTasks.length === 0 ? <div className="text-center py-10 text-zinc-400">No hay tareas</div> : filteredTasks.map(task => { const resp = RESPONSIBLES.find(r => r.id === task.responsible); const priorityConfig = PRIORITIES[task.priority] || PRIORITIES.media; const statusConfig = TASK_STATUS[task.status] || TASK_STATUS.pending; const isOverdue = task.dueDate && task.status !== 'approved' && new Date(task.dueDate) < new Date(); const isCommentsOpen = expandedComments[task.id]; return (<div key={task.id} className="bg-white border rounded-xl overflow-hidden shadow-sm"><div className="p-4"><button onClick={() => setSelectedTask(task)} className="w-full text-left"><h3 className="font-black text-base">{task.title}</h3>{task.description && <p className="text-xs text-zinc-500 mt-1">{task.description}</p>}{task.status === 'approved' && task.approvalDelayInfo && <p className="text-[10px] text-orange-600 mt-1">{task.approvalDelayInfo.message}</p>}</button><div className="flex flex-wrap gap-2 mt-3"><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-black ${resp?.color === 'blue' ? 'bg-blue-100 text-blue-700' : resp?.color === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{resp?.name}</span><span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold ${priorityConfig.color}`}>{priorityConfig.emoji} {priorityConfig.label}</span><select value={task.status} onChange={(e) => handleStatusChange(task.id, e.target.value, task.dueDate)} className={`text-[10px] font-bold rounded-full px-2 py-1 border ${statusConfig.color}`} disabled={task.status === 'approved'}>{Object.entries(TASK_STATUS).map(([k,v]) => <option key={k} value={k}>{v.emoji} {v.label}</option>)}</select></div><div className="flex justify-between text-xs text-zinc-500 mt-3 pt-2 border-t"><span>📅 {task.dueDate || '-'}</span><span>🕒 {task.createdAtFormatted || '-'}</span></div><div className="flex gap-2 mt-3"><button onClick={() => toggleComments(task.id)} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1">💬 {task.comments?.length || 0}</button><button onClick={() => editTask(task)} className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-xl text-xs font-bold">✏️</button><button onClick={() => deleteTask(task.id)} className="flex-1 bg-rose-50 text-rose-600 py-2 rounded-xl text-xs font-bold">🗑️</button></div></div>{isCommentsOpen && (<div className="bg-zinc-50/80 px-4 py-3 border-t"><div className="space-y-3 max-h-64 overflow-y-auto"><p className="text-[9px] font-black text-zinc-400 uppercase">💬 Comentarios</p>{task.comments && task.comments.length > 0 ? task.comments.map(comment => { const authorResp = RESPONSIBLES.find(r => r.id === comment.authorId); return (<div key={comment.id} className={`${authorResp?.bgLight || 'bg-gray-50'} rounded-xl p-2`}><div className="flex justify-between items-start mb-1"><span className={`text-[10px] font-black ${authorResp?.color === 'blue' ? 'text-blue-700' : authorResp?.color === 'purple' ? 'text-purple-700' : 'text-green-700'}`}>👤 {comment.author}</span><span className="text-[9px] text-zinc-400">{comment.createdAt}</span></div><p className="text-xs text-zinc-700">{comment.text}</p></div>); }) : <div className="text-xs text-zinc-400 text-center py-2">No hay comentarios aún</div>}</div><div className="mt-3 flex gap-2"><input type="text" value={newComment[task.id] || ''} onChange={(e) => setNewComment(prev => ({ ...prev, [task.id]: e.target.value }))} placeholder="Escribe un comentario..." className="flex-1 bg-white border rounded-xl px-3 py-2 text-sm" onKeyPress={(e) => e.key === 'Enter' && addComment(task.id)} /><button onClick={() => addComment(task.id)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold">Enviar</button></div></div>)}</div>); })}</div>
     </div>
   );
 }
 
-// ==================== COMPONENTE PROMPTS IA ====================
-const PROMPT_CATEGORIES = [
-  { id: 'landing', label: '🚀 Landing Page', color: 'bg-blue-50 border-blue-300 text-blue-700' },
-  { id: 'anuncios', label: '📢 Anuncios Publicitarios', color: 'bg-amber-50 border-amber-300 text-amber-700' },
-  { id: 'diseno', label: '🎨 Reglas de Diseño', color: 'bg-purple-50 border-purple-300 text-purple-700' },
-  { id: 'otros', label: '📦 Otros', color: 'bg-gray-50 border-gray-300 text-gray-700' }
+
+
+// ============================================================================
+// CAMPAIGN CONTROL CENTER
+// Módulo totalmente independiente de sales_configs / sales_months / agenda_tasks
+// ============================================================================
+
+const COLLECTIONS = {
+  products: 'campaign_control_products',
+  campaigns: 'campaign_control_campaigns',
+  ads: 'campaign_control_ads',
+  dailyCampaigns: 'campaign_control_daily_campaigns',
+  dailyAds: 'campaign_control_daily_ads',
+  budgetChanges: 'campaign_control_budget_changes',
+  recommendations: 'campaign_control_recommendations',
+  decisions: 'campaign_control_decisions',
+  imports: 'campaign_control_imports'
+};
+
+const PERIODS = [
+  { id: 'last', label: 'Último día', size: 1, previousSize: 3 },
+  { id: '3d', label: '3D', size: 3, previousSize: 3 },
+  { id: '7d', label: '7D', size: 7, previousSize: 7 },
+  { id: '14d', label: '14D', size: 14, previousSize: 14 },
+  { id: '30d', label: '30D', size: 30, previousSize: 30 }
 ];
 
-function PromptModule() {
-  const [prompts, setPrompts] = useState([]);
-  const [activeCategory, setActiveCategory] = useState('todos');
-  const [showForm, setShowForm] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    content: '',
-    category: 'landing'
+const META_CSV_ALIASES = {
+  adName: ['Nombre del anuncio', 'Ad name', 'Anuncio'],
+  delivery: ['Entrega de anuncios', 'Entrega del anuncio', 'Ad delivery', 'Delivery', 'Estado de entrega'],
+  spend: ['Importe gastado (COP)', 'Importe gastado', 'Amount spent (COP)', 'Amount spent', 'Gasto'],
+  impressions: ['Impresiones', 'Impressions'],
+  clicks: ['Clics en el enlace', 'Link clicks', 'Clics únicos en el enlace'],
+  purchases: ['Compras', 'Compras en el sitio web', 'Purchases', 'Website purchases'],
+  ctr: ['CTR (tasa de clics en el enlace)', 'CTR (porcentaje de clics en el enlace)', 'CTR (link click-through rate)', 'CTR'],
+  cpc: ['CPC (Coste por clic en el enlace) (COP)', 'CPC (costo por clic en el enlace)', 'CPC (cost per link click)', 'CPC'],
+  cpm: ['CPM (coste por 1000 impresiones) (COP)', 'CPM (costo por 1000 impresiones)', 'CPM (cost per 1,000 impressions)', 'CPM'],
+  frequency: ['Frecuencia', 'Frequency'],
+  landingViews: ['Visitas a la página de destino', 'Visitas a la página de destino del sitio web', 'Landing page views', 'Visitas landing'],
+  atc: ['Artículos añadidos al carrito', 'Artículos añadidos al carrito en el sitio web', 'Añadir al carrito', 'Adds to cart', 'ATC'],
+  roas: ['ROAS (retorno del gasto publicitario) de compras', 'ROAS (retorno del gasto publicitario) de compras en el sitio web', 'Purchase ROAS', 'ROAS'],
+  startDate: ['Inicio del informe', 'Reporting starts', 'Fecha de inicio'],
+  endDate: ['Fin del informe', 'Reporting ends', 'Fecha de fin']
+};
+
+function colombiaPartsCC(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+
+  const map = {};
+  parts.forEach(p => {
+    if (p.type !== 'literal') map[p.type] = p.value;
   });
-  const [notification, setNotification] = useState('');
-  const [instructions, setInstructions] = useState({});
+  return map;
+}
 
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const promptsRef = collection(db, 'artifacts', appId, 'public', 'data', 'prompts');
-    const unsubscribePrompts = onSnapshot(promptsRef, (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loaded.sort((a, b) => (a.order || 0) - (b.order || 0));
-      setPrompts(loaded);
-    });
+function todayColombiaCC() {
+  const p = colombiaPartsCC();
+  return `${p.year}-${p.month}-${p.day}`;
+}
 
-    const instructionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'prompt_instructions');
-    const unsubscribeInstructions = onSnapshot(instructionsRef, (snapshot) => {
-      const loaded = {};
-      snapshot.docs.forEach(doc => {
-        loaded[doc.id] = doc.data().text || '';
-      });
-      setInstructions(loaded);
-    });
+function colombiaDateTimeLabelCC(date = new Date()) {
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date);
+}
 
-    return () => {
-      unsubscribePrompts();
-      unsubscribeInstructions();
-    };
-  }, []);
+function colombiaDateTimeStorageCC(date = new Date()) {
+  const p = colombiaPartsCC(date);
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
+}
 
-  const saveInstruction = async (categoryId, text) => {
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'prompt_instructions', categoryId);
-      await setDoc(docRef, { text, updatedAt: serverTimestamp() }, { merge: true });
-      setNotification('✅ Instrucción guardada');
-      setTimeout(() => setNotification(''), 2000);
-    } catch (err) {
-      console.error(err);
-      alert('Error al guardar instrucción');
-    }
+function shiftIsoDateCC(isoDate, days) {
+  const m = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(days || 0), 12, 0, 0));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function lastCompleteColombiaDateCC() {
+  return shiftIsoDateCC(todayColombiaCC(), -1);
+}
+
+function parseDateSafe(value) {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    const [y, m, d] = String(value).split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0);
+  }
+  const m = String(value).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 12, 0, 0);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateToIso(value) {
+  const d = parseDateSafe(value);
+  if (!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function fmtMoney(v) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Number(v) || 0);
+}
+
+function fmtNum(v, decimals = 2) {
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }).format(Number(v) || 0);
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  let s = String(value).trim().replace(/\s/g, '').replace(/[$%]/g, '');
+  if (!s) return 0;
+  if (s.includes(',') && s.includes('.')) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (s.includes(',')) {
+    const p = s.split(',');
+    if (p.length === 2 && p[1].length <= 2) s = `${p[0].replace(/\./g, '')}.${p[1]}`;
+    else s = s.replace(/,/g, '');
+  }
+  const n = Number(s.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeAdName(name = '') {
+  return String(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function normalizeHeader(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeMetaDeliveryStatusCC(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+}
+
+function isMetaAdExplicitlyInactiveCC(value = '') {
+  const status = normalizeMetaDeliveryStatusCC(value);
+  if (!status) return false;
+
+  // Solo estados que expresan una desactivación/pausa real.
+  // "pending_process", "learning", "not_delivering", etc. NO se filtran aquí.
+  const exactInactive = new Set([
+    'inactive',
+    'disabled',
+    'off',
+    'paused',
+    'archived',
+    'deleted',
+    'permanently_disabled',
+    'ad_paused',
+    'adset_paused',
+    'ad_set_paused',
+    'campaign_paused',
+    'inactivo',
+    'inactiva',
+    'desactivado',
+    'desactivada',
+    'pausado',
+    'pausada',
+    'apagado',
+    'apagada',
+    'archivado',
+    'archivada',
+    'eliminado',
+    'eliminada'
+  ]);
+
+  return exactInactive.has(status);
+}
+
+function resolveCsvValue(row, aliases) {
+  const normalized = {};
+  Object.entries(row).forEach(([key, value]) => { normalized[normalizeHeader(key)] = value; });
+  for (const alias of aliases) {
+    const key = normalizeHeader(alias);
+    if (Object.prototype.hasOwnProperty.call(normalized, key)) return normalized[key];
+  }
+  return '';
+}
+
+function parseCsvText(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (ch === '"') {
+      if (quoted && next === '"') { field += '"'; i += 1; }
+      else quoted = !quoted;
+    } else if (ch === ',' && !quoted) {
+      row.push(field); field = '';
+    } else if ((ch === '\n' || ch === '\r') && !quoted) {
+      if (ch === '\r' && next === '\n') i += 1;
+      row.push(field); field = '';
+      if (row.some(v => v !== '')) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => String(h).replace(/^\uFEFF/, '').trim());
+  return rows.slice(1).map(cols => {
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = cols[idx] ?? ''; });
+    return obj;
+  });
+}
+
+function calcCpa(spend, purchases) {
+  const s = toNumber(spend);
+  const p = toNumber(purchases);
+  // CPA = gasto / compras. Sin compra NO existe CPA.
+  return p > 0 ? s / p : null;
+}
+
+function fmtCpa(value) {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
+  return fmtMoney(value);
+}
+
+function fmtRate(value, suffix = '%') {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
+  return `${fmtNum(value, 2)}${suffix}`;
+}
+
+function safeRate(numerator, denominator) {
+  const n = toNumber(numerator);
+  const d = toNumber(denominator);
+  // Una tasa sin denominador no es 0%; es no calculable.
+  return d > 0 ? (n / d) * 100 : null;
+}
+
+function pctChange(current, previous) {
+  // No fabricar variaciones a partir de métricas no calculables.
+  if (current === null || current === undefined || current === '' ||
+      previous === null || previous === undefined || previous === '') return null;
+  const c = toNumber(current);
+  const p = toNumber(previous);
+  if (p === 0) return c === 0 ? 0 : null;
+  return ((c - p) / p) * 100;
+}
+
+function variationBand(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'neutral';
+  const a = Math.abs(value);
+  if (a <= 10) return 'normal';
+  if (a <= 15) return 'attention';
+  if (a <= 20) return 'alert';
+  return 'critical';
+}
+
+function aggregateRecords(records = []) {
+  if (!records.length) return {
+    days: 0, spend: 0, purchases: 0, cpa: null, ctr: null, cpc: null, cpm: null,
+    frequency: null, landingViews: 0, atc: 0, roas: null,
+    visitToAtc: null, visitToPurchase: null, atcToPurchase: null
   };
 
-  const handleFormChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const spend = records.reduce((sum, r) => sum + toNumber(r.spend), 0);
+  const purchases = records.reduce((sum, r) => sum + toNumber(r.purchases), 0);
+  const landingViews = records.reduce((sum, r) => sum + toNumber(r.landingViews), 0);
+  const atc = records.reduce((sum, r) => sum + toNumber(r.atc), 0);
+  const impressions = records.reduce((sum, r) => sum + toNumber(r.impressions), 0);
+  const clicks = records.reduce((sum, r) => sum + toNumber(r.clicks), 0);
+  const days = new Set(records.map(r => String(r.date || '')).filter(Boolean)).size || records.length;
+
+  const weightedPositive = (key, weightKey = 'spend') => {
+    const valid = records.filter(r => {
+      const value = toNumber(r[key]);
+      const weight = toNumber(r[weightKey]);
+      return value > 0 && weight > 0;
+    });
+    const denom = valid.reduce((sum, r) => sum + toNumber(r[weightKey]), 0);
+    if (!denom) return null;
+    return valid.reduce((sum, r) => sum + toNumber(r[key]) * toNumber(r[weightKey]), 0) / denom;
   };
 
-  const savePrompt = async () => {
-    if (!formData.name.trim() || !formData.content.trim()) {
-      alert("El nombre y el contenido son obligatorios");
-      return;
-    }
-    const payload = {
-      name: formData.name.trim(),
-      content: formData.content.trim(),
-      category: formData.category,
-      order: prompts.length,
-      updatedAt: serverTimestamp(),
-      createdBy: auth.currentUser?.uid
+  const weightedAllowZero = (key, weightKey = 'spend') => {
+    const valid = records.filter(r => toNumber(r[weightKey]) > 0 && r[key] !== null && r[key] !== undefined && r[key] !== '');
+    const denom = valid.reduce((sum, r) => sum + toNumber(r[weightKey]), 0);
+    if (!denom) return null;
+    return valid.reduce((sum, r) => sum + toNumber(r[key]) * toNumber(r[weightKey]), 0) / denom;
+  };
+
+  // CTR = clics de enlace / impresiones.
+  // CPC = gasto / clics.
+  // CPM = gasto / impresiones * 1000.
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : weightedAllowZero('ctr', 'spend');
+  const cpc = clicks > 0 ? spend / clicks : weightedPositive('cpc', 'spend');
+  const cpm = impressions > 0 ? (spend / impressions) * 1000 : weightedPositive('cpm', 'spend');
+
+  // Frecuencia de varios días no puede reconstruirse exactamente sin Reach.
+  // Usamos la mejor aproximación disponible: frecuencia reportada ponderada por impresiones.
+  const frequency = weightedPositive('frequency', 'impressions') ?? weightedPositive('frequency', 'spend');
+
+  // ROAS agregado ponderado por gasto equivale a sumar el valor atribuido / gasto
+  // cuando Meta entrega ROAS por fila.
+  const roas = weightedAllowZero('roas', 'spend');
+
+  return {
+    days,
+    spend,
+    purchases,
+    cpa: calcCpa(spend, purchases),
+    ctr,
+    cpc,
+    cpm,
+    frequency,
+    landingViews,
+    atc,
+    roas,
+    visitToAtc: safeRate(atc, landingViews),
+    visitToPurchase: safeRate(purchases, landingViews),
+    atcToPurchase: safeRate(purchases, atc)
+  };
+}
+
+function splitPeriodRecords(records, periodId) {
+  const period = PERIODS.find(p => p.id === periodId) || PERIODS[0];
+  const today = todayColombiaCC();
+
+  // El diagnóstico solo usa días completos: cualquier registro de HOY queda fuera.
+  const sorted = [...records]
+    .filter(r => String(r.date) < today)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  if (periodId === 'last') {
+    const current = sorted.slice(0, 1);
+    const previous = sorted.slice(1, 4);
+    return {
+      current,
+      previous,
+      currentStats: aggregateRecords(current),
+      previousStats: aggregateRecords(previous)
     };
-    try {
-      if (editingPrompt) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', editingPrompt.id), payload);
+  }
+
+  const current = sorted.slice(0, period.size);
+  const previous = sorted.slice(period.size, period.size + period.previousSize);
+  return {
+    current,
+    previous,
+    currentStats: aggregateRecords(current),
+    previousStats: aggregateRecords(previous)
+  };
+}
+
+function confidenceLabel(purchases, ageDays) {
+  let level = purchases < 5 ? 1 : purchases < 15 ? 2 : purchases < 30 ? 3 : 4;
+  if (ageDays < 3) level = Math.min(level, 1);
+  else if (ageDays < 7) level = Math.min(level, 2);
+  return ['Baja', 'Baja', 'Media', 'Alta', 'Muy alta'][level];
+}
+
+function volumeConfidenceLabel(purchases) {
+  const value = toNumber(purchases);
+  if (value <= 0) return 'Sin muestra';
+  if (value < 5) return 'Baja';
+  if (value < 15) return 'Media';
+  if (value < 30) return 'Alta';
+  return 'Muy alta';
+}
+
+function daysBetween(from, to = todayColombiaCC()) {
+  const a = parseDateSafe(from);
+  const b = parseDateSafe(to);
+  if (!a || !b) return 0;
+  return Math.max(0, Math.floor((b - a) / 86400000));
+}
+
+function entityActiveOnDate(entity, date) {
+  if (!entity || !date) return true;
+  const effectiveStart = entity.effectiveStartDate || entity.createdDate;
+  if (effectiveStart && String(date) < String(effectiveStart)) return false;
+  const history = Array.isArray(entity.stateHistory) ? [...entity.stateHistory] : [];
+  if (!history.length) return true;
+  history.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  let state = true;
+  for (const event of history) {
+    if (!event?.date || String(event.date) > String(date)) break;
+    state = event.active !== false;
+  }
+  return state;
+}
+
+function eligibleAdRecords(records, ad, campaign) {
+  return (records || []).filter(r => entityActiveOnDate(ad, r.date) && entityActiveOnDate(campaign, r.date));
+}
+
+function countEntityActiveDays(entity, asOfDate = todayColombiaCC(), parentEntity = null) {
+  if (!entity) return 0;
+  const start = parseDateSafe(entity.effectiveStartDate || entity.createdDate || asOfDate);
+  const end = parseDateSafe(asOfDate);
+  if (!start || !end || start > end) return 0;
+  let count = 0;
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0, 0);
+  const finish = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 12, 0, 0);
+  while (cursor <= finish) {
+    const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+    if (entityActiveOnDate(entity, iso) && (!parentEntity || entityActiveOnDate(parentEntity, iso))) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
+function eligibleCampaignRecords(records, campaign) {
+  return (records || []).filter(r => entityActiveOnDate(campaign, r.date));
+}
+
+function previousCampaignBudgetCC(dailyCampaigns, campaignId, targetDate) {
+  const previous = (dailyCampaigns || [])
+    .filter(r =>
+      r.campaignId === campaignId &&
+      r.date &&
+      String(r.date) < String(targetDate || '') &&
+      toNumber(r.budget) > 0
+    )
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+
+  if (!previous) return null;
+  return {
+    budget: toNumber(previous.budget),
+    date: String(previous.date),
+    source: previous.budgetSource || previous.source || 'registered'
+  };
+}
+
+function campaignRegistrationCoverageCC(campaign, product, dailyCampaigns, throughDate = lastCompleteColombiaDateCC()) {
+  // La fecha de campaña es independiente y manda para su histórico.
+  const start = dateToIso(campaign?.effectiveStartDate || campaign?.createdDate) || '';
+  const end = dateToIso(throughDate);
+
+  if (!start || !end || start > end) {
+    return {
+      startDate: start,
+      throughDate: end,
+      requiredDays: 0,
+      registeredDays: 0,
+      missingDays: 0,
+      missingDates: [],
+      requiredDates: []
+    };
+  }
+
+  const requiredDates = [];
+  let cursor = start;
+  let safety = 0;
+
+  while (cursor && cursor <= end && safety < 5000) {
+    if (entityActiveOnDate(campaign, cursor)) {
+      requiredDates.push(cursor);
+    }
+    cursor = shiftIsoDateCC(cursor, 1);
+    safety += 1;
+  }
+
+  const registeredSet = new Set(
+    (dailyCampaigns || [])
+      .filter(r => r.campaignId === campaign?.id && r.date)
+      .map(r => String(r.date))
+  );
+
+  const missingDates = requiredDates.filter(d => !registeredSet.has(d));
+
+  return {
+    startDate: start,
+    throughDate: end,
+    requiredDays: requiredDates.length,
+    registeredDays: requiredDates.length - missingDates.length,
+    missingDays: missingDates.length,
+    missingDates,
+    requiredDates
+  };
+}
+
+function variationExplanation(periodId) {
+  const map = {
+    last: 'ÚLTIMO DÍA toma el registro activo completo más reciente anterior a hoy y lo compara contra los 3 días activos completos inmediatamente anteriores.',
+    '3d': '3D toma los últimos 3 días activos completos anteriores a hoy y los compara contra los 3 días activos completos anteriores a ese bloque.',
+    '7d': '7D toma los últimos 7 días activos completos anteriores a hoy y los compara contra los 7 días activos completos anteriores.',
+    '14d': '14D toma los últimos 14 días activos completos anteriores a hoy y los compara contra los 14 anteriores para detectar cambios de tendencia intermedia.',
+    '30d': '30D toma los últimos 30 días activos completos anteriores a hoy y los compara contra los 30 anteriores para mostrar tendencia y estabilidad de largo plazo.'
+  };
+  return map[periodId] || map.last;
+}
+
+function adVariationDiagnosisFromDelta(delta) {
+  const cpa = Number(delta?.cpa) || 0;
+  const ctr = Number(delta?.ctr) || 0;
+  const cpc = Number(delta?.cpc) || 0;
+  const cpm = Number(delta?.cpm) || 0;
+  const freq = Number(delta?.frequency) || 0;
+  const cvr = Number(delta?.visitToPurchase) || 0;
+  if (cpa > 20 && ctr < -20 && cpc > 20 && freq > 20) return { diagnosis: 'Fatiga confirmada', action: 'Apagar/reemplazar si no rentable', tone: 'critical' };
+  if (cpa > 15 && ctr < -15 && cpc > 15 && freq > 15) return { diagnosis: 'Fatiga probable', action: 'Lanzar test creativo y detener escalado', tone: 'alert' };
+  if (cpa > 10 && ctr < -10 && cpc > 10 && freq > 10) return { diagnosis: 'Fatiga temprana', action: 'Preparar 3–5 creativos', tone: 'attention' };
+  if (cpa > 10 && Math.abs(ctr) <= 10 && Math.abs(cpc) <= 10 && cvr < -10) return { diagnosis: 'Problema post-clic', action: 'Revisar landing/oferta', tone: 'alert' };
+  if (cpm > 15 && Math.abs(ctr) <= 10 && Math.abs(cvr) <= 10) return { diagnosis: 'Subasta más cara', action: 'Mantener y observar', tone: 'attention' };
+  return { diagnosis: 'Estable', action: 'Mantener', tone: 'normal' };
+}
+
+function funnelVariationDiagnosisFromDelta(delta) {
+  const vta = Number(delta?.visitToAtc) || 0;
+  const vtp = Number(delta?.visitToPurchase) || 0;
+  const atp = Number(delta?.atcToPurchase) || 0;
+  if (vta <= -20 && vtp <= -20) return { diagnosis: 'Tráfico post-clic deteriorado', action: 'Apagar/reemplazar si CPA no es rentable', tone: 'critical' };
+  if (vta <= -15 && vtp <= -15) return { diagnosis: 'Calidad de tráfico cayendo', action: 'Revisar creativo y coherencia anuncio→landing', tone: 'alert' };
+  if (vta > -10 && vtp <= -15 && atp <= -15) return { diagnosis: 'Fuga al cierre', action: 'Revisar formulario/oferta', tone: 'alert' };
+  if (vta <= -10 && vtp > -10) return { diagnosis: 'Menor intención inicial', action: 'Preparar variaciones creativas', tone: 'attention' };
+  if (Math.abs(vta) <= 10 && Math.abs(vtp) <= 10 && Math.abs(atp) <= 10) return { diagnosis: 'Post-clic estable', action: 'Mantener', tone: 'normal' };
+  return { diagnosis: 'Post-clic en observación', action: 'Monitorear', tone: 'attention' };
+}
+
+
+
+function buildMetaDeliveryDiagnosis3D(records, ad, campaign) {
+  const eligible = eligibleAdRecords(records || [], ad, campaign);
+  const { current } = splitPeriodRecords(eligible, '3d');
+
+  const days = [...new Set(
+    current
+      .map(r => String(r.date || ''))
+      .filter(Boolean)
+  )];
+
+  const omittedDays = [...new Set(
+    current
+      .filter(r => r.metaOmittedNoDelivery === true || r.source === 'meta_csv_zero_fill')
+      .map(r => String(r.date || ''))
+      .filter(Boolean)
+  )];
+
+  const stats = aggregateRecords(current);
+  const omittedCount = omittedDays.length;
+  const totalDays = days.length;
+
+  if (!totalDays) {
+    return {
+      status: 'Sin lectura 3D',
+      level: 'neutral',
+      action: 'Esperar datos',
+      reason: 'Aún no existen días completos dentro de la ventana 3D.',
+      omittedDays: 0,
+      totalDays: 0,
+      isNoDelivery: false,
+      isLimited: false
+    };
+  }
+
+  // Caso más claro: Meta omitió el anuncio y no hubo ninguna entrega real.
+  if (omittedCount === totalDays && stats.spend <= 0 && stats.impressions <= 0) {
+    return {
+      status: 'Sin entrega de Meta',
+      level: 'attention',
+      action: 'No juzgar rendimiento · revisar distribución',
+      reason: `El anuncio estuvo activo pero Meta lo omitió en ${omittedCount}/${totalDays} día(s) de la ventana 3D. No tuvo gasto ni impresiones suficientes para evaluar rendimiento.`,
+      omittedDays: omittedCount,
+      totalDays,
+      isNoDelivery: true,
+      isLimited: false
+    };
+  }
+
+  // Caso parcial: uno o más días completos fueron omitidos por Meta.
+  if (omittedCount > 0) {
+    return {
+      status: 'Entrega limitada por Meta',
+      level: 'attention',
+      action: 'Vigilar distribución · no apagar por rendimiento',
+      reason: `Meta omitió este anuncio en ${omittedCount}/${totalDays} día(s) de la ventana 3D. La señal de rendimiento tiene menos exposición y debe interpretarse con cautela.`,
+      omittedDays: omittedCount,
+      totalDays,
+      isNoDelivery: false,
+      isLimited: true
+    };
+  }
+
+  return {
+    status: 'Entrega normal',
+    level: 'good',
+    action: 'Evaluar rendimiento normalmente',
+    reason: 'Meta reportó entrega en todos los días disponibles de la ventana 3D.',
+    omittedDays: 0,
+    totalDays,
+    isNoDelivery: false,
+    isLimited: false
+  };
+}
+
+function buildCpaObservation3D(stats3d, previous3d, maxCpa) {
+  const max = Math.max(1, toNumber(maxCpa));
+  const scaleLimit = max * 0.8;
+  const cpa = toNumber(stats3d?.cpa);
+  const spend = toNumber(stats3d?.spend);
+  const purchases = toNumber(stats3d?.purchases);
+  const previousCpa = toNumber(previous3d?.cpa);
+  const delta = pctChange(cpa, previousCpa);
+
+  if (!stats3d?.days) {
+    return {
+      level: 'neutral',
+      title: 'SIN LECTURA 3D',
+      text: 'Todavía no existen días completos suficientes para evaluar el CPA operativo.',
+      delta,
+      aboveMaxPct: null
+    };
+  }
+
+  if (spend > 0 && purchases <= 0) {
+    const spendVsMax = (spend / max) * 100;
+
+    if (spend >= max) {
+      return {
+        level: 'critical',
+        title: 'SIN COMPRAS · GASTO ALCANZÓ EL CPA MÁXIMO',
+        text: `Se gastaron ${fmtMoney(spend)} en 3D sin ninguna compra (${fmtNum(spendVsMax, 2)}% del CPA máximo ${fmtMoney(max)}). El CPA no es calculable. No escalar y priorizar optimización.`,
+        delta: null,
+        aboveMaxPct: null
+      };
+    }
+
+    if (spend >= max * 0.5) {
+      return {
+        level: 'alert',
+        title: 'SIN COMPRAS · VIGILAR',
+        text: `Se gastaron ${fmtMoney(spend)} en 3D sin compras (${fmtNum(spendVsMax, 2)}% del CPA máximo). El CPA no es calculable; todavía no se debe interpretar el gasto como CPA.`,
+        delta: null,
+        aboveMaxPct: null
+      };
+    }
+
+    return {
+      level: 'attention',
+      title: 'SIN COMPRAS AÚN · CPA NO CALCULABLE',
+      text: `Se gastaron ${fmtMoney(spend)} en 3D sin compras (${fmtNum(spendVsMax, 2)}% del CPA máximo). Aún hay poca inversión para juzgar; CPA = —, nunca ${fmtMoney(spend)}.`,
+      delta: null,
+      aboveMaxPct: null
+    };
+  }
+
+  if (cpa <= 0) {
+    return {
+      level: 'neutral',
+      title: 'CPA 3D SIN DATO VÁLIDO',
+      text: 'No hay un CPA 3D válido para tomar una decisión.',
+      delta,
+      aboveMaxPct: null
+    };
+  }
+
+  if (cpa <= scaleLimit) {
+    const margin = ((max - cpa) / max) * 100;
+    return {
+      level: 'good',
+      title: 'CPA 3D EN ZONA DE ESCALA',
+      text: `CPA ${fmtMoney(cpa)} · ${fmtNum(margin, 2)}% por debajo del máximo ${fmtMoney(max)}. Puede escalar si pasan los demás guardrails 3D.`,
+      delta,
+      aboveMaxPct: null
+    };
+  }
+
+  if (cpa <= max) {
+    const margin = ((max - cpa) / max) * 100;
+    return {
+      level: 'attention',
+      title: 'CPA 3D DENTRO DEL OBJETIVO',
+      text: `CPA ${fmtMoney(cpa)} · ${fmtNum(margin, 2)}% por debajo del máximo, pero todavía no alcanza el margen de 20% para escala fuerte.`,
+      delta,
+      aboveMaxPct: null
+    };
+  }
+
+  const aboveMaxPct = ((cpa - max) / max) * 100;
+
+  if (delta !== null && delta <= 0) {
+    return {
+      level: 'alert',
+      title: 'CPA FUERA DEL OBJETIVO, PERO RECUPERÁNDOSE',
+      text: `CPA 3D ${fmtMoney(cpa)} · ${fmtNum(aboveMaxPct, 2)}% por encima del máximo ${fmtMoney(max)}, pero viene mejorando ${fmtNum(Math.abs(delta), 2)}% vs los 3 días anteriores. No escalar todavía.`,
+      delta,
+      aboveMaxPct
+    };
+  }
+
+  if (delta !== null && delta > 15) {
+    return {
+      level: 'critical',
+      title: 'CPA FUERA DEL OBJETIVO Y DETERIORÁNDOSE',
+      text: `CPA 3D ${fmtMoney(cpa)} · ${fmtNum(aboveMaxPct, 2)}% por encima del máximo ${fmtMoney(max)} y empeora ${fmtNum(delta, 2)}% vs los 3 días anteriores. No escalar y priorizar optimización.`,
+      delta,
+      aboveMaxPct
+    };
+  }
+
+  return {
+    level: 'alert',
+    title: 'CPA 3D FUERA DEL OBJETIVO',
+    text: `CPA 3D ${fmtMoney(cpa)} · ${fmtNum(aboveMaxPct, 2)}% por encima del máximo ${fmtMoney(max)}. No escalar hasta volver dentro del objetivo.`,
+    delta,
+    aboveMaxPct
+  };
+}
+
+function diagnoseAd(records, product, ad, periodId = '3d', campaign = null) {
+  const eligible = eligibleAdRecords(records, ad, campaign);
+  const { currentStats: c, previousStats: p } = splitPeriodRecords(eligible, periodId);
+  const maxCpa = Math.max(1, toNumber(product?.maxCpa));
+  const scaleCpa = maxCpa * 0.8;
+  const today = todayColombiaCC();
+  const completeEligible = eligible.filter(r => String(r.date) < today);
+  const latestEligibleDate = completeEligible.length
+    ? [...completeEligible].sort((a,b) => String(b.date).localeCompare(String(a.date)))[0].date
+    : today;
+  const activeDays = countEntityActiveDays(ad, latestEligibleDate, campaign);
+  const ageDays = activeDays;
+  const confidence = confidenceLabel(c.purchases, activeDays);
+  const delta = {
+    cpa: pctChange(c.cpa, p.cpa), ctr: pctChange(c.ctr, p.ctr), cpc: pctChange(c.cpc, p.cpc),
+    cpm: pctChange(c.cpm, p.cpm), frequency: pctChange(c.frequency, p.frequency),
+    visitToAtc: pctChange(c.visitToAtc, p.visitToAtc), visitToPurchase: pctChange(c.visitToPurchase, p.visitToPurchase),
+    atcToPurchase: pctChange(c.atcToPurchase, p.atcToPurchase)
+  };
+  const dynamic = adVariationDiagnosisFromDelta(delta);
+  const post = funnelVariationDiagnosisFromDelta(delta);
+
+  // GUARDRAILS DE ESCALADO: SIEMPRE 3D.
+  // El selector Último día / 7D / 14D / 30D sirve para explorar diagnóstico,
+  // pero NO cambia la decisión operativa de escala.
+  const {
+    currentStats: scale3d,
+    previousStats: scalePrev3d
+  } = splitPeriodRecords(eligible, '3d');
+
+  const scaleDelta3d = {
+    cpa: pctChange(scale3d.cpa, scalePrev3d.cpa),
+    ctr: pctChange(scale3d.ctr, scalePrev3d.ctr),
+    cpc: pctChange(scale3d.cpc, scalePrev3d.cpc),
+    cpm: pctChange(scale3d.cpm, scalePrev3d.cpm),
+    frequency: pctChange(scale3d.frequency, scalePrev3d.frequency),
+    visitToAtc: pctChange(scale3d.visitToAtc, scalePrev3d.visitToAtc),
+    visitToPurchase: pctChange(scale3d.visitToPurchase, scalePrev3d.visitToPurchase),
+    atcToPurchase: pctChange(scale3d.atcToPurchase, scalePrev3d.atcToPurchase)
+  };
+
+  const scaleDynamic3d = adVariationDiagnosisFromDelta(scaleDelta3d);
+  const scalePost3d = funnelVariationDiagnosisFromDelta(scaleDelta3d);
+
+  const guardrails = {
+    cpaMargin: scale3d.cpa > 0 && scale3d.cpa <= scaleCpa,
+    stability: scaleDelta3d.cpa === null || scaleDelta3d.cpa <= 15,
+    creative: !['Fatiga probable', 'Fatiga confirmada'].includes(scaleDynamic3d.diagnosis),
+    postClick: !['Tráfico post-clic deteriorado', 'Calidad de tráfico cayendo', 'Fuga al cierre'].includes(scalePost3d.diagnosis)
+  };
+
+  // Volumen = referencia de confianza. NUNCA bloquea una escala.
+  const volumeReference = {
+    purchases: scale3d.purchases,
+    confidence: volumeConfidenceLabel(scale3d.purchases)
+  };
+
+  const canScale = Object.values(guardrails).every(Boolean);
+
+  // DECISIÓN OPERATIVA: SIEMPRE 3D.
+  // Nunca depende del selector visual Último día / 7D / 14D / 30D.
+  const cpaObservation3d = buildCpaObservation3D(scale3d, scalePrev3d, maxCpa);
+  const metaDelivery3d = buildMetaDeliveryDiagnosis3D(records, ad, campaign);
+  let operational3dDiagnosis = 'Sin suficiente información 3D';
+  let operational3dAction = 'Monitorear';
+  let operational3dPriority = 'monitor';
+  let operational3dReason = 'Todavía no existe suficiente historial 3D comparable.';
+
+  if (scale3d.days > 0) {
+    if (metaDelivery3d.isNoDelivery) {
+      operational3dDiagnosis = 'Sin entrega de Meta · 3D';
+      operational3dAction = 'No juzgar rendimiento · revisar distribución';
+      operational3dPriority = 'alert';
+      operational3dReason = metaDelivery3d.reason;
+    } else if (scale3d.spend > 0 && scale3d.purchases <= 0) {
+      if (scale3d.spend >= maxCpa) {
+        operational3dDiagnosis = 'Sin compras · gasto alcanzó CPA máximo';
+        operational3dAction = 'No escalar · optimizar / reemplazar';
+        operational3dPriority = 'critical';
+      } else if (scale3d.spend >= maxCpa * 0.5) {
+        operational3dDiagnosis = 'Sin compras · vigilar 3D';
+        operational3dAction = 'No escalar · seguir observando';
+        operational3dPriority = 'alert';
       } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'prompts'), {
-          ...payload,
-          createdAt: serverTimestamp()
+        operational3dDiagnosis = 'Sin compras aún · poca inversión';
+        operational3dAction = 'Mantener test · CPA no calculable';
+        operational3dPriority = 'monitor';
+      }
+      operational3dReason = cpaObservation3d.text;
+    } else if (scale3d.cpa > maxCpa && scaleDelta3d.cpa !== null && scaleDelta3d.cpa <= 0) {
+      operational3dDiagnosis = 'Fuera del objetivo · recuperándose';
+      operational3dAction = 'No escalar · mantener en observación';
+      operational3dPriority = 'alert';
+      operational3dReason = cpaObservation3d.text;
+    } else if (scale3d.cpa > maxCpa && scaleDelta3d.cpa !== null && scaleDelta3d.cpa > 15) {
+      operational3dDiagnosis = 'Fuera del objetivo · deteriorándose';
+      operational3dAction = 'No escalar · optimizar';
+      operational3dPriority = 'critical';
+      operational3dReason = cpaObservation3d.text;
+    } else if (scale3d.cpa > maxCpa && scaleDynamic3d.diagnosis === 'Fatiga confirmada') {
+      operational3dDiagnosis = 'Anuncio deteriorado y no rentable';
+      operational3dAction = 'Apagar / reemplazar';
+      operational3dPriority = 'critical';
+      operational3dReason = 'CPA 3D fuera de objetivo + fatiga confirmada en la ventana 3D.';
+    } else if (scale3d.cpa > maxCpa && ['Tráfico post-clic deteriorado', 'Calidad de tráfico cayendo'].includes(scalePost3d.diagnosis)) {
+      operational3dDiagnosis = 'Tráfico de baja calidad 3D';
+      operational3dAction = 'No escalar · reemplazar / optimizar';
+      operational3dPriority = 'critical';
+      operational3dReason = 'CPA 3D fuera de objetivo y el embudo post-clic 3D también se deteriora.';
+    } else if (scale3d.cpa > maxCpa) {
+      operational3dDiagnosis = 'CPA 3D fuera del objetivo';
+      operational3dAction = 'No escalar · optimizar';
+      operational3dPriority = 'alert';
+      operational3dReason = cpaObservation3d.text;
+    } else if (scale3d.cpa <= maxCpa && scaleDynamic3d.diagnosis === 'Fatiga temprana') {
+      operational3dDiagnosis = 'Rentable con fatiga temprana 3D';
+      operational3dAction = 'Mantener y preparar creativos';
+      operational3dPriority = 'alert';
+      operational3dReason = 'El CPA 3D sigue dentro del objetivo, pero aparecen señales tempranas de fatiga.';
+    } else if (scale3d.cpa <= maxCpa && scaleDynamic3d.diagnosis === 'Fatiga probable') {
+      operational3dDiagnosis = 'Rentable pero deteriorándose 3D';
+      operational3dAction = 'Detener escala y lanzar test creativo';
+      operational3dPriority = 'alert';
+      operational3dReason = 'El CPA 3D aún es rentable, pero el patrón de fatiga 3D ya es consistente.';
+    } else if (scalePost3d.diagnosis === 'Fuga al cierre') {
+      operational3dDiagnosis = 'Problema post-clic 3D';
+      operational3dAction = 'Mantener anuncio y revisar cierre';
+      operational3dPriority = 'alert';
+      operational3dReason = 'La ventana 3D muestra intención, pero se pierde conversión después del ATC.';
+    } else if (scalePost3d.diagnosis === 'Calidad de tráfico cayendo') {
+      operational3dDiagnosis = 'Calidad de tráfico deteriorándose 3D';
+      operational3dAction = scale3d.cpa <= maxCpa ? 'Preparar reemplazo' : 'No escalar · reemplazar';
+      operational3dPriority = 'alert';
+      operational3dReason = 'Las tasas post-clic 3D muestran deterioro en la calidad del tráfico.';
+    } else if (metaDelivery3d.isLimited && scale3d.cpa > 0 && scale3d.cpa <= maxCpa) {
+      operational3dDiagnosis = 'Entrega limitada por Meta · 3D';
+      operational3dAction = 'Mantener activo · vigilar distribución';
+      operational3dPriority = 'alert';
+      operational3dReason = `${metaDelivery3d.reason} El CPA 3D todavía está dentro del objetivo, pero la exposición fue incompleta.`;
+    } else if (canScale && scale3d.cpa > 0 && scale3d.cpa <= scaleCpa) {
+      operational3dDiagnosis = 'Ganador 3D · escala permitida';
+      operational3dAction = 'Escalar +20%';
+      operational3dPriority = 'monitor';
+      operational3dReason = `CPA 3D ${fmtMoney(scale3d.cpa)} con margen ≥20%, estabilidad válida, creativo sano y post-clic sano. Volumen ${fmtNum(volumeReference.purchases, 2)} compras (${volumeReference.confidence}) solo como referencia.`;
+    } else if (scale3d.cpa > 0 && scale3d.cpa <= maxCpa) {
+      operational3dDiagnosis = 'Rentable 3D · mantener';
+      operational3dAction = 'Mantener';
+      operational3dPriority = 'monitor';
+      operational3dReason = cpaObservation3d.text;
+    }
+  }
+
+  let finalDiagnosis = 'Sin suficiente información';
+  let action = 'Monitorear';
+  let priority = 'monitor';
+  let reason = 'Todavía no existe suficiente historial comparable.';
+  if (c.days > 0) {
+    if (c.cpa > maxCpa && dynamic.diagnosis === 'Fatiga confirmada') {
+      finalDiagnosis = 'Anuncio deteriorado y no rentable'; action = 'Apagar / reemplazar'; priority = 'critical'; reason = 'CPA fuera de objetivo + fatiga confirmada en CTR/CPC/frecuencia.';
+    } else if (c.cpa > maxCpa && post.diagnosis === 'Tráfico post-clic deteriorado') {
+      finalDiagnosis = 'Tráfico de baja calidad'; action = 'Apagar / reemplazar creativo'; priority = 'critical'; reason = 'CPA fuera de objetivo y el embudo post-clic también se deteriora.';
+    } else if (c.cpa <= maxCpa && dynamic.diagnosis === 'Fatiga temprana') {
+      finalDiagnosis = 'Rentable con fatiga temprana'; action = 'Mantener y preparar creativos'; priority = 'alert'; reason = 'Todavía rentable, pero CTR/CPC/frecuencia empiezan a deteriorarse.';
+    } else if (c.cpa <= maxCpa && dynamic.diagnosis === 'Fatiga probable') {
+      finalDiagnosis = 'Rentable pero en deterioro'; action = 'Detener escala y lanzar test creativo'; priority = 'alert'; reason = 'CPA aún rentable, pero el patrón de fatiga ya es consistente.';
+    } else if (post.diagnosis === 'Fuga al cierre') {
+      finalDiagnosis = 'Problema post-clic'; action = 'Mantener anuncio y revisar cierre'; priority = 'alert'; reason = 'El anuncio genera intención, pero se pierde conversión después del ATC.';
+    } else if (post.diagnosis === 'Calidad de tráfico cayendo') {
+      finalDiagnosis = 'Calidad de tráfico deteriorándose'; action = c.cpa <= maxCpa ? 'Preparar reemplazo' : 'Apagar / reemplazar'; priority = 'alert'; reason = 'Las tasas visita→ATC y visita→compra empeoran frente a su ventana anterior.';
+    } else if (c.cpa <= scaleCpa && dynamic.diagnosis === 'Estable' && post.diagnosis === 'Post-clic estable' && canScale) {
+      finalDiagnosis = 'Ganador estable'; action = 'Escalar +20%'; priority = 'monitor'; reason = `CPA 3D con margen ≥20%, estable o mejorando, creativo sano y post-clic sano. Volumen: ${fmtNum(volumeReference.purchases, 2)} compras (${volumeReference.confidence}), usado solo como referencia de confianza.`;
+    } else if (c.cpa <= maxCpa) {
+      finalDiagnosis = 'Rentable / mantener'; action = 'Mantener'; priority = 'monitor'; reason = 'CPA dentro del máximo y sin señales críticas combinadas.';
+    } else {
+      finalDiagnosis = 'No rentable / observar'; action = 'No escalar'; priority = 'critical'; reason = `CPA ${fmtCpa(c.cpa)} supera el máximo ${fmtMoney(maxCpa)}.`;
+    }
+  }
+  return {
+    diagnosis: finalDiagnosis, finalDiagnosis, action, priority, reason, confidence, delta, stats: c, previous: p,
+    guardrails, canScale, volumeReference,
+    cpaObservation3d, metaDelivery3d,
+    operational3dDiagnosis, operational3dAction, operational3dPriority, operational3dReason,
+    scale3d, scalePrev3d, scaleDelta3d,
+    scaleMomentum:
+      scaleDelta3d.cpa === null ? 'Sin comparación' :
+      scaleDelta3d.cpa < -15 ? 'Mejora fuerte · puede seguir escalando si los demás guardrails pasan' :
+      scaleDelta3d.cpa <= 0 ? 'Mejorando' :
+      scaleDelta3d.cpa <= 10 ? 'Estable' :
+      scaleDelta3d.cpa <= 15 ? 'Atención · aún dentro del guardrail' :
+      'Deterioro · bloquear escala',
+    scaleDynamic3d: scaleDynamic3d.diagnosis,
+    scalePost3d: scalePost3d.diagnosis,
+    dynamicDiagnosis: dynamic.diagnosis, dynamicAction: dynamic.action,
+    postDiagnosis: post.diagnosis, postAction: post.action, dynamicTone: dynamic.tone, postTone: post.tone,
+    maxCpa, scaleCpa, ageDays
+  };
+}
+
+
+function buildCampaignContribution3D(campaign, product, allAds = [], dailyAds = []) {
+  const today = todayColombiaCC();
+  const maxCpa = Math.max(1, toNumber(product?.maxCpa));
+
+  const campaignAds = (allAds || []).filter(a => a.campaignId === campaign?.id);
+  const adMap = new Map(campaignAds.map(a => [a.id, a]));
+
+  // Misma ventana de campaña para todos los anuncios:
+  // últimos 3 días completos con datos, excluyendo HOY y periodos OFF.
+  const eligible = (dailyAds || []).filter(r => {
+    if (r.campaignId !== campaign?.id) return false;
+    if (!r.date || String(r.date) >= today) return false;
+    const ad = adMap.get(r.adId);
+    if (!ad) return false;
+    return entityActiveOnDate(campaign, r.date) && entityActiveOnDate(ad, r.date);
+  });
+
+  const dates = [...new Set(eligible.map(r => String(r.date)))]
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, 3);
+
+  const dateSet = new Set(dates);
+  const windowRecords = eligible.filter(r => dateSet.has(String(r.date)));
+  const campaignStats = aggregateRecords(windowRecords);
+  const campaignCpa = campaignStats.cpa;
+
+  const results = {};
+
+  campaignAds.forEach(ad => {
+    const adRecords = windowRecords.filter(r => r.adId === ad.id);
+    const adStats = aggregateRecords(adRecords);
+
+    const spendShare = campaignStats.spend > 0 ? (adStats.spend / campaignStats.spend) * 100 : 0;
+    const purchaseShare = campaignStats.purchases > 0 ? (adStats.purchases / campaignStats.purchases) * 100 : 0;
+
+    const withoutSpend = Math.max(0, campaignStats.spend - adStats.spend);
+    const withoutPurchases = Math.max(0, campaignStats.purchases - adStats.purchases);
+    const cpaWithout = withoutPurchases > 0 ? calcCpa(withoutSpend, withoutPurchases) : null;
+
+    const removalImprovementPct =
+      campaignCpa > 0 && cpaWithout !== null
+        ? ((campaignCpa - cpaWithout) / campaignCpa) * 100
+        : null;
+
+    // Diagnósticos 3D del anuncio para explicar la causa de bajo aporte/drenaje.
+    const adEligible = eligibleAdRecords(
+      (dailyAds || []).filter(r => r.adId === ad.id),
+      ad,
+      campaign
+    );
+    const { currentStats: ad3d, previousStats: prevAd3d } = splitPeriodRecords(adEligible, '3d');
+    const delta3d = {
+      cpa: pctChange(ad3d.cpa, prevAd3d.cpa),
+      ctr: pctChange(ad3d.ctr, prevAd3d.ctr),
+      cpc: pctChange(ad3d.cpc, prevAd3d.cpc),
+      cpm: pctChange(ad3d.cpm, prevAd3d.cpm),
+      frequency: pctChange(ad3d.frequency, prevAd3d.frequency),
+      visitToAtc: pctChange(ad3d.visitToAtc, prevAd3d.visitToAtc),
+      visitToPurchase: pctChange(ad3d.visitToPurchase, prevAd3d.visitToPurchase),
+      atcToPurchase: pctChange(ad3d.atcToPurchase, prevAd3d.atcToPurchase)
+    };
+    const dynamic3d = adVariationDiagnosisFromDelta(delta3d);
+    const post3d = funnelVariationDiagnosisFromDelta(delta3d);
+
+    let status = 'Bajo aporte / vigilar';
+    let tone = 'alert';
+    let cause = 'Aporte todavía no concluyente dentro de la campaña.';
+
+    const meaningfulSpend = adStats.spend >= maxCpa * 0.5;
+
+    const clearlyHurtsEfficiency =
+      removalImprovementPct !== null &&
+      removalImprovementPct >= 10;
+
+    const disproportionate =
+      spendShare >= purchaseShare + 10;
+
+    const stronglyEfficient =
+      adStats.purchases > 0 &&
+      campaignCpa > 0 &&
+      adStats.cpa > 0 &&
+      adStats.cpa <= campaignCpa * 0.8 &&
+      purchaseShare >= spendShare + 8;
+
+    const reasonablyEfficient =
+      adStats.purchases > 0 &&
+      campaignCpa > 0 &&
+      adStats.cpa > 0 &&
+      adStats.cpa <= campaignCpa * 1.1 &&
+      purchaseShare >= spendShare - 5;
+
+    if (campaignStats.spend <= 0 || dates.length === 0) {
+      status = 'Sin datos 3D';
+      tone = 'neutral';
+      cause = 'Todavía no existen datos completos suficientes de la campaña.';
+    } else if (adStats.spend <= 0 && adRecords.some(r => r.metaOmittedNoDelivery === true || r.source === 'meta_csv_zero_fill')) {
+      status = 'Sin entrega de Meta';
+      tone = 'alert';
+      cause = 'El anuncio estuvo activo, pero Meta no le asignó entrega en la ventana 3D. No se clasifica como drenaje porque no consumió presupuesto.';
+    } else if (adStats.spend <= 0) {
+      status = 'Bajo aporte / vigilar';
+      tone = 'alert';
+      cause = 'El anuncio no tuvo entrega dentro de la ventana 3D.';
+    } else if (adStats.purchases <= 0 && meaningfulSpend) {
+      status = adStats.spend >= maxCpa ? 'Drena la campaña' : 'Bajo aporte / vigilar';
+      tone = adStats.spend >= maxCpa ? 'critical' : 'alert';
+      cause = adStats.spend >= maxCpa
+        ? `Gastó ${fmtMoney(adStats.spend)} (≥ CPA máximo ${fmtMoney(maxCpa)}) sin compras. CPA no calculable.`
+        : `Gastó ${fmtMoney(adStats.spend)} sin compras. Aún no alcanza el CPA máximo; vigilar sin fabricar un CPA.`;
+    } else if (adStats.purchases <= 0) {
+      status = 'Bajo aporte / vigilar';
+      tone = 'neutral';
+      cause = `Sin compras todavía con solo ${fmtMoney(adStats.spend)} de gasto. CPA no calculable; muestra insuficiente para condenar el anuncio.`;
+    } else if (
+      clearlyHurtsEfficiency ||
+      (adStats.cpa > maxCpa && disproportionate) ||
+      (campaignCpa > 0 && adStats.cpa > campaignCpa * 1.35 && disproportionate)
+    ) {
+      status = 'Drena la campaña';
+      tone = 'critical';
+
+      if (post3d.diagnosis === 'Calidad de tráfico cayendo' || post3d.diagnosis === 'Tráfico post-clic deteriorado') {
+        cause = 'Está encareciendo la campaña y el tráfico post-clic muestra deterioro/calidad baja.';
+      } else if (post3d.diagnosis === 'Fuga al cierre') {
+        cause = 'Consume presupuesto, pero la conversión se frena después del ATC.';
+      } else if (['Fatiga probable', 'Fatiga confirmada'].includes(dynamic3d.diagnosis)) {
+        cause = 'Está encareciendo la campaña con señales de fatiga/saturación creativa.';
+      } else if (adStats.cpa > maxCpa) {
+        cause = `CPA 3D ${fmtMoney(adStats.cpa)} por encima del máximo ${fmtMoney(maxCpa)} y aporte desproporcionado.`;
+      } else {
+        cause = `Consume ${fmtNum(spendShare, 2)}% del gasto y aporta ${fmtNum(purchaseShare, 2)}% de las compras; retirarlo mejoraría el CPA de campaña.`;
+      }
+    } else if (stronglyEfficient) {
+      status = 'Aporta fuertemente';
+      tone = 'good';
+      cause = `Aporta ${fmtNum(purchaseShare, 2)}% de las compras usando ${fmtNum(spendShare, 2)}% del gasto, con CPA claramente mejor que la campaña.`;
+    } else if (reasonablyEfficient) {
+      status = 'Aporta';
+      tone = 'good';
+      cause = `Su participación en compras es proporcional o superior a su participación en gasto.`;
+    } else if (disproportionate || adStats.cpa > maxCpa) {
+      status = 'Bajo aporte / vigilar';
+      tone = 'alert';
+
+      if (post3d.diagnosis === 'Calidad de tráfico cayendo' || post3d.diagnosis === 'Tráfico post-clic deteriorado') {
+        cause = 'Bajo aporte con señales de tráfico menos calificado.';
+      } else if (post3d.diagnosis === 'Fuga al cierre') {
+        cause = 'Genera intención, pero pierde eficiencia en el cierre.';
+      } else if (['Fatiga temprana', 'Fatiga probable', 'Fatiga confirmada'].includes(dynamic3d.diagnosis)) {
+        cause = `Bajo aporte con señal de ${dynamic3d.diagnosis.toLowerCase()}.`;
+      } else {
+        cause = `Consume ${fmtNum(spendShare, 2)}% del gasto y aporta ${fmtNum(purchaseShare, 2)}% de las compras.`;
+      }
+    } else {
+      status = 'Aporta';
+      tone = 'good';
+      cause = 'El anuncio mantiene una contribución razonable al rendimiento de campaña.';
+    }
+
+    results[ad.id] = {
+      status,
+      tone,
+      cause,
+      dates,
+      spend: adStats.spend,
+      purchases: adStats.purchases,
+      cpa: adStats.cpa,
+      spendShare,
+      purchaseShare,
+      campaignCpa,
+      cpaWithout,
+      removalImprovementPct,
+      dynamic3d: dynamic3d.diagnosis,
+      post3d: post3d.diagnosis
+    };
+  });
+
+  return {
+    dates,
+    campaignStats,
+    campaignCpa,
+    byAd: results
+  };
+}
+
+function StateBadge({ active, archived = false }) {
+  if (archived) return <span className="px-2 py-1 rounded-full bg-slate-200 text-slate-500 text-[9px] font-black uppercase">Archivada</span>;
+  return active
+    ? <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase">Activa</span>
+    : <span className="px-2 py-1 rounded-full bg-rose-100 text-rose-600 text-[9px] font-black uppercase">Apagada</span>;
+}
+
+function MiniCard({ label, value, sub, tone = 'default' }) {
+  const toneClass = tone === 'good' ? 'bg-emerald-50 border-emerald-100' : tone === 'bad' ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100';
+  return (
+    <div className={`rounded-2xl border p-3 ${toneClass}`}>
+      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-lg font-black text-zinc-900 mt-1">{value}</p>
+      {sub && <p className="text-[8px] font-semibold text-slate-400 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function SectionCard({ children, className = '', accent = null, soft = null }) {
+  return (
+    <div
+      className={`bg-white border shadow-sm rounded-3xl p-4 md:p-5 ${className}`}
+      style={accent ? {
+        borderColor: accent,
+        borderWidth: '2px',
+        backgroundColor: soft || '#ffffff',
+        boxShadow: `0 8px 24px ${accent}12`
+      } : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+const CC_VISUAL_ACCENTS = [
+  { border: '#2563eb', soft: '#eff6ff', text: '#1d4ed8' },
+  { border: '#7c3aed', soft: '#f5f3ff', text: '#6d28d9' },
+  { border: '#059669', soft: '#ecfdf5', text: '#047857' },
+  { border: '#ea580c', soft: '#fff7ed', text: '#c2410c' },
+  { border: '#db2777', soft: '#fdf2f8', text: '#be185d' },
+  { border: '#0891b2', soft: '#ecfeff', text: '#0e7490' },
+  { border: '#ca8a04', soft: '#fefce8', text: '#a16207' }
+];
+
+function ccVisualAccent(seed = '', offset = 0) {
+  const value = String(seed || '');
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+  return CC_VISUAL_ACCENTS[(Math.abs(hash) + offset) % CC_VISUAL_ACCENTS.length];
+}
+
+function EmptyState({ children }) {
+  return <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center text-slate-400 text-xs font-bold">{children}</div>;
+}
+
+function metricDirectionClass(metric, delta) {
+  if (delta === null || delta === undefined || Number.isNaN(Number(delta))) return 'text-slate-300';
+  const value = Number(delta);
+  if (Math.abs(value) < 0.005) return 'text-slate-400';
+  const lowerIsGood = ['cpa', 'cpc', 'cpm', 'frequency'].includes(metric);
+  const improvement = lowerIsGood ? value < 0 : value > 0;
+  return improvement ? 'text-emerald-600' : 'text-rose-600';
+}
+
+function Delta({ metric, value }) {
+  if (value === null || value === undefined) return <span className="text-slate-300">—</span>;
+  return <span className={`font-black ${metricDirectionClass(metric, value)}`}>{value > 0 ? '+' : ''}{fmtNum(value, 2)}%</span>;
+}
+
+function parseMetaRows(rows, existingAds, selectedDate, campaign = null) {
+  const existingMap = new Map(existingAds.map(a => [normalizeAdName(a.name), a]));
+
+  const parsed = rows.map(row => {
+    const adName = String(resolveCsvValue(row, META_CSV_ALIASES.adName) || '').trim();
+    if (!adName) return null;
+
+    const deliveryRaw = String(resolveCsvValue(row, META_CSV_ALIASES.delivery) || '').trim();
+    const deliveryStatus = normalizeMetaDeliveryStatusCC(deliveryRaw);
+    const ignoredFromImport = isMetaAdExplicitlyInactiveCC(deliveryRaw);
+
+    const normalizedName = normalizeAdName(adName);
+    const spend = toNumber(resolveCsvValue(row, META_CSV_ALIASES.spend));
+    const impressions = toNumber(resolveCsvValue(row, META_CSV_ALIASES.impressions));
+    const clicks = toNumber(resolveCsvValue(row, META_CSV_ALIASES.clicks));
+    const purchases = toNumber(resolveCsvValue(row, META_CSV_ALIASES.purchases));
+    const ctrRaw = toNumber(resolveCsvValue(row, META_CSV_ALIASES.ctr));
+    const cpcRaw = toNumber(resolveCsvValue(row, META_CSV_ALIASES.cpc));
+    const cpmRaw = toNumber(resolveCsvValue(row, META_CSV_ALIASES.cpm));
+    const frequency = toNumber(resolveCsvValue(row, META_CSV_ALIASES.frequency));
+    const landingViews = toNumber(resolveCsvValue(row, META_CSV_ALIASES.landingViews));
+    const atc = toNumber(resolveCsvValue(row, META_CSV_ALIASES.atc));
+    const roas = toNumber(resolveCsvValue(row, META_CSV_ALIASES.roas));
+    const reportDate =
+      dateToIso(resolveCsvValue(row, META_CSV_ALIASES.endDate)) ||
+      dateToIso(resolveCsvValue(row, META_CSV_ALIASES.startDate)) ||
+      selectedDate;
+
+    return {
+      adName,
+      normalizedName,
+      existingAd: existingMap.get(normalizedName) || null,
+      reportDate,
+      deliveryRaw,
+      deliveryStatus,
+      ignoredFromImport,
+      syntheticZero: false,
+      metrics: {
+        spend,
+        impressions,
+        clicks,
+        purchases,
+        ctr: impressions > 0 && clicks > 0 ? (clicks / impressions) * 100 : ctrRaw,
+        cpc: clicks > 0 ? spend / clicks : cpcRaw,
+        cpm: impressions > 0 ? (spend / impressions) * 1000 : cpmRaw,
+        frequency,
+        landingViews,
+        atc,
+        roas
+      }
+    };
+  }).filter(Boolean);
+
+  // Primero detectamos duplicados REALES del CSV.
+  const counts = {};
+  parsed.forEach(item => {
+    if (item.ignoredFromImport) return;
+    counts[`${item.reportDate}__${item.normalizedName}`] =
+      (counts[`${item.reportDate}__${item.normalizedName}`] || 0) + 1;
+  });
+
+  parsed.forEach(item => {
+    const key = `${item.reportDate}__${item.normalizedName}`;
+    item.status = item.ignoredFromImport
+      ? 'ignored_inactive'
+      : counts[key] > 1
+        ? 'conflict'
+        : item.existingAd
+          ? 'existing'
+          : 'new';
+  });
+
+  // META puede omitir por completo anuncios ACTIVOS a los que no entregó gasto.
+  // Esos anuncios NO deben desaparecer del día: se crean como fila sintética en cero.
+  //
+  // Importante:
+  // - solo se hace cuando el CSV sí contiene al menos una fila válida;
+  // - solo para anuncios que YA existen dentro de esta campaña;
+  // - solo si campaña + anuncio estaban ACTIVOS en esa fecha;
+  // - anuncios OFF quedan excluidos y NO reciben ceros.
+  if (parsed.length > 0) {
+    const reportDates = [...new Set(parsed.map(item => item.reportDate).filter(Boolean))];
+
+    for (const reportDate of reportDates) {
+      // Incluye también filas ignoradas por estar desactivadas en Meta.
+      // Así un anuncio desactivado que aparece en el CSV jamás reaparece
+      // accidentalmente como zero_fill.
+      const namesPresent = new Set(
+        parsed
+          .filter(item => item.reportDate === reportDate)
+          .map(item => item.normalizedName)
+      );
+
+      for (const ad of existingAds) {
+        const normalizedName = normalizeAdName(ad.name);
+
+        if (!normalizedName || namesPresent.has(normalizedName)) continue;
+        if (campaign && !entityActiveOnDate(campaign, reportDate)) continue;
+        if (!entityActiveOnDate(ad, reportDate)) continue;
+
+        parsed.push({
+          adName: ad.name,
+          normalizedName,
+          existingAd: ad,
+          reportDate,
+          status: 'zero_fill',
+          syntheticZero: true,
+          metrics: {
+            spend: 0,
+            impressions: 0,
+            clicks: 0,
+            purchases: 0,
+            ctr: 0,
+            cpc: 0,
+            cpm: 0,
+            frequency: 0,
+            landingViews: 0,
+            atc: 0,
+            roas: 0
+          }
         });
       }
-      resetForm();
-      setNotification(editingPrompt ? '✅ Prompt actualizado' : '✅ Prompt creado');
-      setTimeout(() => setNotification(''), 3000);
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar el prompt");
     }
-  };
+  }
 
-  const deletePrompt = async (id) => {
-    if (window.confirm("¿Eliminar este prompt definitivamente?")) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id));
+  return parsed.sort((a, b) => {
+    if (a.reportDate !== b.reportDate) return String(a.reportDate).localeCompare(String(b.reportDate));
+    if (a.syntheticZero !== b.syntheticZero) return a.syntheticZero ? 1 : -1;
+    return String(a.adName).localeCompare(String(b.adName));
+  });
+}
+
+
+// ─── INFORME DETALLADO DE CAMPAÑAS / IA ─────────────────────────────────────
+const REPORT_METRICS_CC = [
+  { key: 'spend', label: 'Gasto', type: 'money', direction: 'neutral' },
+  { key: 'purchases', label: 'Compras', type: 'number', direction: 'higher' },
+  { key: 'cpa', label: 'CPA', type: 'cpa', direction: 'lower' },
+  { key: 'ctr', label: 'CTR', type: 'rate', direction: 'higher' },
+  { key: 'cpc', label: 'CPC', type: 'money', direction: 'lower' },
+  { key: 'cpm', label: 'CPM', type: 'money', direction: 'lower' },
+  { key: 'frequency', label: 'Frecuencia', type: 'number', direction: 'lower' },
+  { key: 'landingViews', label: 'Visitas landing', type: 'number', direction: 'higher' },
+  { key: 'atc', label: 'Añadidos al carrito', type: 'number', direction: 'higher' },
+  { key: 'roas', label: 'ROAS', type: 'roas', direction: 'higher' },
+  { key: 'visitToAtc', label: 'Visita → ATC', type: 'rate', direction: 'higher' },
+  { key: 'visitToPurchase', label: 'Visita → Compra', type: 'rate', direction: 'higher' },
+  { key: 'atcToPurchase', label: 'ATC → Compra', type: 'rate', direction: 'higher' }
+];
+
+function reportWindowCC(records = [], currentSize = 3, previousSize = currentSize, cutoffDate = todayColombiaCC()) {
+  const sorted = [...(records || [])]
+    .filter(r => r?.date && String(r.date) < String(cutoffDate))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  const current = sorted.slice(0, currentSize);
+  const previous = sorted.slice(currentSize, currentSize + previousSize);
+
+  return {
+    current,
+    previous,
+    currentStats: aggregateRecords(current),
+    previousStats: aggregateRecords(previous),
+    currentDates: [...new Set(current.map(r => String(r.date)))].sort(),
+    previousDates: [...new Set(previous.map(r => String(r.date)))].sort()
+  };
+}
+
+function reportWindowLabelCC(dates = []) {
+  if (!dates.length) return 'SIN DATOS';
+  if (dates.length === 1) return dates[0];
+  return `${dates[0]} → ${dates[dates.length - 1]}`;
+}
+
+function reportMetricValueCC(metric, value) {
+  if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
+  if (metric.type === 'money') return fmtMoney(value);
+  if (metric.type === 'cpa') return fmtCpa(value);
+  if (metric.type === 'rate') return fmtRate(value);
+  if (metric.type === 'roas') return `${fmtNum(value, 2)}x`;
+  return fmtNum(value, 2);
+}
+
+function reportDeltaCC(metric, current, previous) {
+  const delta = pctChange(current, previous);
+  if (delta === null) return { value: null, text: '— · SIN BASE COMPARABLE', quality: 'neutral' };
+
+  const abs = Math.abs(delta);
+  const band =
+    abs <= 10 ? 'NORMAL' :
+    abs <= 15 ? 'ATENCIÓN' :
+    abs <= 20 ? 'ALERTA' :
+    'CRÍTICA';
+
+  if (Math.abs(delta) < 0.005 || metric.direction === 'neutral') {
+    return {
+      value: delta,
+      text: `${delta > 0 ? '+' : ''}${fmtNum(delta, 2)}% · ${band}`,
+      quality: 'neutral'
+    };
+  }
+
+  const favorable =
+    metric.direction === 'lower'
+      ? delta < 0
+      : metric.direction === 'higher'
+        ? delta > 0
+        : null;
+
+  return {
+    value: delta,
+    text: `${delta > 0 ? '+' : ''}${fmtNum(delta, 2)}% · ${favorable ? 'FAVORABLE' : 'DESFAVORABLE'} · ${band}`,
+    quality: favorable ? 'good' : 'bad'
+  };
+}
+
+function reportStatsTableCC(title, window) {
+  const lines = [];
+  lines.push(title);
+  lines.push('-'.repeat(Math.max(42, title.length)));
+  lines.push(`Periodo actual: ${reportWindowLabelCC(window.currentDates)} · ${window.currentStats.days} día(s) con registro`);
+  lines.push(`Periodo comparativo: ${reportWindowLabelCC(window.previousDates)} · ${window.previousStats.days} día(s) con registro`);
+  lines.push('');
+  lines.push('MÉTRICA | ACTUAL | ANTERIOR | VARIACIÓN');
+  lines.push('--- | --- | --- | ---');
+
+  for (const metric of REPORT_METRICS_CC) {
+    const current = window.currentStats[metric.key];
+    const previous = window.previousStats[metric.key];
+    const delta = reportDeltaCC(metric, current, previous);
+    lines.push(
+      `${metric.label} | ${reportMetricValueCC(metric, current)} | ${reportMetricValueCC(metric, previous)} | ${delta.text}`
+    );
+  }
+
+  return lines;
+}
+
+function reportMetricDeltasCC(currentStats, previousStats) {
+  return REPORT_METRICS_CC.reduce((acc, metric) => {
+    acc[metric.key] = pctChange(currentStats?.[metric.key], previousStats?.[metric.key]);
+    return acc;
+  }, {});
+}
+
+function reportCausalInsightsCC(currentStats, previousStats, maxCpa) {
+  const delta = reportMetricDeltasCC(currentStats, previousStats);
+  const lines = [];
+  const cpa = currentStats?.cpa;
+  const max = Math.max(1, toNumber(maxCpa));
+
+  if (currentStats?.spend > 0 && currentStats?.purchases <= 0) {
+    lines.push(`• No hubo compras. Se consumieron ${fmtMoney(currentStats.spend)} (${fmtNum((currentStats.spend / max) * 100, 2)}% del CPA máximo) y el CPA NO es calculable.`);
+  } else if (cpa !== null && cpa !== undefined) {
+    lines.push(`• CPA actual ${fmtCpa(cpa)} frente a CPA máximo ${fmtMoney(max)}: ${cpa <= max ? 'DENTRO DEL OBJETIVO' : 'FUERA DEL OBJETIVO'}.`);
+    if (delta.cpa !== null) {
+      lines.push(`• CPA ${delta.cpa <= 0 ? 'mejoró' : 'empeoró'} ${fmtNum(Math.abs(delta.cpa), 2)}% frente al bloque comparable.`);
     }
-  };
+  }
 
-  const resetForm = () => {
-    setFormData({ name: '', content: '', category: 'landing' });
-    setEditingPrompt(null);
-    setShowForm(false);
-  };
+  if (delta.ctr !== null) lines.push(`• CTR ${delta.ctr >= 0 ? 'subió' : 'bajó'} ${fmtNum(Math.abs(delta.ctr), 2)}%.`);
+  if (delta.cpc !== null) lines.push(`• CPC ${delta.cpc <= 0 ? 'mejoró/bajó' : 'subió'} ${fmtNum(Math.abs(delta.cpc), 2)}%.`);
+  if (delta.cpm !== null) lines.push(`• CPM ${delta.cpm <= 0 ? 'bajó' : 'subió'} ${fmtNum(Math.abs(delta.cpm), 2)}%.`);
+  if (delta.frequency !== null) lines.push(`• Frecuencia ${delta.frequency >= 0 ? 'subió' : 'bajó'} ${fmtNum(Math.abs(delta.frequency), 2)}%.`);
+  if (delta.visitToAtc !== null) lines.push(`• Visita→ATC ${delta.visitToAtc >= 0 ? 'mejoró' : 'cayó'} ${fmtNum(Math.abs(delta.visitToAtc), 2)}%.`);
+  if (delta.visitToPurchase !== null) lines.push(`• Visita→Compra ${delta.visitToPurchase >= 0 ? 'mejoró' : 'cayó'} ${fmtNum(Math.abs(delta.visitToPurchase), 2)}%.`);
+  if (delta.atcToPurchase !== null) lines.push(`• ATC→Compra ${delta.atcToPurchase >= 0 ? 'mejoró' : 'cayó'} ${fmtNum(Math.abs(delta.atcToPurchase), 2)}%.`);
 
-  const editPrompt = (prompt) => {
-    setFormData({
-      name: prompt.name,
-      content: prompt.content,
-      category: prompt.category || 'landing'
+  const creative = adVariationDiagnosisFromDelta(delta);
+  const funnel = funnelVariationDiagnosisFromDelta(delta);
+  lines.push(`• Lectura de tendencia creativa: ${creative.diagnosis} → ${creative.action}.`);
+  lines.push(`• Lectura post-clic: ${funnel.diagnosis} → ${funnel.action}.`);
+
+  return lines;
+}
+
+function reportBudgetChangeImpactCC(change, campaignHistory = []) {
+  const rows = [...campaignHistory].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const before = rows.filter(r => String(r.date) < String(change.date)).slice(-3);
+  const after = rows.filter(r => String(r.date) >= String(change.date)).slice(0, 3);
+  const beforeStats = aggregateRecords(before);
+  const afterStats = aggregateRecords(after);
+  const cpaDelta = pctChange(afterStats.cpa, beforeStats.cpa);
+  const beforePurchasesDay = beforeStats.days > 0 ? beforeStats.purchases / beforeStats.days : null;
+  const afterPurchasesDay = afterStats.days > 0 ? afterStats.purchases / afterStats.days : null;
+  const volumeDelta = pctChange(afterPurchasesDay, beforePurchasesDay);
+  const extraSpend = afterStats.spend - beforeStats.spend;
+  const extraPurchases = afterStats.purchases - beforeStats.purchases;
+  const marginalCpa = extraSpend > 0 && extraPurchases > 0 ? extraSpend / extraPurchases : null;
+
+  return {
+    beforeStats,
+    afterStats,
+    beforeDates: before.map(r => r.date),
+    afterDates: after.map(r => r.date),
+    cpaDelta,
+    volumeDelta,
+    marginalCpa
+  };
+}
+
+function reportContributionImpactTextCC(contribution) {
+  if (!contribution || contribution.campaignCpa === null || contribution.campaignCpa === undefined) return 'Sin base suficiente para calcular impacto.';
+  if (contribution.cpaWithout === null || contribution.cpaWithout === undefined) {
+    return 'El CPA del resto no es calculable porque, al excluir este anuncio, no quedarían compras suficientes.';
+  }
+
+  const impact = pctChange(contribution.cpaWithout, contribution.campaignCpa);
+  if (impact === null) return 'Sin base comparable.';
+
+  if (impact > 0) {
+    return `Si se excluyeran matemáticamente sus resultados históricos, el CPA del resto sería ${fmtCpa(contribution.cpaWithout)}, ${fmtNum(Math.abs(impact), 2)}% PEOR. El anuncio está ayudando a la eficiencia.`;
+  }
+  if (impact < 0) {
+    return `Si se excluyeran matemáticamente sus resultados históricos, el CPA del resto sería ${fmtCpa(contribution.cpaWithout)}, ${fmtNum(Math.abs(impact), 2)}% MEJOR. El anuncio está ejerciendo presión negativa sobre la eficiencia.`;
+  }
+  return `El CPA del resto sería prácticamente igual (${fmtCpa(contribution.cpaWithout)}). Impacto neutral.`;
+}
+
+function buildDetailedCampaignReportCC({
+  products = [],
+  campaigns = [],
+  ads = [],
+  dailyCampaigns = [],
+  dailyAds = [],
+  budgetChanges = [],
+  recommendations = [],
+  decisions = [],
+  productId = 'all',
+  campaignId = 'all'
+}) {
+  const today = todayColombiaCC();
+  const lastComplete = lastCompleteColombiaDateCC();
+  const generatedAt = colombiaDateTimeLabelCC();
+
+  // Apagadas y archivadas conservan histórico en informes.
+  // Solo la eliminación definitiva hace desaparecer la campaña.
+  let selectedCampaigns = campaigns
+    .filter(c => productId === 'all' || c.productId === productId)
+    .filter(c => campaignId === 'all' || c.id === campaignId)
+    .sort((a, b) => {
+      const pa = products.find(p => p.id === a.productId)?.name || '';
+      const pb = products.find(p => p.id === b.productId)?.name || '';
+      return pa.localeCompare(pb) || String(a.name || '').localeCompare(String(b.name || ''));
     });
-    setEditingPrompt(prompt);
-    setShowForm(true);
+
+  const selectedProductIds = new Set(selectedCampaigns.map(c => c.productId));
+  const selectedProducts = products.filter(p => selectedProductIds.has(p.id));
+
+  const lines = [];
+  const summary = {
+    products: selectedProducts.length,
+    campaigns: selectedCampaigns.length,
+    campaignsWithData: 0,
+    scalable: 0,
+    maintain: 0,
+    attention: 0,
+    critical: 0,
+    ads: 0,
+    strong: 0,
+    contributes: 0,
+    watch: 0,
+    draining: 0,
+    noDelivery: 0
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setNotification('📋 Prompt copiado al portapapeles');
-      setTimeout(() => setNotification(''), 2000);
-    }).catch(() => {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setNotification('📋 Prompt copiado');
-      setTimeout(() => setNotification(''), 2000);
+  const opportunities = [];
+  const risks = [];
+  const aiCampaignRows = [];
+
+  lines.push('WINNER SYSTEM 360');
+  lines.push('INFORME DETALLADO DE CONTROL DE CAMPAÑAS META ADS');
+  lines.push('='.repeat(78));
+  lines.push(`Generado: ${generatedAt}`);
+  lines.push(`Zona horaria: America/Bogota`);
+  lines.push(`Fecha actual: ${today}`);
+  lines.push(`Último día completo permitido: ${lastComplete}`);
+  lines.push('');
+  lines.push('MODELO DE ANÁLISIS');
+  lines.push('-'.repeat(78));
+  lines.push('• 3D = ventana principal y determinante de la decisión operativa.');
+  lines.push('• 3D anterior = comparación obligatoria para variaciones.');
+  lines.push('• Último día completo = alerta temprana; NO reemplaza la decisión 3D.');
+  lines.push('• 7D = confirmación de tendencia.');
+  lines.push('• 14D = contexto + benchmark.');
+  lines.push('• 30D = contexto histórico de largo plazo.');
+  lines.push('• HOY se excluye completamente de decisiones por ser intradía.');
+  lines.push('• Días OFF se excluyen y nunca se convierten en ceros.');
+  lines.push('• CPA = gasto/compras únicamente cuando compras > 0. Sin compras, CPA = —.');
+  lines.push('• Frecuencia agregada es una aproximación ponderada cuando no existe reach deduplicado.');
+  lines.push('• "CPA del resto sin anuncio" es un contrafactual histórico matemático; NO predice la redistribución futura de Meta.');
+  lines.push('');
+  lines.push(`ALCANCE: ${productId === 'all' ? 'TODOS LOS PRODUCTOS' : (products.find(p => p.id === productId)?.name || productId)}${campaignId !== 'all' ? ` · CAMPAÑA ${campaigns.find(c => c.id === campaignId)?.name || campaignId}` : ''}`);
+  lines.push(`Productos incluidos: ${selectedProducts.length}`);
+  lines.push(`Campañas incluidas: ${selectedCampaigns.length}`);
+  lines.push('');
+
+  for (const product of selectedProducts) {
+    const productCampaigns = selectedCampaigns.filter(c => c.productId === product.id);
+    const maxCpa = Math.max(1, toNumber(product.maxCpa));
+    const benchmark = buildProductBenchmark(product.id, dailyAds, dailyCampaigns, maxCpa, ads, campaigns);
+
+    lines.push('');
+    lines.push('#'.repeat(78));
+    lines.push(`PRODUCTO: ${product.name}`);
+    lines.push('#'.repeat(78));
+    lines.push(`Estado actual: ${product.active === false ? 'INACTIVO' : 'ACTIVO'}`);
+    lines.push(`Fecha operativa producto: ${product.effectiveStartDate || product.createdDate || '—'}`);
+    lines.push(`CPA máximo: ${fmtMoney(maxCpa)}`);
+    lines.push(`Zona de escala fuerte (≤80% CPA máximo): ${fmtMoney(maxCpa * 0.8)}`);
+    lines.push(`Campañas incluidas: ${productCampaigns.length}`);
+    lines.push('');
+    lines.push('BENCHMARK PRODUCTO · 14 DÍAS ACTIVOS COMPLETOS');
+    lines.push(`Estado benchmark: ${benchmark.status}`);
+    lines.push(`Días disponibles: ${benchmark.availableDays} · Rentables: ${benchmark.profitableDays} · Estables: ${benchmark.stableDays} · Muestra usada: ${benchmark.sampleDays}`);
+    lines.push(`CPA benchmark: ${benchmark.sampleDays ? fmtCpa(benchmark.cpa) : '—'}`);
+    lines.push(`CTR benchmark: ${benchmark.sampleDays ? fmtRate(benchmark.ctr) : '—'}`);
+    lines.push(`CPC benchmark: ${benchmark.sampleDays ? fmtMoney(benchmark.cpc) : '—'}`);
+    lines.push(`CPM benchmark: ${benchmark.sampleDays ? fmtMoney(benchmark.cpm) : '—'}`);
+    lines.push(`Frecuencia benchmark: ${benchmark.sampleDays ? fmtNum(benchmark.frequency, 2) : '—'}`);
+    lines.push(`ROAS benchmark: ${benchmark.sampleDays ? `${fmtNum(benchmark.roas, 2)}x` : '—'}`);
+    lines.push(`Visita→Compra benchmark: ${benchmark.sampleDays ? fmtRate(benchmark.visitToPurchase) : '—'}`);
+    lines.push(`Criterio: ${benchmark.criteria}`);
+
+    for (const campaign of productCampaigns) {
+      const campaignHistory = eligibleCampaignRecords(
+        dailyCampaigns.filter(r => r.campaignId === campaign.id),
+        campaign
+      )
+        .filter(r => String(r.date) < today)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+      if (campaignHistory.length) summary.campaignsWithData += 1;
+
+      const lastWindow = reportWindowCC(campaignHistory, 1, 3, today);
+      const w3 = reportWindowCC(campaignHistory, 3, 3, today);
+      const w7 = reportWindowCC(campaignHistory, 7, 7, today);
+      const w14 = reportWindowCC(campaignHistory, 14, 14, today);
+      const w30 = reportWindowCC(campaignHistory, 30, 30, today);
+      const contribution3d = buildCampaignContribution3D(campaign, product, ads, dailyAds);
+
+      const recent14Dates = new Set(w14.currentDates);
+      const campaignAds = ads
+        .filter(a => a.campaignId === campaign.id)
+        .filter(a => {
+          if (a.active !== false) return true;
+          return dailyAds.some(r => r.adId === a.id && recent14Dates.has(String(r.date)));
+        })
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+      const adRows = campaignAds.map(ad => {
+        const records = dailyAds.filter(r => r.adId === ad.id);
+        return {
+          ad,
+          records,
+          diag: diagnoseAd(records, product, ad, '3d', campaign),
+          contribution: contribution3d.byAd[ad.id] || null
+        };
+      });
+
+      const scaleRows = buildScaleHistory(campaignHistory, maxCpa);
+      const campaignDecision = buildCampaignDecision(campaign, product, campaignHistory, adRows, scaleRows);
+      const coverage = campaignRegistrationCoverageCC(campaign, product, dailyCampaigns, lastComplete);
+      const budgetRows = budgetChanges
+        .filter(b => b.campaignId === campaign.id && (!b.date || String(b.date) < today))
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      const recommendationRows = recommendations
+        .filter(r => r.campaignId === campaign.id)
+        .sort((a, b) => String(b.createdDate || b.appliedDate || '').localeCompare(String(a.createdDate || a.appliedDate || '')));
+      const decisionRows = decisions
+        .filter(d => d.campaignId === campaign.id)
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+      const latestCampaignRecord = [...campaignHistory].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0] || null;
+      const currentBudget = toNumber(latestCampaignRecord?.budget);
+      const currentBudgetSource = latestCampaignRecord?.budgetSource === 'inherited_previous'
+        ? `Heredado del ${latestCampaignRecord?.budgetInheritedFromDate || 'registro anterior'}`
+        : latestCampaignRecord?.budgetSource || 'Registrado/manual';
+
+      if (campaignDecision.status === 'Escalable') summary.scalable += 1;
+      else if (campaignDecision.status === 'Crítico' || campaignDecision.status.includes('Fuera del objetivo')) summary.critical += 1;
+      else if (campaignDecision.status === 'Atención' || campaignDecision.status.includes('revisar')) summary.attention += 1;
+      else summary.maintain += 1;
+
+      lines.push('');
+      lines.push('='.repeat(78));
+      lines.push(`CAMPAÑA: ${campaign.name}`);
+      lines.push('='.repeat(78));
+      lines.push(`Estado actual: ${campaignCurrentStateLabelCC(campaign)}`);
+      lines.push(`Fecha inicio campaña: ${campaign.effectiveStartDate || campaign.createdDate || '—'}`);
+      if (campaign.active === false || campaign.archived) {
+        lines.push(`Fecha efectiva de apagado: ${campaign.deactivatedDate || campaign.archivedDate || campaign.stateChangedDate || '—'}`);
+        lines.push('Histórico: CONSERVADO · la campaña continúa disponible en este informe mientras no sea eliminada definitivamente.');
+      }
+      lines.push(`Días registrados históricos: ${campaignHistory.length}`);
+      lines.push(`Cobertura hasta ${lastComplete}: ${coverage.registeredDays}/${coverage.requiredDays} · pendientes ${coverage.missingDays}`);
+      if (coverage.missingDates?.length) lines.push(`Fechas pendientes: ${coverage.missingDates.join(', ')}`);
+      lines.push('');
+      lines.push('DECISIÓN OPERATIVA · 3D');
+      lines.push(`Estado: ${campaignDecision.status}`);
+      lines.push(`Acción: ${campaignDecision.action}`);
+      lines.push(`Motivo: ${campaignDecision.reason}`);
+      lines.push(`Presupuesto recomendado: ${campaignDecision.recommendedBudget ? fmtMoney(campaignDecision.recommendedBudget) : '—'}`);
+      lines.push(`Lectura CPA 3D: ${campaignDecision.cpaObservation3d?.title || '—'}`);
+      lines.push(`Detalle CPA 3D: ${campaignDecision.cpaObservation3d?.text || '—'}`);
+
+      lines.push('');
+      lines.push('PRESUPUESTO ACTUAL');
+      lines.push(`Presupuesto último cierre: ${currentBudget > 0 ? fmtMoney(currentBudget) : '—'}`);
+      lines.push(`Fecha último cierre: ${latestCampaignRecord?.date || '—'}`);
+      lines.push(`Origen del presupuesto: ${currentBudget > 0 ? currentBudgetSource : '—'}`);
+      if (latestCampaignRecord?.budgetPreviousValue) {
+        lines.push(`Presupuesto anterior conocido: ${fmtMoney(latestCampaignRecord.budgetPreviousValue)}`);
+      }
+
+      lines.push('');
+
+      lines.push(...reportStatsTableCC('ÚLTIMO DÍA COMPLETO · ALERTA TEMPRANA VS 3 DÍAS ANTERIORES', lastWindow));
+      lines.push('');
+      lines.push(...reportStatsTableCC('VENTANA OPERATIVA 3D · DECIDE', w3));
+      lines.push('');
+      lines.push('ANÁLISIS DE CAUSAS · 3D');
+      lines.push(...reportCausalInsightsCC(w3.currentStats, w3.previousStats, maxCpa));
+      lines.push('');
+      lines.push(...reportStatsTableCC('CONTEXTO 7D · CONFIRMA', w7));
+      lines.push('');
+      lines.push(...reportStatsTableCC('CONTEXTO 14D · TENDENCIA / BENCHMARK', w14));
+      lines.push('');
+      lines.push(...reportStatsTableCC('CONTEXTO 30D · HISTÓRICO', w30));
+
+      lines.push('');
+      lines.push('HISTORIAL DE CAMBIOS DE PRESUPUESTO');
+      lines.push('-'.repeat(78));
+      if (!budgetRows.length) {
+        lines.push('Sin cambios de presupuesto detectados todavía.');
+      } else {
+        budgetRows.forEach((change, index) => {
+          const impact = reportBudgetChangeImpactCC(change, campaignHistory);
+          lines.push(`${index + 1}. ${change.date || '—'} · ${fmtMoney(change.previousBudget)} → ${fmtMoney(change.newBudget)} · ${change.changePct >= 0 ? '+' : ''}${fmtNum(change.changePct, 2)}% · ${change.origin === 'recommendation' ? 'RECOMENDACIÓN APLICADA' : 'CAMBIO MANUAL'}`);
+          lines.push(`   Antes (hasta 3 cierres): ${reportWindowLabelCC(impact.beforeDates)} · CPA ${fmtCpa(impact.beforeStats.cpa)} · Compras ${fmtNum(impact.beforeStats.purchases, 2)} · Gasto ${fmtMoney(impact.beforeStats.spend)}`);
+          lines.push(`   Después (hasta 3 cierres): ${reportWindowLabelCC(impact.afterDates)} · CPA ${fmtCpa(impact.afterStats.cpa)} · Compras ${fmtNum(impact.afterStats.purchases, 2)} · Gasto ${fmtMoney(impact.afterStats.spend)}`);
+          lines.push(`   Variación CPA post-cambio: ${impact.cpaDelta === null ? '—' : `${impact.cpaDelta > 0 ? '+' : ''}${fmtNum(impact.cpaDelta, 2)}%`}`);
+          lines.push(`   Variación compras/día: ${impact.volumeDelta === null ? '—' : `${impact.volumeDelta > 0 ? '+' : ''}${fmtNum(impact.volumeDelta, 2)}%`}`);
+          lines.push(`   CPA marginal aproximado: ${impact.marginalCpa === null ? '—' : fmtMoney(impact.marginalCpa)}`);
+        });
+      }
+
+      lines.push('');
+      lines.push('NIVELES HISTÓRICOS DE PRESUPUESTO / ESCALA');
+      lines.push('-'.repeat(78));
+      if (!scaleRows.length) {
+        lines.push('Sin niveles de presupuesto suficientes.');
+      } else {
+        lines.push('PRESUPUESTO | DÍAS | GASTO | COMPRAS | CPA | ROAS | CPA MARGINAL | ESTADO | ACCIÓN');
+        scaleRows.forEach(row => {
+          lines.push(`${fmtMoney(row.budget)} | ${row.days} | ${fmtMoney(row.spend)} | ${fmtNum(row.purchases, 2)} | ${fmtCpa(row.cpa)} | ${row.roas === null || row.roas === undefined ? '—' : `${fmtNum(row.roas, 2)}x`} | ${row.marginalCpa === null ? '—' : fmtMoney(row.marginalCpa)} | ${row.status} | ${row.action}`);
+        });
+      }
+
+      lines.push('');
+      lines.push('DIAGNÓSTICO DETALLADO POR ANUNCIO');
+      lines.push('='.repeat(78));
+
+      for (const { ad, records, diag, contribution } of adRows) {
+        summary.ads += 1;
+        if (contribution?.status === 'Aporta fuertemente') summary.strong += 1;
+        else if (contribution?.status === 'Aporta') summary.contributes += 1;
+        else if (contribution?.status === 'Drena la campaña') summary.draining += 1;
+        else summary.watch += 1;
+        if (diag.metaDelivery3d?.isNoDelivery) summary.noDelivery += 1;
+
+        const eligible = eligibleAdRecords(records, ad, campaign);
+        const adLast = reportWindowCC(eligible, 1, 3, today);
+        const ad3 = reportWindowCC(eligible, 3, 3, today);
+        const ad7 = reportWindowCC(eligible, 7, 7, today);
+        const ad14 = reportWindowCC(eligible, 14, 14, today);
+        const ad30 = reportWindowCC(eligible, 30, 30, today);
+        const spentVsMax = maxCpa > 0 ? (ad3.currentStats.spend / maxCpa) * 100 : null;
+
+        lines.push('');
+        lines.push('-'.repeat(78));
+        lines.push(`ANUNCIO: ${ad.name}`);
+        lines.push('-'.repeat(78));
+        lines.push(`Estado actual: ${ad.active === false ? 'APAGADO' : 'ACTIVO'}`);
+        lines.push(`Fecha inicio anuncio: ${ad.effectiveStartDate || ad.createdDate || '—'}`);
+        lines.push(`Días activos calculados: ${diag.ageDays}`);
+        lines.push(`Confianza por volumen 3D: ${diag.volumeReference?.confidence || '—'} · ${fmtNum(diag.volumeReference?.purchases || 0, 2)} compras`);
+        lines.push('');
+        lines.push('ENTREGA META · 3D');
+        lines.push(`Estado: ${diag.metaDelivery3d?.status || '—'}`);
+        lines.push(`Días omitidos: ${diag.metaDelivery3d?.omittedDays || 0}/${diag.metaDelivery3d?.totalDays || 0}`);
+        lines.push(`Acción: ${diag.metaDelivery3d?.action || '—'}`);
+        lines.push(`Motivo: ${diag.metaDelivery3d?.reason || '—'}`);
+        lines.push('');
+        lines.push('CONTRIBUCIÓN A CAMPAÑA · 3D');
+        lines.push(`Estado: ${contribution?.status || 'Sin lectura'}`);
+        lines.push(`Gasto anuncio: ${contribution ? fmtMoney(contribution.spend) : '—'}`);
+        lines.push(`Compras anuncio: ${contribution ? fmtNum(contribution.purchases, 2) : '—'}`);
+        lines.push(`CPA anuncio: ${contribution ? fmtCpa(contribution.cpa) : '—'}`);
+        lines.push(`Participación gasto campaña: ${contribution ? fmtRate(contribution.spendShare) : '—'}`);
+        lines.push(`Participación compras campaña: ${contribution ? fmtRate(contribution.purchaseShare) : '—'}`);
+        lines.push(`CPA campaña 3D: ${contribution ? fmtCpa(contribution.campaignCpa) : '—'}`);
+        lines.push(`CPA del resto sin este anuncio: ${contribution ? fmtCpa(contribution.cpaWithout) : '—'}`);
+        lines.push(`Impacto histórico: ${reportContributionImpactTextCC(contribution)}`);
+        lines.push(`Causa: ${contribution?.cause || '—'}`);
+        if (ad3.currentStats.purchases <= 0 && ad3.currentStats.spend > 0) {
+          lines.push(`Consumo frente CPA máximo sin compras: ${fmtNum(spentVsMax, 2)}% (${fmtMoney(ad3.currentStats.spend)} / ${fmtMoney(maxCpa)}).`);
+        }
+        lines.push('');
+        lines.push('DECISIÓN OPERATIVA DEL ANUNCIO · 3D');
+        lines.push(`Diagnóstico: ${diag.operational3dDiagnosis}`);
+        lines.push(`Acción: ${diag.operational3dAction}`);
+        lines.push(`Motivo: ${diag.operational3dReason}`);
+        lines.push(`Momentum CPA: ${diag.scaleMomentum}`);
+        lines.push(`Diagnóstico creativo 3D: ${diag.scaleDynamic3d}`);
+        lines.push(`Diagnóstico post-clic 3D: ${diag.scalePost3d}`);
+        lines.push(`CPA máximo: ${fmtMoney(diag.maxCpa)}`);
+        lines.push(`Zona escala fuerte: ${fmtMoney(diag.scaleCpa)}`);
+        lines.push(`Escala permitida: ${diag.canScale ? 'SÍ' : 'NO'}`);
+        if (diag.guardrails) {
+          lines.push(`Guardrail CPA margen: ${diag.guardrails.cpaMargin ? 'PASA' : 'BLOQUEA'}`);
+          lines.push(`Guardrail estabilidad: ${diag.guardrails.stability ? 'PASA' : 'BLOQUEA'}`);
+          lines.push(`Guardrail creativo: ${diag.guardrails.creative ? 'PASA' : 'BLOQUEA'}`);
+          lines.push(`Guardrail post-clic: ${diag.guardrails.postClick ? 'PASA' : 'BLOQUEA'}`);
+        }
+
+        lines.push('');
+        lines.push(...reportStatsTableCC('ANUNCIO · ÚLTIMO DÍA VS 3 ANTERIORES', adLast));
+        lines.push('');
+        lines.push(...reportStatsTableCC('ANUNCIO · 3D VS 3D ANTERIOR', ad3));
+        lines.push('');
+        lines.push(...reportStatsTableCC('ANUNCIO · 7D VS 7D ANTERIOR', ad7));
+        lines.push('');
+        lines.push(...reportStatsTableCC('ANUNCIO · 14D VS 14D ANTERIOR', ad14));
+        lines.push('');
+        lines.push(...reportStatsTableCC('ANUNCIO · 30D VS 30D ANTERIOR', ad30));
+
+        if (contribution?.status === 'Aporta fuertemente') {
+          opportunities.push(`${product.name} / ${campaign.name} / ${ad.name}: ${contribution.cause}`);
+        }
+        if (contribution?.status === 'Drena la campaña') {
+          risks.push(`${product.name} / ${campaign.name} / ${ad.name}: ${contribution.cause}`);
+        } else if (ad3.currentStats.purchases <= 0 && ad3.currentStats.spend >= maxCpa * 0.5) {
+          risks.push(`${product.name} / ${campaign.name} / ${ad.name}: ${fmtNum(spentVsMax, 2)}% del CPA máximo consumido sin compras.`);
+        }
+        if (diag.metaDelivery3d?.isNoDelivery) {
+          risks.push(`${product.name} / ${campaign.name} / ${ad.name}: sin entrega de Meta en ${diag.metaDelivery3d.omittedDays}/${diag.metaDelivery3d.totalDays} día(s) 3D.`);
+        }
+      }
+
+      lines.push('');
+      lines.push('RECOMENDACIONES REGISTRADAS');
+      lines.push('-'.repeat(78));
+      if (!recommendationRows.length) lines.push('Sin recomendaciones almacenadas.');
+      recommendationRows.forEach((r, i) => {
+        lines.push(`${i + 1}. Estado=${r.status || '—'} · Tipo=${r.type || '—'} · Actual=${r.currentBudget ? fmtMoney(r.currentBudget) : '—'} · Recomendado=${r.recommendedBudget ? fmtMoney(r.recommendedBudget) : '—'} · Fecha=${r.createdDate || r.appliedDate || '—'} · Motivo=${r.reason || '—'}`);
+      });
+
+      lines.push('');
+      lines.push('HISTORIAL DE DECISIONES REGISTRADAS');
+      lines.push('-'.repeat(78));
+      if (!decisionRows.length) lines.push('Sin decisiones almacenadas.');
+      decisionRows.forEach((d, i) => {
+        lines.push(`${i + 1}. ${d.date || '—'} · ${d.action || '—'} · ${d.detail || '—'}`);
+      });
+
+      aiCampaignRows.push({
+        product: product.name,
+        campaign: campaign.name,
+        status: campaignDecision.status,
+        currentState: campaignCurrentStateLabelCC(campaign),
+        deactivatedDate: campaign.deactivatedDate || campaign.archivedDate || campaign.stateChangedDate || null,
+        action: campaignDecision.action,
+        currentBudget,
+        cpa3d: w3.currentStats.cpa,
+        maxCpa,
+        purchases3d: w3.currentStats.purchases,
+        spend3d: w3.currentStats.spend,
+        ads: adRows.length,
+        draining: adRows.filter(x => x.contribution?.status === 'Drena la campaña').map(x => x.ad.name),
+        strong: adRows.filter(x => x.contribution?.status === 'Aporta fuertemente').map(x => x.ad.name),
+        noDelivery: adRows.filter(x => x.diag.metaDelivery3d?.isNoDelivery).map(x => x.ad.name)
+      });
+    }
+  }
+
+  lines.push('');
+  lines.push('');
+  lines.push('#'.repeat(78));
+  lines.push('RESUMEN EJECUTIVO GLOBAL');
+  lines.push('#'.repeat(78));
+  lines.push(`Productos analizados: ${summary.products}`);
+  lines.push(`Campañas incluidas: ${summary.campaigns}`);
+  lines.push(`Campañas con datos históricos: ${summary.campaignsWithData}`);
+  lines.push(`Campañas escalables: ${summary.scalable}`);
+  lines.push(`Campañas mantener: ${summary.maintain}`);
+  lines.push(`Campañas atención: ${summary.attention}`);
+  lines.push(`Campañas críticas/fuera objetivo: ${summary.critical}`);
+  lines.push('');
+  lines.push(`Anuncios analizados: ${summary.ads}`);
+  lines.push(`Aportan fuertemente: ${summary.strong}`);
+  lines.push(`Aportan: ${summary.contributes}`);
+  lines.push(`Bajo aporte / vigilar: ${summary.watch}`);
+  lines.push(`Drenan campaña: ${summary.draining}`);
+  lines.push(`Sin entrega Meta: ${summary.noDelivery}`);
+  lines.push('');
+  lines.push('PRINCIPALES OPORTUNIDADES');
+  if (!opportunities.length) lines.push('• Sin oportunidades fuertes detectadas con los criterios actuales.');
+  opportunities.slice(0, 20).forEach((x, i) => lines.push(`${i + 1}. ${x}`));
+  lines.push('');
+  lines.push('PRINCIPALES RIESGOS');
+  if (!risks.length) lines.push('• Sin riesgos fuertes detectados con los criterios actuales.');
+  risks.slice(0, 30).forEach((x, i) => lines.push(`${i + 1}. ${x}`));
+
+  lines.push('');
+  lines.push('[AI_INDEX]');
+  lines.push(`report_date=${today}`);
+  lines.push(`timezone=America/Bogota`);
+  lines.push(`decision_window=3D_COMPLETE_ACTIVE_DAYS`);
+  lines.push(`today_excluded=true`);
+  lines.push(`products=${summary.products}`);
+  lines.push(`campaigns=${summary.campaigns}`);
+  lines.push(`campaigns_with_data=${summary.campaignsWithData}`);
+  lines.push(`campaigns_scalable=${summary.scalable}`);
+  lines.push(`campaigns_attention=${summary.attention}`);
+  lines.push(`campaigns_critical=${summary.critical}`);
+  lines.push(`ads=${summary.ads}`);
+  lines.push(`ads_strong_contributors=${summary.strong}`);
+  lines.push(`ads_draining=${summary.draining}`);
+  lines.push(`ads_no_delivery=${summary.noDelivery}`);
+  aiCampaignRows.forEach((row, index) => {
+    const prefix = `campaign_${index + 1}`;
+    lines.push(`${prefix}_product=${row.product}`);
+    lines.push(`${prefix}_name=${row.campaign}`);
+    lines.push(`${prefix}_status=${row.status}`);
+    lines.push(`${prefix}_current_state=${row.currentState}`);
+    lines.push(`${prefix}_deactivated_date=${row.deactivatedDate || 'NONE'}`);
+    lines.push(`${prefix}_action=${row.action}`);
+    lines.push(`${prefix}_budget=${row.currentBudget || 0}`);
+    lines.push(`${prefix}_spend_3d=${row.spend3d || 0}`);
+    lines.push(`${prefix}_purchases_3d=${row.purchases3d || 0}`);
+    lines.push(`${prefix}_cpa_3d=${row.cpa3d ?? 'null'}`);
+    lines.push(`${prefix}_max_cpa=${row.maxCpa}`);
+    lines.push(`${prefix}_strong_ads=${row.strong.join('|') || 'NONE'}`);
+    lines.push(`${prefix}_draining_ads=${row.draining.join('|') || 'NONE'}`);
+    lines.push(`${prefix}_no_delivery_ads=${row.noDelivery.join('|') || 'NONE'}`);
+  });
+  lines.push('[/AI_INDEX]');
+  lines.push('');
+  lines.push('FIN DEL INFORME');
+
+  return {
+    text: lines.join('\n'),
+    summary
+  };
+}
+
+function CampaignReportCenter({
+  products,
+  campaigns,
+  ads,
+  dailyCampaigns,
+  dailyAds,
+  budgetChanges,
+  recommendations,
+  decisions
+}) {
+  const [productId, setProductId] = useState('all');
+  const [campaignId, setCampaignId] = useState('all');
+  const [reportText, setReportText] = useState('');
+  const [reportSummary, setReportSummary] = useState(null);
+  const [message, setMessage] = useState('');
+
+  const availableCampaigns = useMemo(
+    () => campaigns
+      .filter(c => productId === 'all' || c.productId === productId)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))),
+    [campaigns, productId]
+  );
+
+  useEffect(() => {
+    if (campaignId !== 'all' && !availableCampaigns.some(c => c.id === campaignId)) {
+      setCampaignId('all');
+    }
+  }, [availableCampaigns, campaignId]);
+
+  const globalCompleteDates = useMemo(() => {
+    const today = todayColombiaCC();
+    return [...new Set(
+      dailyCampaigns
+        .filter(r => r?.date && String(r.date) < today)
+        .map(r => String(r.date))
+    )].sort((a, b) => b.localeCompare(a)).slice(0, 3).sort();
+  }, [dailyCampaigns]);
+
+  const generateReport = () => {
+    const result = buildDetailedCampaignReportCC({
+      products,
+      campaigns,
+      ads,
+      dailyCampaigns,
+      dailyAds,
+      budgetChanges,
+      recommendations,
+      decisions,
+      productId,
+      campaignId
     });
+    setReportText(result.text);
+    setReportSummary(result.summary);
+    setMessage(`Informe generado · ${result.summary.campaigns} campaña(s) · ${result.summary.ads} anuncio(s).`);
   };
 
-  const movePrompt = async (id, direction) => {
-    const index = prompts.findIndex(p => p.id === id);
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= prompts.length) return;
-
-    const updatedPrompts = [...prompts];
-    const [movedItem] = updatedPrompts.splice(index, 1);
-    updatedPrompts.splice(newIndex, 0, movedItem);
-
-    const updates = updatedPrompts.map((p, i) => {
-      return updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', p.id), { order: i });
-    });
+  const copyReport = async () => {
+    if (!reportText) return;
     try {
-      await Promise.all(updates);
-    } catch (err) {
-      console.error(err);
-      alert('Error al reordenar');
+      await navigator.clipboard.writeText(reportText);
+      setMessage('Informe copiado al portapapeles. Listo para pegar en una IA.');
+    } catch (error) {
+      const textarea = document.createElement('textarea');
+      textarea.value = reportText;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setMessage('Informe copiado al portapapeles.');
     }
   };
 
-  const filteredPrompts = activeCategory === 'todos'
-    ? prompts
-    : prompts.filter(p => p.category === activeCategory);
-
-  const getCategoryLabel = (catId) => {
-    const found = PROMPT_CATEGORIES.find(c => c.id === catId);
-    return found ? found.label : catId;
-  };
-
-  const getCategoryColor = (catId) => {
-    const found = PROMPT_CATEGORIES.find(c => c.id === catId);
-    return found ? found.color : 'bg-gray-50 border-gray-300 text-gray-700';
+  const downloadReport = () => {
+    if (!reportText) return;
+    const productName = productId === 'all'
+      ? 'todos'
+      : normalizeAdName(products.find(p => p.id === productId)?.name || 'producto').replace(/\s+/g, '_');
+    const campaignName = campaignId === 'all'
+      ? 'campanas'
+      : normalizeAdName(campaigns.find(c => c.id === campaignId)?.name || 'campana').replace(/\s+/g, '_');
+    const filename = `informe_meta_ads_${productName}_${campaignName}_${todayColombiaCC()}.txt`;
+    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setMessage(`TXT descargado: ${filename}`);
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {notification && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50 shadow-xl">
-          {notification}
-        </div>
-      )}
-
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-zinc-900">🎨 Prompts IA</h2>
-          <p className="text-sm text-zinc-500">Gestiona tus prompts de generación de imágenes por categorías</p>
-        </div>
-        <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="bg-zinc-900 hover:bg-black text-white px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95"
-        >
-          ➕ Nuevo Prompt
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setActiveCategory('todos')}
-          className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === 'todos' ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}
-        >
-          📋 Todos ({prompts.length})
-        </button>
-        {PROMPT_CATEGORIES.map(cat => {
-          const count = prompts.filter(p => p.category === cat.id).length;
-          return (
-            <button
-              key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${activeCategory === cat.id ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'}`}
-            >
-              {cat.label} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      {activeCategory !== 'todos' && (
-        <div className="bg-white rounded-2xl p-5 border border-zinc-200 shadow-sm space-y-2">
-          <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-wider">📝 Instrucciones / Pasos para {getCategoryLabel(activeCategory)}</label>
-          <div className="flex gap-3 items-start">
-            <textarea
-              value={instructions[activeCategory] || ''}
-              onChange={(e) => {
-                const newText = e.target.value;
-                setInstructions(prev => ({ ...prev, [activeCategory]: newText }));
-              }}
-              rows={3}
-              className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-400 resize-y"
-              placeholder="Escribe los pasos o instrucciones para esta categoría..."
-            />
-            <button
-              onClick={() => saveInstruction(activeCategory, instructions[activeCategory] || '')}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap"
-            >
-              Guardar Instrucción
-            </button>
+    <div className="space-y-4">
+      <SectionCard accent="#7c3aed" soft="#f5f3ff">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <FileText size={20} className="text-violet-700" />
+              <h3 className="text-lg font-black uppercase text-violet-900">Informe diagnóstico detallado</h3>
+            </div>
+            <p className="text-[9px] text-slate-600 mt-2 max-w-3xl">
+              Texto estructurado para lectura humana o procesamiento por IA. La decisión operativa siempre usa los últimos 3 días activos completos anteriores a hoy. Incluye comparación 3D anterior, Último día, 7D, 14D, 30D, presupuesto, escala, benchmark y diagnóstico completo por anuncio.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-violet-200 bg-white p-3 min-w-[260px]">
+            <p className="text-[8px] font-black uppercase text-violet-700">Ventana principal automática</p>
+            <p className="text-sm font-black text-zinc-900 mt-1">{globalCompleteDates.length ? reportWindowLabelCC(globalCompleteDates) : 'Sin datos completos'}</p>
+            <p className="text-[8px] text-slate-500 mt-1">Hoy {todayColombiaCC()} queda excluido.</p>
           </div>
         </div>
-      )}
 
-      {showForm && (
-        <div className="bg-white rounded-2xl p-6 shadow-lg border border-zinc-200 space-y-4">
-          <h3 className="font-black text-lg">{editingPrompt ? '✏️ Editar Prompt' : '📝 Nuevo Prompt'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-black text-zinc-500 mb-1">Nombre del Prompt *</label>
-              <input
-                name="name"
-                value={formData.name}
-                onChange={handleFormChange}
-                placeholder="Ej. Landing Hero Section"
-                className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-zinc-500 mb-1">Categoría *</label>
-              <select
-                name="category"
-                value={formData.category}
-                onChange={handleFormChange}
-                className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900"
-              >
-                {PROMPT_CATEGORIES.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.label}</option>
-                ))}
-              </select>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+          <div>
+            <p className="text-[8px] font-black uppercase text-slate-500 mb-1">Producto</p>
+            <select
+              value={productId}
+              onChange={e => { setProductId(e.target.value); setCampaignId('all'); }}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold"
+            >
+              <option value="all">Todos los productos</option>
+              {[...products].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
           <div>
-            <label className="block text-[10px] font-black text-zinc-500 mb-1">Contenido del Prompt *</label>
-            <textarea
-              name="content"
-              value={formData.content}
-              onChange={handleFormChange}
-              rows={6}
-              placeholder="Escribe tu prompt aquí..."
-              className="w-full border border-zinc-200 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-900 resize-y font-mono"
-            />
+            <p className="text-[8px] font-black uppercase text-slate-500 mb-1">Campaña</p>
+            <select
+              value={campaignId}
+              onChange={e => setCampaignId(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold"
+            >
+              <option value="all">Todas las campañas</option>
+              {availableCampaigns.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
           </div>
-          <div className="flex justify-end gap-3">
-            <button onClick={resetForm} className="px-5 py-2 rounded-xl border border-zinc-200 text-sm font-bold">Cancelar</button>
-            <button onClick={savePrompt} className="px-5 py-2 rounded-xl bg-zinc-900 text-white text-sm font-bold">Guardar</button>
-          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button
+            type="button"
+            onClick={generateReport}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-950 text-white text-[9px] font-black uppercase"
+          >
+            <FileText size={13}/> Generar informe
+          </button>
+          <button
+            type="button"
+            onClick={copyReport}
+            disabled={!reportText}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-[9px] font-black uppercase disabled:opacity-40"
+          >
+            <Copy size={13}/> Copiar para IA
+          </button>
+          <button
+            type="button"
+            onClick={downloadReport}
+            disabled={!reportText}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-[9px] font-black uppercase disabled:opacity-40"
+          >
+            <Download size={13}/> Descargar TXT
+          </button>
+        </div>
+
+        {message && <p className="text-[9px] font-bold text-violet-700 mt-3">{message}</p>}
+      </SectionCard>
+
+      {reportSummary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <MiniCard label="Productos" value={reportSummary.products} />
+          <MiniCard label="Campañas" value={reportSummary.campaigns} />
+          <MiniCard label="Escalables" value={reportSummary.scalable} tone="good" />
+          <MiniCard label="Atención" value={reportSummary.attention} />
+          <MiniCard label="Drenan" value={reportSummary.draining} tone={reportSummary.draining ? 'bad' : 'good'} />
+          <MiniCard label="Sin entrega Meta" value={reportSummary.noDelivery} />
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredPrompts.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-zinc-400 bg-white rounded-2xl border border-zinc-200">
-            <p className="text-lg font-black">No hay prompts en esta categoría</p>
-            <p className="text-sm mt-1">Crea uno nuevo usando el botón de arriba</p>
-          </div>
-        ) : (
-          filteredPrompts.map((prompt, index) => {
-            const categoryStyle = getCategoryColor(prompt.category);
-            const isFirst = index === 0;
-            const isLast = index === filteredPrompts.length - 1;
-            return (
-              <div
-                key={prompt.id}
-                className="bg-white rounded-2xl border border-zinc-200 shadow-sm hover:shadow-md transition-all overflow-hidden group"
+      {reportText ? (
+        <SectionCard accent="#0f172a" soft="#f8fafc">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h4 className="text-xs font-black uppercase text-slate-900">Vista previa TXT</h4>
+              <p className="text-[8px] text-slate-500">El contenido mostrado es exactamente el que se copia o descarga.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={copyReport}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-600 text-white text-[8px] font-black uppercase hover:bg-violet-700 transition"
+                title="Copiar todo el texto del informe"
               >
-                <div className="p-4 border-b border-zinc-100 flex justify-between items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-base truncate">{prompt.name}</span>
-                      <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full ${categoryStyle}`}>
-                        {getCategoryLabel(prompt.category)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <button
-                      onClick={() => movePrompt(prompt.id, -1)}
-                      disabled={isFirst}
-                      className={`text-zinc-400 hover:text-indigo-600 transition p-1 ${isFirst ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      title="Mover arriba"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => movePrompt(prompt.id, 1)}
-                      disabled={isLast}
-                      className={`text-zinc-400 hover:text-indigo-600 transition p-1 ${isLast ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      title="Mover abajo"
-                    >
-                      ▼
-                    </button>
-                    <button
-                      onClick={() => editPrompt(prompt)}
-                      className="text-zinc-400 hover:text-indigo-600 transition p-1"
-                      title="Editar"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      onClick={() => deletePrompt(prompt.id)}
-                      className="text-zinc-400 hover:text-rose-600 transition p-1"
-                      title="Eliminar"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
+                <Copy size={12}/> Copiar texto
+              </button>
+              <span className="px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black uppercase">
+                {reportText.length.toLocaleString('es-CO')} caracteres
+              </span>
+            </div>
+          </div>
+          <textarea
+            readOnly
+            value={reportText}
+            className="w-full min-h-[650px] rounded-2xl border border-slate-200 bg-white p-4 font-mono text-[10px] leading-relaxed text-slate-700"
+          />
+        </SectionCard>
+      ) : (
+        <EmptyState>Selecciona el alcance y presiona “Generar informe”.</EmptyState>
+      )}
+    </div>
+  );
+}
 
-                <div className="p-4">
-                  <textarea
-                    value={prompt.content}
-                    readOnly
-                    rows={5}
-                    className="w-full text-sm font-mono bg-zinc-50 rounded-xl p-3 border border-zinc-200 cursor-default text-zinc-800 leading-relaxed resize-none"
-                    placeholder="Contenido del prompt..."
-                  />
-                </div>
 
-                <div className="px-4 pb-4 flex gap-2">
-                  <button
-                    onClick={() => copyToClipboard(prompt.content)}
-                    className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
-                  >
-                    📋 Copiar Prompt
-                  </button>
-                </div>
-              </div>
-            );
-          })
+function CampaignControlModule() {
+  const { user } = useAuth();
+  const ownerUid = user?.uid || null;
+
+  const [subTab, setSubTab] = useState('dashboard');
+  const [products, setProducts] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [ads, setAds] = useState([]);
+  const [dailyCampaigns, setDailyCampaigns] = useState([]);
+  const [dailyAds, setDailyAds] = useState([]);
+  const [budgetChanges, setBudgetChanges] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [decisions, setDecisions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [period, setPeriod] = useState('last');
+  const [selectedCampaignId, setSelectedCampaignId] = useState('');
+
+  useEffect(() => {
+    if (!ownerUid) return undefined;
+    setLoading(true);
+    const listeners = [];
+    const listen = (collectionName, setter) => {
+      const q = query(collection(db, collectionName), where('ownerUid', '==', ownerUid));
+      listeners.push(onSnapshot(q, snap => {
+        setter(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      }));
+    };
+    listen(COLLECTIONS.products, setProducts);
+    listen(COLLECTIONS.campaigns, setCampaigns);
+    listen(COLLECTIONS.ads, setAds);
+    listen(COLLECTIONS.dailyCampaigns, setDailyCampaigns);
+    listen(COLLECTIONS.dailyAds, setDailyAds);
+    listen(COLLECTIONS.budgetChanges, setBudgetChanges);
+    listen(COLLECTIONS.recommendations, setRecommendations);
+    listen(COLLECTIONS.decisions, setDecisions);
+    return () => listeners.forEach(unsub => unsub());
+  }, [ownerUid]);
+
+  const activeProducts = useMemo(() => products.filter(p => p.active !== false), [products]);
+  const activeCampaigns = useMemo(() => campaigns.filter(c => !c.archived), [campaigns]);
+  const activeAds = useMemo(() => ads.filter(a => a.active !== false && campaigns.some(c => c.id === a.campaignId && c.active !== false && !c.archived) && products.some(p => p.id === a.productId && p.active !== false)), [ads, campaigns, products]);
+
+  const latestDate = todayColombiaCC();
+
+  const attentionRows = useMemo(() => {
+    const rows = [];
+    for (const ad of ads.filter(a => a.active !== false)) {
+      const campaign = campaigns.find(c => c.id === ad.campaignId && c.active !== false && !c.archived);
+      if (!campaign) continue;
+      const product = products.find(p => p.id === ad.productId && p.active !== false);
+      if (!product) continue;
+      const recs = dailyAds.filter(r => r.adId === ad.id).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      const diag = diagnoseAd(recs, product, ad, 'last', campaign);
+      if (diag.stats.days <= 0) continue;
+      rows.push({ ad, campaign, product, diag });
+    }
+    return rows.sort((a, b) => ({ critical: 0, alert: 1, monitor: 2 }[a.diag.priority] ?? 9) - ({ critical: 0, alert: 1, monitor: 2 }[b.diag.priority] ?? 9));
+  }, [ads, campaigns, products, dailyAds]);
+
+  const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId) || activeCampaigns[0] || null;
+
+  useEffect(() => {
+    if (!selectedCampaignId && activeCampaigns.length) setSelectedCampaignId(activeCampaigns[0].id);
+  }, [activeCampaigns, selectedCampaignId]);
+
+  if (loading) return <div className="py-20 text-center text-slate-400 font-black uppercase text-xs">Cargando Campaign Control...</div>;
+
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+    { id: 'campaigns', label: 'Ver campañas', icon: Layers },
+    { id: 'register', label: 'Registro diario', icon: CalendarDays },
+    { id: 'reports', label: 'Informe IA', icon: FileText }
+  ];
+
+  return (
+    <div className="space-y-5 anim-fade">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center text-zinc-950"><Activity size={20} /></div>
+            <div>
+              <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-zinc-900">Campaign Control</h2>
+              <p className="text-[9px] md:text-[10px] text-slate-400 font-black uppercase tracking-widest">Módulo Meta Ads · Datos totalmente independientes</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex bg-zinc-950 p-1 rounded-2xl overflow-x-auto">
+          {tabs.map(t => <button key={t.id} onClick={() => setSubTab(t.id)} className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[9px] font-black uppercase whitespace-nowrap ${subTab === t.id ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-500'}`}><t.icon size={13} />{t.label}</button>)}
+        </div>
+      </div>
+
+      {subTab === 'dashboard' && (
+        <CampaignDashboard
+          ownerUid={ownerUid}
+          products={products}
+          campaigns={campaigns}
+          ads={ads}
+          dailyCampaigns={dailyCampaigns}
+          dailyAds={dailyAds}
+          budgetChanges={budgetChanges}
+          decisions={decisions}
+          recommendations={recommendations}
+          attentionRows={attentionRows}
+          activeProducts={activeProducts}
+          activeCampaigns={activeCampaigns}
+          activeAds={activeAds}
+          latestDate={latestDate}
+          period={period}
+          setPeriod={setPeriod}
+          selectedCampaign={selectedCampaign}
+          setSelectedCampaignId={setSelectedCampaignId}
+          setSubTab={setSubTab}
+        />
+      )}
+
+      {subTab === 'register' && (
+        <DailyRegisterFull
+          ownerUid={ownerUid}
+          products={products}
+          campaigns={campaigns}
+          ads={ads}
+          dailyCampaigns={dailyCampaigns}
+          dailyAds={dailyAds}
+          recommendations={recommendations}
+        />
+      )}
+
+      {subTab === 'reports' && (
+        <CampaignReportCenter
+          products={products}
+          campaigns={campaigns}
+          ads={ads}
+          dailyCampaigns={dailyCampaigns}
+          dailyAds={dailyAds}
+          budgetChanges={budgetChanges}
+          recommendations={recommendations}
+          decisions={decisions}
+        />
+      )}
+
+      {subTab === 'campaigns' && (
+        <CampaignManager
+          ownerUid={ownerUid}
+          products={products}
+          campaigns={campaigns}
+          ads={ads}
+          dailyCampaigns={dailyCampaigns}
+          dailyAds={dailyAds}
+          budgetChanges={budgetChanges}
+          recommendations={recommendations}
+          decisions={decisions}
+        />
+      )}
+    </div>
+  );
+}
+
+
+function CampaignCpaMiniChart({ campaign, product, dailyCampaigns }) {
+  const today = todayColombiaCC();
+  const history = eligibleCampaignRecords(
+    dailyCampaigns.filter(r => r.campaignId === campaign.id),
+    campaign
+  ).filter(r => String(r.date) < today)
+   .sort((a,b) => String(a.date).localeCompare(String(b.date))).slice(-14);
+
+  if (!history.length) return <EmptyState>Sin histórico suficiente.</EmptyState>;
+
+  const maxCpa = Math.max(1, toNumber(product?.maxCpa));
+  const target = maxCpa * 0.8;
+  const data = history.map(r => ({ date:r.date, cpa:calcCpa(r.spend,r.purchases), spend:toNumber(r.spend), purchases:toNumber(r.purchases) }));
+  const valid = data.map(x=>x.cpa).filter(x=>x !== null && x > 0);
+  const chartMax = Math.max(maxCpa*1.35, ...(valid.length?valid.map(v=>v*1.1):[maxCpa]));
+  const W=620,H=180,px=16,py=15,bottom=28;
+  const iw=W-px*2, ih=H-py-bottom;
+  const x=i=>data.length<=1?W/2:px+i*iw/(data.length-1);
+  const y=v=>py+ih-(Math.min(Math.max(v,0),chartMax)/chartMax)*ih;
+
+  const segments = [];
+  let segment = [];
+  data.forEach((d,i) => {
+    if (d.cpa === null) {
+      if (segment.length) segments.push(segment);
+      segment = [];
+    } else {
+      segment.push(`${x(i)},${y(d.cpa)}`);
+    }
+  });
+  if (segment.length) segments.push(segment);
+
+  return <div>
+    <div className="rounded-2xl border bg-slate-50 p-2 overflow-hidden">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[180px]" preserveAspectRatio="none">
+        <line x1={px} x2={W-px} y1={y(maxCpa)} y2={y(maxCpa)} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="6 5"/>
+        <line x1={px} x2={W-px} y1={y(target)} y2={y(target)} stroke="#10b981" strokeWidth="1.5" strokeDasharray="6 5"/>
+        {segments.map((points,i)=><polyline key={i} points={points.join(' ')} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round"/>)}
+        {data.map((d,i)=>d.cpa !== null
+          ? <circle key={`${d.date}-${i}`} cx={x(i)} cy={y(d.cpa)} r="4" fill="#2563eb"/>
+          : <circle key={`${d.date}-${i}`} cx={x(i)} cy={y(0)} r="3" fill="#94a3b8"/>
         )}
+      </svg>
+    </div>
+    <div className="flex flex-wrap gap-4 text-[8px] font-black text-slate-500 mt-2">
+      <span>🔴 CPA máximo {fmtMoney(maxCpa)}</span>
+      <span>🟢 CPA operativo {fmtMoney(target)}</span>
+      <span>🔵 CPA diario</span>
+      <span>⚪ Sin compra = CPA no calculable</span>
+    </div>
+  </div>;
+}
+
+function CampaignDashboard({
+  ownerUid, products, campaigns, ads, dailyCampaigns, dailyAds, budgetChanges, decisions, recommendations,
+  attentionRows, activeProducts, activeCampaigns, activeAds, latestDate,
+  period, setPeriod, selectedCampaign, setSelectedCampaignId, setSubTab
+}) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [drawerCampaignId, setDrawerCampaignId] = useState('');
+  const [drawerPeriod, setDrawerPeriod] = useState(period || 'last');
+  const [attentionOpen, setAttentionOpen] = useState(false);
+
+  const activeCampaignList = activeCampaigns.filter(c => !c.archived);
+
+  const campaignRows = useMemo(() => activeCampaignList.map(c => {
+    const product = products.find(p => p.id === c.productId);
+    const history = eligibleCampaignRecords(
+      dailyCampaigns.filter(r => r.campaignId === c.id),
+      c
+    ).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+
+    const today = todayColombiaCC();
+    const todayRecord = history.find(r => String(r.date) === today) || null;
+    const completeHistory = history.filter(r => String(r.date) < today);
+    const lastComplete = completeHistory[completeHistory.length - 1] || null;
+    const lastStats = lastComplete ? aggregateRecords([lastComplete]) : aggregateRecords([]);
+
+    const split3 = splitPeriodRecords(history, '3d');
+    const split7 = splitPeriodRecords(history, '7d');
+    const stats3 = split3.currentStats;
+    const stats7 = split7.currentStats;
+    const delta3 = pctChange(split3.currentStats.cpa, split3.previousStats.cpa);
+    const delta7 = pctChange(split7.currentStats.cpa, split7.previousStats.cpa);
+
+    const maxCpa = Math.max(1,toNumber(product?.maxCpa));
+    const campaignAds = ads.filter(a => a.campaignId === c.id && a.active !== false);
+    const adDiags = campaignAds.map(ad => diagnoseAd(
+      dailyAds.filter(r=>r.adId===ad.id), product, ad, 'last', c
+    )).filter(d => d.scale3d?.days > 0);
+
+    // Dashboard operativo: SIEMPRE 3D. El 'last' de arriba solo alimenta
+    // la lectura analítica del último día, no estas decisiones.
+    const hasCritical = adDiags.some(d=>d.operational3dPriority==='critical');
+    const hasAlert = adDiags.some(d=>d.operational3dPriority==='alert');
+    const hasNoDelivery = adDiags.some(d=>d.metaDelivery3d?.isNoDelivery);
+    const hasLimitedDelivery = adDiags.some(d=>d.metaDelivery3d?.isLimited);
+    const hasScalable = adDiags.some(d=>d.canScale);
+    const cpa = stats3.cpa;
+    const cpaObservation3d = buildCpaObservation3D(stats3, split3.previousStats, maxCpa);
+
+    let state='Sin 3D suficiente', tone='attention', diagnosis='Pendiente 3D', action='Registrar histórico';
+    if (stats3.days > 0) {
+      if (stats3.spend > 0 && stats3.purchases <= 0) {
+        if (stats3.spend >= maxCpa) {
+          state='Crítico'; tone='critical';
+          diagnosis='Sin compras · gasto alcanzó CPA máximo';
+          action='No escalar · optimizar';
+        } else if (stats3.spend >= maxCpa * 0.5) {
+          state='Alerta'; tone='alert';
+          diagnosis='Sin compras · vigilar 3D';
+          action='No escalar · observar';
+        } else {
+          state='Testing'; tone='attention';
+          diagnosis='Sin compras aún · CPA no calculable';
+          action='Mantener test';
+        }
+      } else if (cpa > maxCpa) {
+        if (delta3 !== null && delta3 <= 0) {
+          state='Alerta'; tone='alert';
+          diagnosis='CPA fuera del objetivo · recuperándose';
+          action='No escalar · observar';
+        } else if (delta3 !== null && delta3 > 15) {
+          state='Crítico'; tone='critical';
+          diagnosis='CPA fuera del objetivo · deteriorándose';
+          action='No escalar · optimizar';
+        } else {
+          state='Alerta'; tone='alert';
+          diagnosis='CPA fuera del objetivo';
+          action='No escalar · optimizar';
+        }
+      } else if (hasCritical) {
+        state='Crítico'; tone='critical';
+        diagnosis='Anuncio crítico en 3D';
+        action='Optimizar / no escalar';
+      } else if (hasNoDelivery) {
+        state='Alerta'; tone='alert';
+        diagnosis='Meta no entrega a uno o más anuncios';
+        action='Revisar distribución · no juzgar rendimiento';
+      } else if (hasLimitedDelivery) {
+        state='Alerta'; tone='alert';
+        diagnosis='Entrega limitada por Meta';
+        action='Vigilar distribución';
+      } else if (hasAlert) {
+        state='Alerta'; tone='alert';
+        diagnosis='Señal operativa 3D';
+        action='Revisar diagnóstico 3D';
+      } else if (hasScalable && cpa <= maxCpa*0.8) {
+        state='Escalable'; tone='normal';
+        diagnosis='3D estable/mejorando + margen';
+        action='Escalar +20%';
+      } else {
+        state='Mantener'; tone='attention';
+        diagnosis='Rentable 3D / observar';
+        action='Mantener';
+      }
+    }
+
+    const creativeHealth = hasCritical ? 'Reemplazar creativo'
+      : hasAlert ? 'Vigilar señales 3D'
+      : 'Creativo sano 3D';
+
+    return {
+      campaign:c, product, todayRecord, lastComplete, lastStats, stats3, stats7, delta3, delta7,
+      maxCpa, state, tone, diagnosis, action, creativeHealth, cpaObservation3d,
+      purchases:lastStats.purchases, frequency:lastStats.frequency
+    };
+  }), [activeCampaignList, products, dailyCampaigns, ads, dailyAds]);
+
+  const filteredRows = campaignRows.filter(r => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = !q || `${r.product?.name||''} ${r.campaign.name}`.toLowerCase().includes(q);
+    const matchesStatus = statusFilter==='all'
+      || (statusFilter==='critical' && r.state==='Crítico')
+      || (statusFilter==='alert' && r.state==='Alerta')
+      || (statusFilter==='scalable' && r.state==='Escalable')
+      || (statusFilter==='testing' && /test/i.test(r.campaign.name))
+      || (statusFilter==='scaled' && /escala|escalad/i.test(r.campaign.name));
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalSpend = campaignRows.reduce((sum,r)=>sum+toNumber(r.lastComplete?.spend),0);
+  const totalPurchases = campaignRows.reduce((sum,r)=>sum+toNumber(r.lastComplete?.purchases),0);
+  const globalCpa = calcCpa(totalSpend,totalPurchases);
+
+  const today = todayColombiaCC();
+  const todayCampaignRecords = dailyCampaigns.filter(r =>
+    String(r.date) === today &&
+    campaigns.some(c => c.id === r.campaignId && c.active !== false && !c.archived)
+  );
+  const provisionalToday = aggregateRecords(todayCampaignRecords);
+  const scalableCount = campaignRows.filter(r=>r.state==='Escalable').length;
+  const maintainCount = campaignRows.filter(r=>r.state==='Mantener').length;
+  const alertCount = campaignRows.filter(r=>r.state==='Alerta').length;
+  const criticalCount = campaignRows.filter(r=>r.state==='Crítico').length;
+
+  const drawerCampaign = campaigns.find(c=>c.id===drawerCampaignId) || null;
+  const drawerProduct = drawerCampaign ? products.find(p=>p.id===drawerCampaign.productId) : null;
+  const drawerHistory = drawerCampaign ? eligibleCampaignRecords(
+    dailyCampaigns.filter(r=>r.campaignId===drawerCampaign.id), drawerCampaign
+  ).sort((a,b)=>String(a.date).localeCompare(String(b.date))) : [];
+  const drawerToday = drawerHistory.find(r => String(r.date) === today) || null;
+  const drawerCompleteHistory = drawerHistory.filter(r => String(r.date) < today);
+  const drawerLastComplete = drawerCompleteHistory[drawerCompleteHistory.length - 1] || null;
+  const drawerCurrent = drawerLastComplete ? aggregateRecords([drawerLastComplete]) : aggregateRecords([]);
+  const drawerPrev3 = aggregateRecords(drawerCompleteHistory.slice(Math.max(0, drawerCompleteHistory.length - 4), Math.max(0, drawerCompleteHistory.length - 1)));
+  const drawerDelta = drawerLastComplete ? pctChange(drawerCurrent.cpa, drawerPrev3.cpa) : null;
+  const drawerTodayStats = drawerToday ? aggregateRecords([drawerToday]) : aggregateRecords([]);
+
+  const openDrawer = campaignId => {
+    setSelectedCampaignId(campaignId);
+    setDrawerCampaignId(campaignId);
+    setDrawerPeriod(period || '3d');
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* TOPBAR VALIDADO */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight">Dashboard de campañas</h3>
+          <p className="text-[9px] md:text-[10px] text-slate-400 font-semibold mt-1">Control diario, variaciones, acciones recomendadas y techo rentable por producto</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={()=>setSubTab('register')} className="bg-white border px-4 py-2 rounded-xl text-[9px] font-black uppercase">+ Registrar día</button>
+          <button onClick={()=>setSubTab('campaigns')} className="bg-zinc-950 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">+ Nuevo producto</button>
+        </div>
+      </div>
+
+      {/* QUE REQUIERE ATENCION: DESPLEGABLE */}
+      <SectionCard accent="#f59e0b" soft="#fffbeb">
+        <button
+          type="button"
+          aria-expanded={attentionOpen}
+          onClick={()=>setAttentionOpen(v=>!v)}
+          className="w-full flex items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-black uppercase text-sm text-amber-800">Qué requiere mi atención hoy</h3>
+              <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase ${
+                attentionRows.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {attentionRows.length} señal(es)
+              </span>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-1">El último día completo funciona como alerta temprana. La acción operativa mostrada siempre se determina con 3D.</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden md:inline px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black uppercase">Prioridad automática</span>
+            {attentionOpen ? <ChevronUp size={16} className="text-amber-700"/> : <ChevronDown size={16} className="text-amber-700"/>}
+          </div>
+        </button>
+
+        {attentionOpen && <div className="mt-4 pt-4 border-t border-amber-200">
+          {attentionRows.length===0 ? <EmptyState>Sin anuncios activos con diagnóstico disponible.</EmptyState> :
+            <div className="space-y-2">{attentionRows.slice(0,12).map(({ad,campaign,product,diag})=>(
+              <button key={ad.id} onClick={()=>openDrawer(campaign.id)} className={`w-full text-left rounded-2xl border p-3 ${diag.priority==='critical'?'bg-rose-50 border-rose-200':diag.priority==='alert'?'bg-orange-50 border-orange-200':'bg-slate-50'}`}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-slate-500">{product.name} → {campaign.name} → {ad.name}</p>
+                    <p className="font-black text-xs mt-1">{diag.finalDiagnosis || diag.diagnosis}</p>
+                    <p className="text-[9px] text-slate-500 mt-1">{diag.reason}</p>
+                    <p className="text-[8px] font-black text-indigo-700 mt-2">DECISIÓN 3D: {diag.operational3dDiagnosis}</p>
+                  </div>
+                  <div className="md:text-right">
+                    <p className="text-[8px] uppercase font-black text-slate-400">Acción operativa · 3D</p>
+                    <p className="text-[10px] font-black">{diag.operational3dAction}</p>
+                  </div>
+                </div>
+              </button>
+            ))}</div>
+          }
+        </div>}
+      </SectionCard>
+
+      {/* KPIs VALIDADO */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <MiniCard label="Productos activos" value={activeProducts.length} />
+        <MiniCard label="Escalables" value={scalableCount} tone={scalableCount?'good':'default'} />
+        <MiniCard label="Mantener" value={maintainCount} />
+        <MiniCard label="En alerta" value={alertCount} />
+        <MiniCard label="Críticos" value={criticalCount} tone={criticalCount?'bad':'default'} />
+        <MiniCard label="Gasto último cierre" value={fmtMoney(totalSpend)} />
+      </div>
+
+      <SectionCard className="border-dashed" accent="#2563eb" soft="#eff6ff">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <p className="text-[9px] font-black uppercase text-blue-700">Hoy · monitor provisional intradía</p>
+            <p className="text-[8px] text-slate-500 mt-1">Solo informativo. Estos datos NO participan en diagnósticos, alertas, fatiga, guardrails ni decisiones de escala.</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2 min-w-full lg:min-w-[440px]">
+            <MiniCard label="Gasto hoy" value={fmtMoney(provisionalToday.spend)} />
+            <MiniCard label="Compras hoy" value={fmtNum(provisionalToday.purchases, 2)} />
+            <MiniCard label="CPA provisional" value={provisionalToday.purchases > 0 ? fmtMoney(provisionalToday.cpa) : '—'} />
+            <MiniCard label="ROAS provisional" value={fmtNum(provisionalToday.roas, 2)} />
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* FILTROS + BUSQUEDA */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex gap-2 flex-wrap">
+          {[
+            ['all','Todos'],['critical','🔴 Críticos'],['alert','🟠 Alertas'],
+            ['scalable','🟢 Escalables'],['testing','Testing'],['scaled','Escaladas']
+          ].map(([id,label])=>(
+            <button key={id} onClick={()=>setStatusFilter(id)} className={`px-3 py-2 rounded-full text-[9px] font-black ${statusFilter===id?'bg-zinc-950 text-white':'bg-white border text-slate-500'}`}>{label}</button>
+          ))}
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar producto o campaña..." className="w-full lg:w-[300px] border rounded-xl px-3 py-2.5 text-[10px] font-semibold outline-none focus:border-emerald-400"/>
+      </div>
+
+      {/* TABLA PRINCIPAL DE CAMPAÑAS - CLIC ABRE DRAWER */}
+      <SectionCard className="p-0 overflow-hidden" accent="#6366f1" soft="#eef2ff">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1350px] text-[10px]">
+            <thead className="bg-slate-50">
+              <tr className="text-left uppercase text-[8px] text-slate-400">
+                <th className="p-3">Estado</th><th>Producto / campaña</th><th>Presupuesto</th><th>CPA último día</th>
+                <th>CPA 3D</th><th>Δ vs 3D</th><th>CPA 7D</th><th>Δ 7D</th>
+                <th>Compras</th><th>Frecuencia</th><th>Salud tráfico/creativo</th><th>Diagnóstico · 3D</th><th>Acción · 3D</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length===0 ? <tr><td colSpan="13" className="p-8 text-center text-slate-400">No hay campañas que coincidan con el filtro.</td></tr> :
+                filteredRows.map(r=>(
+                  <tr key={r.campaign.id} onClick={()=>openDrawer(r.campaign.id)} className="border-t hover:bg-slate-50 cursor-pointer">
+                    <td className="p-3"><span className={`px-2 py-1 rounded-full font-black ${r.state==='Crítico'?'bg-rose-100 text-rose-700':r.state==='Alerta'?'bg-orange-100 text-orange-700':r.state==='Escalable'?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>● {r.state}</span></td>
+                    <td><p className="font-black">{r.product?.name||'Producto'}</p><p className="text-[8px] text-slate-400">{r.campaign.name}</p></td>
+                    <td className="font-black">{r.lastComplete?fmtMoney(r.lastComplete.budget):'—'}</td>
+                    <td className={`font-black ${r.lastStats.cpa>r.maxCpa?'text-rose-600':''}`}>{r.lastComplete?fmtCpa(r.lastStats.cpa):'—'}</td>
+                    <td>{r.stats3.purchases>0?fmtCpa(r.stats3.cpa):'—'}</td>
+                    <td><span className={`font-black ${metricDirectionClass('cpa', r.delta3)}`}>{r.delta3===null?'—':`${r.delta3>0?'▲':'▼'} ${fmtNum(Math.abs(r.delta3), 2)}%`}</span></td>
+                    <td>{r.stats7.purchases>0?fmtCpa(r.stats7.cpa):'—'}</td>
+                    <td><span className={`font-black ${metricDirectionClass('cpa', r.delta7)}`}>{r.delta7===null?'—':`${r.delta7>0?'▲':'▼'} ${fmtNum(Math.abs(r.delta7), 2)}%`}</span></td>
+                    <td>{fmtNum(r.purchases, 2)}</td>
+                    <td>{fmtNum(r.frequency,2)}</td>
+                    <td><span className="font-black">{r.creativeHealth}</span></td>
+                    <td><span className="font-black">{r.diagnosis}</span></td>
+                    <td><span className="font-black text-blue-600">{r.action}</span></td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      {/* PRIORIDADES DE ACCION HOY */}
+      <SectionCard accent="#ea580c" soft="#fff7ed">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-black uppercase text-sm text-orange-800">Prioridades de acción hoy</h3>
+          <span className="text-[8px] text-slate-400 font-black uppercase">Lo más importante primero</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {campaignRows.filter(r=>r.lastComplete && ['Crítico','Alerta','Escalable'].includes(r.state)).slice(0,3).map(r=>(
+            <button key={r.campaign.id} onClick={()=>openDrawer(r.campaign.id)} className={`text-left rounded-2xl border p-3 ${r.state==='Crítico'?'bg-rose-50 border-rose-200':r.state==='Alerta'?'bg-orange-50 border-orange-200':'bg-emerald-50 border-emerald-200'}`}>
+              <p className="font-black text-xs">{r.state==='Crítico'?'🔴':r.state==='Alerta'?'🟠':'🟢'} {r.product?.name} — {r.campaign.name}</p>
+              <p className="text-[9px] text-slate-600 mt-1">CPA {r.lastComplete?fmtCpa(r.lastStats.cpa):'—'}. Acción: {r.action}.</p>
+            </button>
+          ))}
+          {!campaignRows.some(r=>r.lastComplete && ['Crítico','Alerta','Escalable'].includes(r.state)) && <EmptyState>Sin prioridades especiales según el último día completo registrado.</EmptyState>}
+        </div>
+      </SectionCard>
+
+      {/* DRAWER LATERAL COMO EN LA VERSION VALIDADA */}
+      {drawerCampaign && (
+        <>
+          <div className="fixed inset-0 bg-black/35 z-[80]" onClick={()=>setDrawerCampaignId('')}></div>
+          <aside className="fixed right-0 top-0 w-[730px] max-w-[96vw] h-screen bg-white shadow-2xl z-[90] overflow-y-auto p-4 md:p-6">
+            <button onClick={()=>setDrawerCampaignId('')} className="absolute right-4 top-4 w-9 h-9 rounded-xl bg-slate-100 font-black">✕</button>
+
+            <div className="pr-12">
+              <h3 className="text-xl md:text-2xl font-black uppercase">{drawerProduct?.name}</h3>
+              <p className="text-[10px] text-slate-400 mt-1">{drawerCampaign.name} · Historial, variaciones y capacidad de escala</p>
+            </div>
+
+            <div className="flex gap-2 mt-5 mb-4 flex-wrap">
+              {PERIODS.map(p=><button key={p.id} onClick={()=>{setDrawerPeriod(p.id);setPeriod(p.id)}} className={`px-3 py-2 rounded-lg text-[9px] font-black ${drawerPeriod===p.id?'bg-zinc-950 text-white':'bg-slate-100 text-slate-500'}`}>{p.label}</button>)}
+            </div>
+
+            <CampaignCpaMiniChart campaign={drawerCampaign} product={drawerProduct} dailyCampaigns={dailyCampaigns}/>
+
+            <div className="mt-4 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[9px] font-black uppercase text-blue-700">Hoy · provisional</p>
+                <span className="text-[7px] font-black uppercase text-blue-500">No influye en decisiones</span>
+              </div>
+              {drawerToday ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <MiniCard label="Gasto" value={fmtMoney(drawerTodayStats.spend)} />
+                  <MiniCard label="Compras" value={fmtNum(drawerTodayStats.purchases, 2)} />
+                  <MiniCard label="CPA" value={drawerTodayStats.purchases > 0 ? fmtCpa(drawerTodayStats.cpa) : '—'} />
+                  <MiniCard label="Frecuencia" value={fmtNum(drawerTodayStats.frequency, 2)} />
+                </div>
+              ) : (
+                <p className="text-[9px] text-slate-500">Sin registro intradía para hoy. El diagnóstico continúa usando el último día completo disponible.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+              <MiniCard label="CPA último día" value={drawerLastComplete?fmtCpa(drawerCurrent.cpa):'—'} />
+              <MiniCard label="CPA 3 días anteriores" value={drawerPrev3.purchases>0?fmtCpa(drawerPrev3.cpa):'—'} />
+              <MiniCard label="Variación vs prev. 3D" value={<span className={metricDirectionClass('cpa', drawerDelta)}>{drawerDelta===null?'—':`${drawerDelta>0?'+':''}${fmtNum(drawerDelta, 2)}%`}</span>} />
+              <MiniCard label="Frecuencia último día" value={drawerLastComplete?fmtNum(drawerCurrent.frequency,2):'—'} />
+              <MiniCard label="Compras último día" value={drawerLastComplete?fmtNum(drawerCurrent.purchases, 2):'—'} />
+              <MiniCard label="Presupuesto último cierre" value={drawerLastComplete?fmtMoney(drawerLastComplete.budget):'—'} />
+              <MiniCard label="CPA máximo" value={fmtMoney(drawerProduct?.maxCpa)} />
+              <MiniCard label="CPA operativo" value={fmtMoney(toNumber(drawerProduct?.maxCpa)*0.8)} />
+            </div>
+
+            <div className="mt-5">
+              <CampaignDiagnosticDetail
+                ownerUid={ownerUid}
+                campaign={drawerCampaign}
+                product={drawerProduct}
+                ads={ads.filter(a=>a.campaignId===drawerCampaign.id)}
+                allAds={ads}
+                allCampaigns={campaigns}
+                dailyAds={dailyAds}
+                dailyCampaigns={dailyCampaigns}
+                budgetChanges={budgetChanges}
+                decisions={decisions}
+                recommendations={recommendations}
+                period={drawerPeriod}
+              />
+            </div>
+          </aside>
+        </>
+      )}
+    </div>
+  );
+}
+
+function toneText(tone) {
+  return tone === 'critical' ? 'text-rose-600' : tone === 'alert' ? 'text-orange-600' : tone === 'attention' ? 'text-amber-600' : 'text-emerald-600';
+}
+
+function toneBg(tone) {
+  return tone === 'critical' ? 'bg-rose-50 border-rose-200' : tone === 'alert' ? 'bg-orange-50 border-orange-200' : tone === 'attention' ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200';
+}
+
+function GuardrailPill({ ok, label }) {
+  return <span className={`inline-flex px-2 py-1 rounded-full text-[8px] font-black uppercase ${ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>{ok ? '✓' : '✕'} {label}</span>;
+}
+
+function buildProductBenchmark(productId, dailyAds, dailyCampaigns, maxCpa, allAds = [], allCampaigns = []) {
+  const max = Math.max(1, toNumber(maxCpa));
+  const today = todayColombiaCC();
+
+  // Fuente de verdad: Producto -> Campañas -> Anuncios.
+  // No dependemos de que los registros históricos tengan productId correctamente grabado.
+  const productCampaigns = (allCampaigns || []).filter(c => c.productId === productId);
+  const campaignIds = new Set(productCampaigns.map(c => c.id));
+  const productAds = (allAds || []).filter(a => campaignIds.has(a.campaignId) || a.productId === productId);
+  const adById = new Map(productAds.map(a => [a.id, a]));
+  const campaignById = new Map(productCampaigns.map(c => [c.id, c]));
+
+  // Reunimos registros por día completo, respetando ON/OFF.
+  const byDate = new Map();
+
+  for (const record of (dailyAds || [])) {
+    if (!record?.date || String(record.date) >= today) continue;
+
+    const ad = adById.get(record.adId);
+    if (!ad) continue;
+
+    const campaign = campaignById.get(ad.campaignId) || (allCampaigns || []).find(c => c.id === ad.campaignId);
+    if (!campaign || campaign.productId !== productId) continue;
+
+    if (!entityActiveOnDate(ad, record.date) || !entityActiveOnDate(campaign, record.date)) continue;
+
+    if (!byDate.has(record.date)) byDate.set(record.date, []);
+    byDate.get(record.date).push(record);
+  }
+
+  // Si un día tiene registro de campaña pero no registros por anuncio, lo usamos como fallback.
+  // Esto permite alimentar históricos creados antes de que el detalle por anuncio estuviera completo.
+  for (const record of (dailyCampaigns || [])) {
+    if (!record?.date || String(record.date) >= today) continue;
+    const campaign = campaignById.get(record.campaignId);
+    if (!campaign || !entityActiveOnDate(campaign, record.date)) continue;
+    if (!byDate.has(record.date) || byDate.get(record.date).length === 0) {
+      byDate.set(record.date, [record]);
+    }
+  }
+
+  const dailyProduct = [...byDate.entries()]
+    .map(([date, records]) => ({ date, ...aggregateRecords(records) }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  // Benchmark operativo principal: últimos 14 días activos completos del producto.
+  // El histórico anterior se conserva únicamente para comparar estabilidad.
+  const BENCHMARK_WINDOW_DAYS = 14;
+  const benchmarkWindow = dailyProduct.slice(-BENCHMARK_WINDOW_DAYS);
+  const benchmarkDates = new Set(benchmarkWindow.map(day => day.date));
+
+  const profitableDays = benchmarkWindow.filter(day =>
+    toNumber(day.purchases) > 0 &&
+    toNumber(day.cpa) > 0 &&
+    toNumber(day.cpa) <= max
+  );
+
+  const stableProfitableDays = [];
+
+  dailyProduct.forEach((day, idx) => {
+    if (!benchmarkDates.has(day.date)) return;
+    if (toNumber(day.purchases) <= 0 || toNumber(day.cpa) <= 0 || toNumber(day.cpa) > max) return;
+
+    const previous = dailyProduct.slice(Math.max(0, idx - 3), idx);
+    if (previous.length < 3) return;
+
+    const prevSpend = previous.reduce((sum, x) => sum + toNumber(x.spend), 0);
+    const weightedPrev = key => {
+      if (!previous.length) return 0;
+      if (prevSpend > 0) return previous.reduce((sum, x) => sum + toNumber(x[key]) * toNumber(x.spend), 0) / prevSpend;
+      return previous.reduce((sum, x) => sum + toNumber(x[key]), 0) / previous.length;
+    };
+
+    const previousStats = {
+      cpa: calcCpa(
+        previous.reduce((sum, x) => sum + toNumber(x.spend), 0),
+        previous.reduce((sum, x) => sum + toNumber(x.purchases), 0)
+      ),
+      ctr: weightedPrev('ctr'),
+      cpc: weightedPrev('cpc'),
+      visitToPurchase: safeRate(
+        previous.reduce((sum, x) => sum + toNumber(x.purchases), 0),
+        previous.reduce((sum, x) => sum + toNumber(x.landingViews), 0)
+      )
+    };
+
+    const cpaDelta = pctChange(day.cpa, previousStats.cpa);
+    const ctrDelta = pctChange(day.ctr, previousStats.ctr);
+    const cpcDelta = pctChange(day.cpc, previousStats.cpc);
+    const cvrDelta = pctChange(day.visitToPurchase, previousStats.visitToPurchase);
+
+    // Solo evaluamos una métrica de estabilidad cuando existe base comparable.
+    const stableMetric = delta => delta === null || Math.abs(delta) <= 15;
+    const stable =
+      stableMetric(cpaDelta) &&
+      stableMetric(ctrDelta) &&
+      stableMetric(cpcDelta) &&
+      stableMetric(cvrDelta);
+
+    if (stable) stableProfitableDays.push(day);
+  });
+
+  // El benchmark no debe quedarse vacío durante la etapa inicial.
+  // Si aún no hay suficientes días para certificar estabilidad, usa los días rentables como benchmark provisional.
+  const selectedDays = stableProfitableDays.length > 0 ? stableProfitableDays : profitableDays;
+  const benchmarkStatus = stableProfitableDays.length > 0 ? 'Estable' : profitableDays.length > 0 ? 'Provisional' : 'Sin muestra';
+
+  const totalSpend = selectedDays.reduce((sum, x) => sum + toNumber(x.spend), 0);
+  const totalPurchases = selectedDays.reduce((sum, x) => sum + toNumber(x.purchases), 0);
+  const totalLanding = selectedDays.reduce((sum, x) => sum + toNumber(x.landingViews), 0);
+  const totalAtc = selectedDays.reduce((sum, x) => sum + toNumber(x.atc), 0);
+
+  const weighted = key => {
+    if (!selectedDays.length) return 0;
+    if (totalSpend > 0) {
+      return selectedDays.reduce((sum, x) => sum + toNumber(x[key]) * toNumber(x.spend), 0) / totalSpend;
+    }
+    return selectedDays.reduce((sum, x) => sum + toNumber(x[key]), 0) / selectedDays.length;
+  };
+
+  return {
+    days: selectedDays.length,
+    sampleDays: selectedDays.length,
+    profitableDays: profitableDays.length,
+    stableDays: stableProfitableDays.length,
+    availableDays: benchmarkWindow.length,
+    historicalDays: dailyProduct.length,
+    windowDays: BENCHMARK_WINDOW_DAYS,
+    status: benchmarkStatus,
+    spend: totalSpend,
+    purchases: totalPurchases,
+    cpa: calcCpa(totalSpend, totalPurchases),
+    ctr: weighted('ctr'),
+    cpc: weighted('cpc'),
+    cpm: weighted('cpm'),
+    frequency: weighted('frequency'),
+    roas: weighted('roas'),
+    landingViews: totalLanding,
+    atc: totalAtc,
+    visitToAtc: safeRate(totalAtc, totalLanding),
+    visitToPurchase: safeRate(totalPurchases, totalLanding),
+    atcToPurchase: safeRate(totalPurchases, totalAtc),
+    criteria: stableProfitableDays.length > 0
+      ? 'Últimos 14 días activos completos · rentables + estables'
+      : profitableDays.length > 0
+        ? 'Últimos 14 días activos completos · benchmark provisional rentable'
+        : 'Sin días rentables válidos dentro de los últimos 14 días activos completos'
+  };
+}
+
+function buildCampaignDecision(campaign, product, campaignHistory, adRows, scaleRows) {
+  const latest = [...campaignHistory].sort((a,b) => String(b.date).localeCompare(String(a.date)))[0];
+  if (!latest) {
+    return {
+      status: 'Sin datos',
+      action: 'Registrar datos',
+      reason: 'Aún no existe un registro diario completo para esta campaña.',
+      recommendedBudget: null,
+      cpaObservation3d: { level: 'neutral', title: 'SIN LECTURA 3D', text: 'Sin datos completos para decisión operativa.' }
+    };
+  }
+
+  const maxCpa = Math.max(1, toNumber(product?.maxCpa));
+  const split3d = splitPeriodRecords(campaignHistory, '3d');
+  const campaign3d = split3d.currentStats;
+  const previous3d = split3d.previousStats;
+  const cpa3d = campaign3d.cpa;
+  const cpaObservation3d = buildCpaObservation3D(campaign3d, previous3d, maxCpa);
+
+  // IMPORTANTE: estos contadores usan la decisión operativa 3D de cada anuncio,
+  // nunca el diagnóstico del selector visual.
+  const critical = adRows.filter(x => x.diag.operational3dPriority === 'critical').length;
+  const alert = adRows.filter(x => x.diag.operational3dPriority === 'alert').length;
+  const scalable = adRows.filter(x => x.diag.canScale).length;
+
+  if (campaign3d.spend > 0 && campaign3d.purchases <= 0) {
+    const spentVsMax = campaign3d.spend / maxCpa;
+    return {
+      status: spentVsMax >= 1 ? 'Crítico' : spentVsMax >= 0.5 ? 'Alerta' : 'Testing',
+      action: spentVsMax >= 1
+        ? 'No escalar · optimizar'
+        : spentVsMax >= 0.5
+          ? 'No escalar · seguir observando'
+          : 'Mantener test · CPA no calculable',
+      reason: cpaObservation3d.text,
+      recommendedBudget: null,
+      cpaObservation3d
+    };
+  }
+
+  if (cpa3d > maxCpa) {
+    const delta = cpaObservation3d.delta;
+
+    if (delta !== null && delta <= 0) {
+      return {
+        status: 'Fuera del objetivo · recuperándose',
+        action: 'No escalar · mantener en observación',
+        reason: cpaObservation3d.text,
+        recommendedBudget: null,
+        cpaObservation3d
+      };
+    }
+
+    const candidates = scaleRows.filter(r => r.budget < toNumber(latest.budget) && r.cpa > 0 && r.cpa <= maxCpa);
+    const best = candidates.sort((a,b) => b.budget - a.budget)[0];
+
+    return {
+      status: delta !== null && delta > 15 ? 'Fuera del objetivo · deteriorándose' : 'Fuera del objetivo',
+      action: delta !== null && delta > 15
+        ? (best ? 'Reducir al último nivel rentable' : 'No escalar · optimizar')
+        : 'No escalar · optimizar',
+      reason: cpaObservation3d.text,
+      recommendedBudget: delta !== null && delta > 15 ? (best?.budget || null) : null,
+      cpaObservation3d
+    };
+  }
+
+  if (critical > 0) {
+    return {
+      status: 'Atención',
+      action: 'Optimizar antes de escalar',
+      reason: `${critical} anuncio(s) presentan una señal crítica en la ventana operativa 3D.`,
+      recommendedBudget: null,
+      cpaObservation3d
+    };
+  }
+
+  if (cpa3d > 0 && cpa3d <= maxCpa * 0.8 && scalable > 0 && toNumber(latest.budget) > 0) {
+    return {
+      status: 'Escalable',
+      action: 'Escalar +20%',
+      reason: `Decisión 3D: CPA de campaña ${fmtMoney(cpa3d)} con margen ≥20% y al menos un anuncio supera los 4 guardrails obligatorios. El volumen solo indica confianza.`,
+      recommendedBudget: Math.round((toNumber(latest.budget) * 1.2) / 1000) * 1000,
+      cpaObservation3d
+    };
+  }
+
+  if (alert > 0) {
+    return {
+      status: 'Mantener · revisar',
+      action: 'Mantener y revisar señales 3D',
+      reason: `${alert} anuncio(s) requieren observación en 3D. No existe condición suficiente para una escala fuerte.`,
+      recommendedBudget: null,
+      cpaObservation3d
+    };
+  }
+
+  return {
+    status: 'Mantener',
+    action: 'Mantener presupuesto',
+    reason: 'La decisión operativa se mide exclusivamente en 3D. El CPA está dentro del objetivo, pero todavía falta margen o algún guardrail para escalar.',
+    recommendedBudget: null,
+    cpaObservation3d
+  };
+}
+
+function CampaignDiagnosticDetail({ ownerUid, campaign, product, ads, allAds, allCampaigns, dailyAds, dailyCampaigns, budgetChanges, decisions, recommendations, period }) {
+  const MONITOR_PERIODS = [
+    { id: 'last', label: 'ÚLTIMO DÍA' },
+    { id: '3d', label: '3D' },
+    { id: '7d', label: '7D' },
+    { id: '14d', label: '14D' },
+    { id: '30d', label: '30D' }
+  ];
+  const [monitorPeriod, setMonitorPeriod] = useState(
+    ['last', '3d', '7d', '14d', '30d'].includes(period) ? period : 'last'
+  );
+
+  useEffect(() => {
+    if (['last', '3d', '7d', '14d', '30d'].includes(period)) setMonitorPeriod(period);
+  }, [period]);
+
+  const visibleAds = ads.filter(a => a.active !== false && campaign.active !== false && !campaign.archived);
+
+  const contribution3d = useMemo(
+    () => buildCampaignContribution3D(
+      campaign,
+      product,
+      allAds || ads,
+      dailyAds
+    ),
+    [campaign, product, allAds, ads, dailyAds]
+  );
+
+  const adRows = visibleAds.map(ad => {
+    const records = dailyAds.filter(r => r.adId === ad.id);
+    return {
+      ad,
+      diag: diagnoseAd(records, product, ad, monitorPeriod, campaign),
+      contribution: contribution3d.byAd[ad.id] || null
+    };
+  }).sort((a, b) => (a.diag.stats.cpa || 999999999) - (b.diag.stats.cpa || 999999999));
+
+  const today = todayColombiaCC();
+  const campaignHistory = eligibleCampaignRecords(
+    dailyCampaigns.filter(r => r.campaignId === campaign.id),
+    campaign
+  ).filter(r => String(r.date) < today)
+   .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const scaleRows = useMemo(() => buildScaleHistory(campaignHistory, product?.maxCpa), [campaignHistory, product?.maxCpa]);
+  const budgetRows = budgetChanges.filter(b => b.campaignId === campaign.id).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const decisionRows = decisions.filter(d => d.campaignId === campaign.id).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const benchmark = useMemo(
+    () => buildProductBenchmark(product?.id, dailyAds, dailyCampaigns, product?.maxCpa, allAds || ads, allCampaigns || [campaign]),
+    [product?.id, product?.maxCpa, dailyAds, dailyCampaigns, allAds, allCampaigns, ads, campaign]
+  );
+  const campaignDecision = useMemo(() => buildCampaignDecision(campaign, product, campaignHistory, adRows, scaleRows), [campaign, product, campaignHistory, adRows, scaleRows]);
+
+  useEffect(() => {
+    if (!ownerUid || !campaignDecision.recommendedBudget || !campaign?.id) return;
+    const existing = recommendations.find(r => r.campaignId === campaign.id && r.type === 'budget' && r.status === 'active' && toNumber(r.recommendedBudget) === toNumber(campaignDecision.recommendedBudget));
+    if (existing) return;
+    const ref = doc(db, COLLECTIONS.recommendations, `${campaign.id}_budget_active`);
+    setDoc(ref, {
+      ownerUid, productId: campaign.productId, campaignId: campaign.id, type: 'budget',
+      currentBudget: toNumber(campaignHistory[campaignHistory.length - 1]?.budget),
+      recommendedBudget: toNumber(campaignDecision.recommendedBudget), status: 'active',
+      reason: campaignDecision.reason, createdDate: todayColombiaCC(), updatedAt: serverTimestamp()
+    }, { merge: true }).catch(console.error);
+  }, [ownerUid, campaign.id, campaign.productId, campaignDecision.recommendedBudget, campaignDecision.reason, campaignHistory, recommendations]);
+
+  const dynamicCounts = adRows.reduce((acc, x) => { acc[x.diag.dynamicDiagnosis] = (acc[x.diag.dynamicDiagnosis] || 0) + 1; return acc; }, {});
+  const maxCpa = toNumber(product?.maxCpa);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className={`rounded-2xl p-3 ${toneBg(
+          campaignDecision.cpaObservation3d?.level === 'critical' ? 'critical' :
+          campaignDecision.cpaObservation3d?.level === 'alert' ? 'alert' :
+          'normal'
+        )}`} style={{border:'2px solid #0f766e'}}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[8px] font-black uppercase text-slate-400">Motor de decisión de campaña</p>
+            <span className="px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black uppercase">3D determina</span>
+          </div>
+          <p className="font-black text-sm mt-1">{campaignDecision.status}</p>
+          <p className="text-[9px] text-slate-500 mt-1">{campaignDecision.reason}</p>
+          <p className="text-[10px] font-black mt-2">Acción 3D: {campaignDecision.action}</p>
+          {campaignDecision.recommendedBudget ? <p className="text-[10px] font-black text-emerald-700 mt-1">Presupuesto recomendado: {fmtMoney(campaignDecision.recommendedBudget)}</p> : null}
+          {campaignDecision.cpaObservation3d && (
+            <div className={`mt-3 rounded-xl border p-2.5 ${
+              campaignDecision.cpaObservation3d.level === 'critical' ? 'bg-rose-50 border-rose-200 text-rose-700' :
+              campaignDecision.cpaObservation3d.level === 'alert' ? 'bg-orange-50 border-orange-200 text-orange-700' :
+              campaignDecision.cpaObservation3d.level === 'good' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+              campaignDecision.cpaObservation3d.level === 'attention' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+              'bg-slate-50 border-slate-200 text-slate-600'
+            }`}>
+              <p className="text-[8px] font-black uppercase">{campaignDecision.cpaObservation3d.title}</p>
+              <p className="text-[8px] mt-1 leading-relaxed">{campaignDecision.cpaObservation3d.text}</p>
+            </div>
+          )}
+        </div>
+        <div className="rounded-2xl p-3 bg-blue-50" style={{border:'2px solid #2563eb'}}><p className="text-[8px] font-black uppercase text-blue-700">Salud de tráfico y creativo</p><p className="font-black text-sm mt-1">{adRows.length} anuncios activos</p><p className="text-[9px] text-slate-500 mt-1">Estables: {dynamicCounts['Estable'] || 0} · Fatiga temprana: {dynamicCounts['Fatiga temprana'] || 0} · Probable/confirmada: {(dynamicCounts['Fatiga probable'] || 0) + (dynamicCounts['Fatiga confirmada'] || 0)}</p></div>
+        <div className="rounded-2xl p-3 bg-orange-50" style={{border:'2px solid #ea580c'}}><p className="text-[8px] font-black uppercase text-orange-700">Motor de fatiga y saturación</p><p className="text-[9px] text-slate-600 mt-1">CTR ↓ + CPC ↑ + Frecuencia ↑ + CPA ↑ = fatiga. CPM ↑ con CTR/CVR estables = subasta cara, no necesariamente fatiga.</p></div>
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-cyan-50" style={{border:'2px solid #0891b2'}}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <p className="text-[9px] font-black uppercase text-cyan-800">Período de monitoreo por anuncio</p>
+            <p className="text-[8px] text-slate-500 mt-1">Controla la lectura analítica de Variaciones dinámicas y Embudo post-clic. NO modifica decisiones, Guardrails, Contribución ni observaciones operativas: todo eso se determina en 3D.</p>
+          </div>
+          <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+            {MONITOR_PERIODS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setMonitorPeriod(p.id)}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black transition ${monitorPeriod === p.id ? 'bg-zinc-950 text-white shadow-sm' : 'text-slate-500 hover:text-zinc-900'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[8px] text-slate-500 mt-3">
+          <strong>{monitorPeriod === 'last' ? 'ÚLTIMO DÍA' : monitorPeriod.toUpperCase()}:</strong> {variationExplanation(monitorPeriod)} Los días OFF se excluyen completamente del período y no cuentan como cero. Los registros de HOY también se excluyen del diagnóstico por ser intradía.
+        </p>
+      </div>
+
+      <div className="bg-blue-50 rounded-2xl p-3" style={{border:'2px solid #3b82f6'}}><p className="text-[9px] font-black uppercase text-blue-700">Cómo funcionan las variaciones por anuncio</p><p className="text-[9px] text-blue-600 mt-1">{variationExplanation(monitorPeriod)} Bandas: 0–10% normal · &gt;10–15% atención · &gt;15–20% alerta · &gt;20% crítica. La dirección se interpreta según la métrica.</p></div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="rounded-2xl p-3 bg-cyan-50" style={{border:'2px solid #0891b2'}}>
+          <p className="text-[8px] font-black uppercase text-cyan-700">Regla de inclusión de datos</p>
+          <p className="text-[9px] text-slate-600 mt-1">Los días en que la campaña o el anuncio estuvo OFF se excluyen totalmente de Último día/3D/7D/14D/30D, benchmark y escala rentable. HOY queda solo como monitor intradía y no participa en decisiones. Los días OFF no se convierten en ceros.</p>
+        </div>
+        <div className="rounded-2xl p-3 bg-indigo-50" style={{border:'2px solid #6366f1'}}>
+          <p className="text-[8px] font-black uppercase text-indigo-700">Jerarquía ON/OFF</p>
+          <p className="text-[9px] text-slate-600 mt-1">Apagar campaña apaga sus anuncios. Al encenderla se restaura el estado individual previo. Apagar un anuncio no afecta a los demás.</p>
+        </div>
+        <div className="rounded-2xl p-3 bg-amber-50" style={{border:'2px solid #d97706'}}>
+          <p className="text-[8px] font-black uppercase text-amber-700">Confianza del diagnóstico</p>
+          <p className="text-[9px] text-slate-600 mt-1">&lt;5 compras baja · 5–14 media · 15–29 alta · 30+ muy alta. La antigüedad se calcula con días realmente activos: &lt;3 limita a baja y 3–6 limita a media.</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border-2 p-3 md:p-4 bg-white shadow-sm" style={{ borderColor: '#2563eb' }}>
+        <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b" style={{ borderColor: '#bfdbfe' }}><h4 className="text-xs font-black uppercase text-blue-800">Variaciones dinámicas por anuncio</h4><span className="px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black">{monitorPeriod === 'last' ? 'ÚLTIMO DÍA' : monitorPeriod.toUpperCase()}</span></div>
+        {adRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-[10px] border-separate border-spacing-y-1"><thead><tr className="border-b text-[8px] font-black uppercase text-slate-400"><th className="py-2">Anuncio</th><th>CPA</th><th>Δ CPA</th><th>CTR</th><th>Δ CTR</th><th>CPC</th><th>Δ CPC</th><th>CPM</th><th>Δ CPM</th><th>Frecuencia</th><th>Δ Frec.</th><th>CVR</th><th>Δ CVR</th><th>Diagnóstico dinámico</th><th>Acción</th></tr></thead><tbody>{adRows.map(({ad,diag}) => <tr
+          key={ad.id}
+          className="border-b-4 border-white"
+          style={{ backgroundColor: ccVisualAccent(ad.id || ad.name).soft, boxShadow: `inset 5px 0 0 ${ccVisualAccent(ad.id || ad.name).border}` }}
+        ><td className="py-3 pl-3 font-black" style={{ color: ccVisualAccent(ad.id || ad.name).text }}>{ad.name}</td><td>{fmtCpa(diag.stats.cpa)}</td><td><Delta metric="cpa" value={diag.delta.cpa}/></td><td>{fmtNum(diag.stats.ctr,2)}%</td><td><Delta metric="ctr" value={diag.delta.ctr}/></td><td>{fmtMoney(diag.stats.cpc)}</td><td><Delta metric="cpc" value={diag.delta.cpc}/></td><td>{fmtMoney(diag.stats.cpm)}</td><td><Delta metric="cpm" value={diag.delta.cpm}/></td><td>{fmtNum(diag.stats.frequency,2)}</td><td><Delta metric="frequency" value={diag.delta.frequency}/></td><td>{fmtRate(diag.stats.visitToPurchase)}</td><td><Delta metric="visitToPurchase" value={diag.delta.visitToPurchase}/></td><td className={`font-black ${toneText(diag.dynamicTone)}`}>{diag.dynamicDiagnosis}</td><td className="font-black">{diag.dynamicAction}</td></tr>)}</tbody></table></div> : <EmptyState>No hay anuncios activos con datos para esta campaña.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl border-2 p-3 md:p-4 bg-white shadow-sm" style={{ borderColor: '#7c3aed' }}>
+        <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b" style={{ borderColor: '#ddd6fe' }}><h4 className="text-xs font-black uppercase text-violet-800">Embudo post-clic dinámico por anuncio</h4><span className="px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black">{monitorPeriod === 'last' ? 'ÚLTIMO DÍA' : monitorPeriod.toUpperCase()}</span></div>
+        {adRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-[10px] border-separate border-spacing-y-1"><thead><tr className="border-b text-[8px] font-black uppercase text-slate-400"><th className="py-2">Anuncio</th><th>Visitas</th><th>ATC</th><th>Compras</th><th>V→ATC</th><th>Δ</th><th>V→Compra</th><th>Δ</th><th>ATC→Compra</th><th>Δ</th><th>Diagnóstico post-clic</th><th>Acción</th></tr></thead><tbody>{adRows.map(({ad,diag}) => <tr
+          key={ad.id}
+          className="border-b-4 border-white"
+          style={{ backgroundColor: ccVisualAccent(ad.id || ad.name, 1).soft, boxShadow: `inset 5px 0 0 ${ccVisualAccent(ad.id || ad.name, 1).border}` }}
+        ><td className="py-3 pl-3 font-black" style={{ color: ccVisualAccent(ad.id || ad.name, 1).text }}>{ad.name}</td><td>{fmtNum(diag.stats.landingViews, 2)}</td><td>{fmtNum(diag.stats.atc, 2)}</td><td>{fmtNum(diag.stats.purchases, 2)}</td><td className="font-black">{fmtRate(diag.stats.visitToAtc)}</td><td><Delta metric="visitToAtc" value={diag.delta.visitToAtc}/></td><td className="font-black">{fmtRate(diag.stats.visitToPurchase)}</td><td><Delta metric="visitToPurchase" value={diag.delta.visitToPurchase}/></td><td className="font-black">{fmtRate(diag.stats.atcToPurchase)}</td><td><Delta metric="atcToPurchase" value={diag.delta.atcToPurchase}/></td><td className={`font-black ${toneText(diag.postTone)}`}>{diag.postDiagnosis}</td><td className="font-black">{diag.postAction}</td></tr>)}</tbody></table></div> : <EmptyState>Sin datos post-clic disponibles.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl border-2 p-3 md:p-4 bg-white shadow-sm" style={{ borderColor: '#059669' }}>
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 mb-3 pb-3 border-b" style={{ borderColor: '#a7f3d0' }}>
+          <div>
+            <h4 className="text-xs font-black uppercase text-emerald-800">Optimización por anuncio — diagnóstico consolidado</h4>
+            <p className="text-[8px] text-slate-500 mt-1">
+              Las columnas Dinámico y Post-clic respetan la ventana seleccionada. <strong>La decisión operativa, la acción y la contribución a campaña siempre se calculan en 3D fijo</strong>.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-[8px] font-black uppercase">
+              Diagnóstico: {monitorPeriod === 'last' ? 'ÚLTIMO DÍA' : monitorPeriod.toUpperCase()}
+            </span>
+            <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-black uppercase">
+              Contribución: 3D
+            </span>
+          </div>
+        </div>
+
+        {adRows.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
+            {[
+              ['Aporta fuerte', adRows.filter(x => x.contribution?.status === 'Aporta fuertemente').length, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+              ['Aporta', adRows.filter(x => x.contribution?.status === 'Aporta').length, 'bg-blue-50 text-blue-700 border-blue-200'],
+              ['Bajo aporte', adRows.filter(x => x.contribution?.status === 'Bajo aporte / vigilar').length, 'bg-amber-50 text-amber-700 border-amber-200'],
+              ['Drena campaña', adRows.filter(x => x.contribution?.status === 'Drena la campaña').length, 'bg-rose-50 text-rose-700 border-rose-200'],
+              ['Sin entrega Meta', adRows.filter(x => x.diag.metaDelivery3d?.isNoDelivery).length, 'bg-cyan-50 text-cyan-700 border-cyan-200']
+            ].map(([label, value, cls]) => (
+              <div key={label} className={`rounded-xl border p-2.5 ${cls}`}>
+                <p className="text-[8px] font-black uppercase">{label}</p>
+                <p className="text-lg font-black mt-1">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {adRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1950px] text-left text-[10px] border-separate border-spacing-y-1"><thead><tr className="border-b text-[8px] font-black uppercase text-slate-400"><th className="py-2">Anuncio</th><th>CPA</th><th>Dinámico</th><th>Post-clic</th><th>Entrega Meta · 3D</th><th>Contribución campaña · 3D</th><th>Decisión operativa · 3D</th><th>Confianza</th><th>Por qué · 3D</th><th>Acción · 3D</th></tr></thead><tbody>{adRows.map(({ad,diag,contribution}) => {
+          const contributionClass =
+            contribution?.tone === 'critical' ? 'bg-rose-100 text-rose-700 border-rose-200' :
+            contribution?.tone === 'good' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+            contribution?.tone === 'alert' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+            'bg-slate-100 text-slate-500 border-slate-200';
+
+          return <tr
+            key={ad.id}
+            className="border-b-4 border-white"
+            style={{ backgroundColor: ccVisualAccent(ad.id || ad.name, 2).soft, boxShadow: `inset 5px 0 0 ${ccVisualAccent(ad.id || ad.name, 2).border}` }}
+          >
+            <td className="py-3 pl-3">
+              <p className="font-black" style={{ color: ccVisualAccent(ad.id || ad.name, 2).text }}>{ad.name}</p>
+              <p className="text-[8px] text-slate-400">{diag.ageDays} días activos</p>
+            </td>
+            <td className="font-black">{fmtCpa(diag.stats.cpa)}</td>
+            <td>{diag.dynamicDiagnosis}</td>
+            <td>{diag.postDiagnosis}</td>
+            <td className="min-w-[220px] py-2 pr-3">
+              <div className={`rounded-xl border p-2 ${
+                diag.metaDelivery3d?.isNoDelivery
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : diag.metaDelivery3d?.isLimited
+                    ? 'bg-amber-50 border-amber-200 text-amber-700'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}>
+                <p className="text-[8px] font-black uppercase">{diag.metaDelivery3d?.status || 'Sin lectura 3D'}</p>
+                <p className="text-[8px] mt-1">
+                  {diag.metaDelivery3d?.totalDays > 0
+                    ? `${diag.metaDelivery3d.omittedDays}/${diag.metaDelivery3d.totalDays} día(s) omitidos por Meta`
+                    : 'Sin días completos'}
+                </p>
+              </div>
+            </td>
+            <td className="min-w-[320px] py-2 pr-3">
+              {contribution ? (
+                <div className="rounded-xl bg-white/80 border border-white p-2.5">
+                  <span className={`inline-block px-2 py-1 rounded-full border text-[8px] font-black uppercase ${contributionClass}`}>
+                    {contribution.status}
+                  </span>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[8px]">
+                    <span className="text-slate-500">Gasto campaña</span>
+                    <span className="font-black">{fmtNum(contribution.spendShare, 2)}%</span>
+                    <span className="text-slate-500">Compras campaña</span>
+                    <span className="font-black">{fmtNum(contribution.purchaseShare, 2)}%</span>
+                    <span className="text-slate-500">CPA anuncio 3D</span>
+                    <span className="font-black">{contribution.purchases > 0 ? fmtCpa(contribution.cpa) : 'Sin compras'}</span>
+                    <span className="text-slate-500">CPA campaña sin anuncio</span>
+                    <span className={`font-black ${
+                      contribution.removalImprovementPct !== null && contribution.removalImprovementPct > 0
+                        ? 'text-emerald-600'
+                        : contribution.removalImprovementPct !== null && contribution.removalImprovementPct < 0
+                          ? 'text-rose-600'
+                          : ''
+                    }`}>
+                      {contribution.cpaWithout !== null ? fmtCpa(contribution.cpaWithout) : '—'}
+                    </span>
+                  </div>
+                  <p className="text-[8px] text-slate-600 leading-relaxed mt-2">{contribution.cause}</p>
+                  {contribution.removalImprovementPct !== null && (
+                    <p className={`text-[8px] font-black mt-1 ${
+                      contribution.removalImprovementPct >= 10 ? 'text-rose-600' :
+                      contribution.removalImprovementPct > 0 ? 'text-amber-600' :
+                      'text-emerald-600'
+                    }`}>
+                      {contribution.removalImprovementPct > 0
+                        ? `Sin este anuncio, el CPA de campaña mejoraría ${fmtNum(contribution.removalImprovementPct, 2)}%`
+                        : contribution.removalImprovementPct < 0
+                          ? `Sin este anuncio, el CPA empeoraría ${fmtNum(Math.abs(contribution.removalImprovementPct), 2)}%`
+                          : 'Impacto neutro sobre el CPA de campaña'}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <span className="text-slate-400">Sin datos 3D</span>
+              )}
+            </td>
+            <td className={`font-black ${diag.operational3dPriority === 'critical' ? 'text-rose-600' : diag.operational3dPriority === 'alert' ? 'text-orange-600' : 'text-emerald-600'}`}>{diag.operational3dDiagnosis}</td>
+            <td className="font-black">{diag.volumeReference?.confidence || diag.confidence}</td>
+            <td className="max-w-[330px] text-slate-500">{diag.operational3dReason}</td>
+            <td className="font-black">{diag.operational3dAction}</td>
+          </tr>;
+        })}</tbody></table></div> : <EmptyState>Sin anuncios activos.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-cyan-50/40 shadow-sm" style={{border:'2px solid #0891b2'}}>
+        <h4 className="text-xs font-black uppercase mb-3 text-cyan-800">Historial de cambios de presupuesto</h4>
+        {budgetRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-[10px]"><thead><tr className="text-left text-slate-400 uppercase text-[8px]"><th>Fecha</th><th>Anterior</th><th>Nuevo</th><th>Cambio</th><th>Origen</th></tr></thead><tbody>{budgetRows.map((r,i) => <tr key={r.id} className="border-t" style={{backgroundColor:i%2===0?'#ecfeff':'#ffffff'}}><td className="py-2">{r.date}</td><td>{fmtMoney(r.previousBudget)}</td><td>{fmtMoney(r.newBudget)}</td><td className="font-black">{fmtNum(r.changePct, 2)}%</td><td>{r.origin === 'recommendation' ? 'Recomendación aplicada' : 'Cambio manual'}</td></tr>)}</tbody></table></div> : <EmptyState>Se construirá automáticamente al detectar cambios entre registros diarios.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-emerald-50/40 shadow-sm" style={{border:'2px solid #059669'}}>
+        <h4 className="text-xs font-black uppercase mb-3 text-emerald-800">Historial de escala rentable</h4>
+        {scaleRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-[10px]"><thead><tr className="text-left text-slate-400 uppercase text-[8px]"><th>Presupuesto</th><th>Días</th><th>Gasto</th><th>Compras</th><th>CPA ponderado</th><th>ROAS</th><th>CPA marginal</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{scaleRows.map((r,i) => <tr key={r.budget} className="border-t" style={{backgroundColor:i%2===0?'#ecfdf5':'#ffffff'}}><td className="py-2 font-black">{fmtMoney(r.budget)}</td><td>{r.days}</td><td>{fmtMoney(r.spend)}</td><td>{fmtNum(r.purchases, 2)}</td><td>{fmtCpa(r.cpa)}</td><td>{fmtNum(r.roas,2)}</td><td>{r.marginalCpa === null ? '—' : fmtMoney(r.marginalCpa)}</td><td className={`font-black ${r.status === 'Rentable' ? 'text-emerald-600' : r.status.includes('Sobreescalado') || r.status.includes('ineficiente') ? 'text-rose-600' : 'text-amber-600'}`}>{r.status}</td><td className="font-black">{r.action}</td></tr>)}</tbody></table></div> : <EmptyState>Se construirá automáticamente con los datos diarios registrados.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-indigo-50/40 shadow-sm" style={{border:'2px solid #6366f1'}}>
+        <h4 className="text-xs font-black uppercase mb-3 text-indigo-800">Línea de tiempo de decisiones</h4>
+        {decisionRows.length ? <div className="space-y-2">{decisionRows.slice(0,30).map((r,i) => <div key={r.id} className="flex gap-3 rounded-xl pl-3 py-2" style={{border:`2px solid ${ccVisualAccent(r.id||r.action,i).border}`,backgroundColor:ccVisualAccent(r.id||r.action,i).soft}}><div className="text-[9px] text-slate-400 w-20 shrink-0">{r.date}</div><div><p className="text-[10px] font-black">{r.action}</p>{r.detail && <p className="text-[9px] text-slate-500">{r.detail}</p>}</div></div>)}</div> : <EmptyState>Sin decisiones registradas todavía.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl p-4 md:p-5 bg-pink-50/40 shadow-sm" style={{border:'2px solid #db2777'}}>
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-3 mb-4">
+          <div>
+            <h4 className="text-sm font-black uppercase text-pink-800">Benchmark propio del producto</h4>
+            <p className="text-[9px] md:text-[10px] text-slate-500 mt-1 leading-relaxed">
+              Benchmark operativo móvil sobre los últimos <strong>14 días activos completos</strong>. HOY y los días OFF no participan.
+            </p>
+          </div>
+          <span className={`shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase ${
+            benchmark.status === 'Estable' ? 'bg-emerald-100 text-emerald-700' :
+            benchmark.status === 'Provisional' ? 'bg-amber-100 text-amber-700' :
+            'bg-slate-100 text-slate-500'
+          }`}>
+            {benchmark.status}
+          </span>
+        </div>
+
+        <div className="rounded-2xl bg-white p-3 md:p-4" style={{border:'1px solid #fbcfe8'}}>
+          <p className="text-[9px] font-black uppercase text-pink-700 mb-3">Calidad de la muestra</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-slate-50 p-3 min-h-[82px] flex flex-col justify-between">
+              <p className="text-[9px] font-bold text-slate-500 leading-tight">Días activos en ventana</p>
+              <p className="text-lg font-black text-slate-900">{benchmark.availableDays}</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 p-3 min-h-[82px] flex flex-col justify-between" style={{border:'1px solid #fde68a'}}>
+              <p className="text-[9px] font-bold text-amber-700 leading-tight">Días rentables</p>
+              <p className="text-lg font-black text-amber-800">{benchmark.profitableDays}</p>
+            </div>
+            <div className="rounded-xl bg-blue-50 p-3 min-h-[82px] flex flex-col justify-between" style={{border:'1px solid #bfdbfe'}}>
+              <p className="text-[9px] font-bold text-blue-700 leading-tight">Días estables</p>
+              <p className="text-lg font-black text-blue-800">{benchmark.stableDays}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3 min-h-[82px] flex flex-col justify-between" style={{border:'1px solid #a7f3d0'}}>
+              <p className="text-[9px] font-bold text-emerald-700 leading-tight">Muestra usada</p>
+              <p className="text-lg font-black text-emerald-800">{benchmark.sampleDays}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white p-3 md:p-4 mt-3" style={{border:'1px solid #fbcfe8'}}>
+          <p className="text-[9px] font-black uppercase text-pink-700 mb-3">Rendimiento benchmark</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-slate-50 p-3 min-h-[86px]">
+              <p className="text-[9px] font-bold text-slate-500">CPA ponderado</p>
+              <p className="text-base md:text-lg font-black text-slate-900 mt-2">{benchmark.sampleDays ? fmtCpa(benchmark.cpa) : '—'}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 min-h-[86px]">
+              <p className="text-[9px] font-bold text-slate-500">CTR</p>
+              <p className="text-base md:text-lg font-black text-slate-900 mt-2">{benchmark.sampleDays ? `${fmtNum(benchmark.ctr,2)}%` : '—'}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 min-h-[86px]">
+              <p className="text-[9px] font-bold text-slate-500">CPC</p>
+              <p className="text-base md:text-lg font-black text-slate-900 mt-2">{benchmark.sampleDays ? fmtMoney(benchmark.cpc) : '—'}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 min-h-[86px]">
+              <p className="text-[9px] font-bold text-slate-500">Visita → Compra</p>
+              <p className="text-base md:text-lg font-black text-slate-900 mt-2">{benchmark.sampleDays ? fmtRate(benchmark.visitToPurchase) : '—'}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={`mt-3 rounded-xl p-3 text-[9px] md:text-[10px] font-bold leading-relaxed ${
+          benchmark.status === 'Estable' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+          benchmark.status === 'Provisional' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+          'bg-slate-50 text-slate-500 border border-slate-200'
+        }`}>
+          <strong>Estado:</strong> {benchmark.status} · {benchmark.criteria}
+        </div>
+
+        <p className="text-[9px] text-slate-500 mt-3 leading-relaxed">
+          Se evalúan como máximo los últimos <strong>14 días activos completos</strong> del producto. Dentro de esa ventana se identifican los días rentables y estables. Si todavía no existe suficiente muestra para certificar estabilidad, el sistema usa temporalmente los días rentables como benchmark provisional. El histórico anterior solo se utiliza para comparar estabilidad, no para inflar el promedio actual.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="rounded-2xl p-3 bg-slate-50" style={{border:'2px solid #475569'}}><h4 className="text-xs font-black uppercase mb-2 text-slate-700">Cómo se dispara cada diagnóstico</h4><div className="space-y-2 text-[9px] text-slate-600"><p><strong>Fatiga:</strong> CPA ↑ + CTR ↓ + CPC ↑ + frecuencia ↑.</p><p><strong>Subasta cara:</strong> CPM ↑ mientras CTR/CVR permanecen estables.</p><p><strong>Problema post-clic:</strong> CPA ↑ con CTR/CPC estables y conversión post-clic ↓.</p><p><strong>Fuga al cierre:</strong> intención inicial sana pero ATC→Compra y Visita→Compra caen.</p></div></div>
+        <div className="rounded-2xl p-3 bg-violet-50" style={{border:'2px solid #7c3aed'}}><h4 className="text-xs font-black uppercase mb-2 text-violet-800">Matriz de diagnóstico por combinación de métricas</h4><div className="space-y-2 text-[9px] text-slate-600"><p>CTR ↓ + CPC ↑ + Frecuencia ↑ + CPA ↑ → <strong>Fatiga / saturación</strong></p><p>CPM ↑ + CTR estable + CVR estable → <strong>Subasta más cara</strong></p><p>CTR estable + CPC estable + CVR ↓ → <strong>Landing/oferta/cierre</strong></p><p>V→ATC ↓ + V→Compra ↓ → <strong>Calidad de tráfico deteriorada</strong></p></div></div>
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-orange-50/40 shadow-sm" style={{border:'2px solid #ea580c'}}>
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-2 mb-3">
+          <div>
+            <h4 className="text-xs font-black uppercase text-orange-800">Guardrails de escalado</h4>
+            <p className="text-[8px] text-slate-500 mt-1">
+              Ventana fija de decisión: <strong>3D</strong>. Cambiar el selector superior NO modifica estos guardrails. Una mejora del CPA siempre pasa estabilidad; solo bloquea si el CPA 3D empeora más de +15%.
+            </p>
+          </div>
+          <span className="px-2 py-1 rounded-full bg-zinc-950 text-white text-[8px] font-black uppercase">3D determina</span>
+        </div>
+
+        {adRows.length ? <div className="space-y-2">{adRows.map(({ad,diag}) => {
+          const adAccent=ccVisualAccent(ad.id||ad.name,3);
+          const volumeTone =
+            diag.volumeReference.confidence === 'Muy alta' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+            diag.volumeReference.confidence === 'Alta' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+            diag.volumeReference.confidence === 'Media' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+            'bg-slate-100 text-slate-600 border-slate-200';
+
+          return <div key={ad.id} className="rounded-xl p-3" style={{border:`2px solid ${adAccent.border}`,backgroundColor:adAccent.soft}}>
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3 justify-between">
+              <div>
+                <p className="text-[10px] font-black" style={{color:adAccent.text}}>{ad.name}</p>
+                <p className="text-[8px] text-slate-500 mt-1">Para escala fuerte deben pasar 4 controles obligatorios. El volumen NO bloquea.</p>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                <GuardrailPill ok={diag.guardrails.cpaMargin} label={`CPA 3D ≤ ${fmtMoney(maxCpa*0.8)}`}/>
+                <GuardrailPill
+                  ok={diag.guardrails.stability}
+                  label={
+                    diag.scaleDelta3d?.cpa === null
+                      ? 'CPA 3D sin comparación'
+                      : diag.scaleDelta3d.cpa <= 0
+                        ? `CPA 3D mejora ${fmtNum(Math.abs(diag.scaleDelta3d.cpa), 2)}%`
+                        : `CPA 3D empeora ${fmtNum(diag.scaleDelta3d.cpa, 2)}%`
+                  }
+                />
+                <GuardrailPill ok={diag.guardrails.creative} label="Creativo 3D sano"/>
+                <GuardrailPill ok={diag.guardrails.postClick} label="Post-clic 3D sano"/>
+              </div>
+
+              <span className={`px-2.5 py-1.5 rounded-full text-[8px] font-black ${diag.canScale ? 'bg-emerald-500 text-zinc-950' : 'bg-zinc-100 text-zinc-500'}`}>
+                {diag.canScale ? 'ESCALA PERMITIDA' : 'NO ESCALAR'}
+              </span>
+            </div>
+
+            <div className="mt-2 pt-2 border-t border-white/80 flex flex-wrap items-center gap-2">
+              <span className={`px-2.5 py-1.5 rounded-full border text-[8px] font-black ${volumeTone}`}>
+                Volumen referencia 3D: {fmtNum(diag.volumeReference.purchases, 2)} compras · Confianza {diag.volumeReference.confidence}
+              </span>
+              <span className={`px-2.5 py-1.5 rounded-full border text-[8px] font-black ${
+                diag.metaDelivery3d?.isNoDelivery
+                  ? 'bg-blue-100 text-blue-700 border-blue-200'
+                  : diag.metaDelivery3d?.isLimited
+                    ? 'bg-amber-100 text-amber-700 border-amber-200'
+                    : 'bg-emerald-100 text-emerald-700 border-emerald-200'
+              }`}>
+                Entrega Meta: {diag.metaDelivery3d?.status || 'Sin lectura 3D'}
+              </span>
+              <span className={`px-2.5 py-1.5 rounded-full border text-[8px] font-black ${
+                diag.scaleDelta3d?.cpa !== null && diag.scaleDelta3d.cpa < -15
+                  ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                  : diag.scaleDelta3d?.cpa !== null && diag.scaleDelta3d.cpa > 15
+                    ? 'bg-rose-100 text-rose-700 border-rose-200'
+                    : 'bg-blue-100 text-blue-700 border-blue-200'
+              }`}>
+                Momentum CPA: {diag.scaleMomentum}
+              </span>
+              <span className={`px-2.5 py-1.5 rounded-full border text-[8px] font-black ${
+                diag.cpaObservation3d?.level === 'critical' ? 'bg-rose-100 text-rose-700 border-rose-200' :
+                diag.cpaObservation3d?.level === 'alert' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                diag.cpaObservation3d?.level === 'good' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                'bg-amber-100 text-amber-700 border-amber-200'
+              }`}>
+                {diag.cpaObservation3d?.title || 'CPA 3D SIN LECTURA'}
+              </span>
+              <span className="text-[8px] text-slate-500">
+                El volumen aumenta o reduce la confianza de la decisión, pero nunca cambia por sí solo ESCALA PERMITIDA a NO ESCALAR.
+              </span>
+              {diag.cpaObservation3d?.text ? (
+                <p className="w-full text-[8px] text-slate-600 mt-1">{diag.cpaObservation3d.text}</p>
+              ) : null}
+            </div>
+          </div>
+        })}</div> : <EmptyState>Sin anuncios activos.</EmptyState>}
+      </div>
+
+      <div className="rounded-2xl p-3 md:p-4 bg-blue-50/40 shadow-sm" style={{border:'2px solid #2563eb'}}>
+        <h4 className="text-xs font-black uppercase mb-3 text-blue-800">Nivel de confianza del diagnóstico</h4>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-[9px]"><div className="bg-rose-50 rounded-xl p-3 border-2 border-rose-200"><strong className="text-rose-700">&lt;5 compras</strong><br/>Baja</div><div className="bg-amber-50 rounded-xl p-3 border-2 border-amber-200"><strong className="text-amber-700">5–14</strong><br/>Media</div><div className="bg-blue-50 rounded-xl p-3 border-2 border-blue-200"><strong className="text-blue-700">15–29</strong><br/>Alta</div><div className="bg-emerald-50 rounded-xl p-3 border-2 border-emerald-200"><strong className="text-emerald-700">30+</strong><br/>Muy alta</div></div>
+        <p className="text-[8px] text-slate-500 mt-2">Referencia de volumen: 1–4 compras = Baja · 5–14 = Media · 15–29 = Alta · 30+ = Muy alta. Este nivel informa cuánta evidencia hay, pero NO bloquea una escala. La antigüedad sigue ayudando a interpretar la confianza general del diagnóstico.</p>
       </div>
     </div>
   );
 }
 
-// ==================== COMPONENTE PRINCIPAL APP ====================
-export default function App() {
-  const [activeModule, setActiveModule] = useState('winners');
-  const [user, setUser] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('pending');
-  const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState(getInitialWinner());
-  const [proj, setProj] = useState(getInitialProjection());
-  const [expandedItems, setExpandedItems] = useState({});
-  const [notification, setNotification] = useState('');
-  const [formError, setFormError] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState('manual');
-  const [supplierFilter, setSupplierFilter] = useState('all');
+function buildScaleHistory(records, maxCpa) {
+  const groups = new Map();
+  (records || []).forEach(r => {
+    const budget = toNumber(r.budget);
+    if (budget <= 0) return;
+    if (!groups.has(budget)) groups.set(budget, []);
+    groups.get(budget).push(r);
+  });
+  const rows = [...groups.entries()].map(([budget, recs]) => {
+    const stats = aggregateRecords(recs);
+    return { budget, days: recs.length, spend: stats.spend, purchases: stats.purchases, cpa: stats.cpa, roas: stats.roas, marginalCpa: null };
+  }).sort((a, b) => a.budget - b.budget);
+  rows.forEach((r, idx) => {
+    if (idx === 0) return;
+    const prev = rows[idx - 1];
+    const extraSpend = r.spend - prev.spend;
+    const extraPurchases = r.purchases - prev.purchases;
+    r.marginalCpa = extraSpend > 0 && extraPurchases > 0 ? extraSpend / extraPurchases : null;
+  });
+  const max = Math.max(1, toNumber(maxCpa));
+  return rows.map(r => {
+    let status = 'Observación', action = 'Mantener';
+    if (r.cpa > 0 && r.cpa <= max * 0.8) { status = 'Rentable'; action = 'Escala candidata'; }
+    else if (r.cpa > 0 && r.cpa <= max) { status = 'Límite rentable'; action = 'Mantener'; }
+    else if (r.cpa > 0) { status = 'Sobreescalado'; action = 'Reducir'; }
+    if (r.marginalCpa !== null && r.marginalCpa > max) { status = 'Escala ineficiente'; action = 'Volver al nivel anterior'; }
+    return { ...r, status, action };
+  });
+}
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
 
-  useEffect(() => {
-    if (!user || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts') return;
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loaded = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(loaded);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-      setNotification(`Error de acceso: No tienes permisos.`);
-      setTimeout(() => setNotification(''), 4000);
-    });
-    return () => unsubscribe();
-  }, [user, activeModule]);
+function terminalStateHistoryCC(history, effectiveDate, active) {
+  const date = dateToIso(effectiveDate);
+  if (!date) return Array.isArray(history) ? history : [];
 
-  const uniqueSuppliers = useMemo(() => {
-    if (activeModule !== 'winners' && activeModule !== 'imports') return [];
-    const field = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
-    const list = products.map(p => p[field]).filter(Boolean);
-    return ['all', ...new Set(list)];
-  }, [products, activeModule]);
+  const kept = (Array.isArray(history) ? history : [])
+    .filter(event => event?.date && String(event.date) < String(date))
+    .map(event => ({ ...event }));
 
-  const displayedProducts = useMemo(() => {
-    if (activeModule !== 'winners' && activeModule !== 'imports') return [];
-    let result = products.filter(p => {
-      const matchesTab = p.status === activeTab;
-      const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           p.dropiCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           p.chineseSupplier?.toLowerCase().includes(searchTerm.toLowerCase());
-      const supplierField = activeModule === 'winners' ? 'supplier' : 'chineseSupplier';
-      const matchesSupplier = supplierFilter === 'all' || p[supplierField] === supplierFilter;
-      return matchesTab && matchesSearch && matchesSupplier;
-    });
-    return [...result].sort((a, b) => {
-      if (a.isWorking && !b.isWorking) return -1;
-      if (!a.isWorking && b.isWorking) return 1;
-      if (sortOrder === 'manual' || sortOrder === 'recent') return (a.order || 0) - (b.order || 0);
-      const valA = activeModule === 'winners' ? calculateWinnerMetrics(a).margin : calculateImportMetrics(a).unitCostColombia;
-      const valB = activeModule === 'winners' ? calculateWinnerMetrics(b).margin : calculateImportMetrics(b).unitCostColombia;
-      if (sortOrder === 'roi-desc') return valB - valA;
-      if (sortOrder === 'roi-asc') return valA - valB;
-      return 0;
-    });
-  }, [products, activeTab, searchTerm, supplierFilter, sortOrder, activeModule]);
+  kept.push({ date, active: active !== false });
+  return kept.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+}
 
-  const handleLogout = () => signOut(auth);
-  const handleModuleChange = (mod) => {
-    setProducts([]);
-    setActiveModule(mod);
-    setActiveTab('pending');
-    setSearchTerm('');
-    setSupplierFilter('all');
-    setSortOrder('manual');
-    if (mod !== 'projection' && mod !== 'agenda' && mod !== 'prompts') {
-      setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
-    }
-    setIsCreating(false);
-    setFormError('');
+function campaignCurrentStateLabelCC(campaign) {
+  if (!campaign) return '—';
+  if (campaign.archived) return 'ARCHIVADA / APAGADA';
+  if (campaign.active === false) return 'APAGADA / DESACTIVADA';
+  return 'ACTIVA';
+}
+
+function rebaseInitialStateHistory(history, oldStart, newStart) {
+  const rows = Array.isArray(history) ? history.map(x => ({ ...x })) : [];
+  if (!rows.length) return [{ date: newStart, active: true }];
+
+  const sortedIndexes = rows
+    .map((row, index) => ({ index, date: String(row?.date || '') }))
+    .filter(x => x.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!sortedIndexes.length) return [{ date: newStart, active: true }, ...rows];
+
+  const firstIndex = sortedIndexes[0].index;
+  const firstDate = String(rows[firstIndex]?.date || '');
+
+  // Solo movemos el evento inicial si realmente corresponde a la fecha
+  // de alta anterior. Los encendidos/apagados posteriores se conservan.
+  if (firstDate === String(oldStart || '')) {
+    rows[firstIndex] = { ...rows[firstIndex], date: newStart };
+  }
+
+  return rows;
+}
+
+function CampaignManager({ ownerUid, products, campaigns, ads, dailyCampaigns, dailyAds, budgetChanges, recommendations, decisions }) {
+  const [productForm, setProductForm] = useState({ name: '', maxCpa: '20000', createdDate: todayColombiaCC() });
+  const [campaignNameByProduct, setCampaignNameByProduct] = useState({});
+  const [campaignDateByProduct, setCampaignDateByProduct] = useState({});
+  const [adNameByCampaign, setAdNameByCampaign] = useState({});
+  const [expandedProductsManager, setExpandedProductsManager] = useState({});
+  const [expanded, setExpanded] = useState({});
+  const [expandedAds, setExpandedAds] = useState({});
+  const [showArchived, setShowArchived] = useState(false);
+  const [managerMessage, setManagerMessage] = useState(null);
+  const [busyKey, setBusyKey] = useState('');
+  const [campaignOffPicker, setCampaignOffPicker] = useState(null);
+  const today = todayColombiaCC();
+
+  const showManagerMessage = (type, text) => {
+    setManagerMessage({ type, text });
+    window.setTimeout(() => setManagerMessage(null), 4500);
   };
 
-  const copyToClipboard = (text) => {
-    if (!text) return;
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    setNotification(`Copiado: ${text}`);
-    setTimeout(() => setNotification(''), 2000);
-    document.body.removeChild(textArea);
+  const readableFirebaseError = (error, action) => {
+    const code = error?.code || '';
+    if (code.includes('permission-denied')) return `${action}: Firestore bloqueó la escritura. Debes permitir la colección correspondiente en las reglas de Firebase.`;
+    if (code.includes('unavailable')) return `${action}: Firebase no está disponible temporalmente.`;
+    return `${action}: ${error?.message || 'No fue posible completar la operación.'}`;
   };
 
-  const handleSave = async () => {
-    setFormError('');
-    if (!newProduct.name || newProduct.name.trim() === '') {
-      setFormError('⚠️ ERROR: Debes escribir un "Nombre" para el producto.');
+  const addProduct = async () => {
+    if (!productForm.name.trim() || toNumber(productForm.maxCpa) <= 0) return;
+    const startDate = productForm.createdDate || today;
+    if (startDate > today) return alert('La fecha de inicio del producto no puede ser posterior a hoy.');
+    await addDoc(collection(db, COLLECTIONS.products), {
+      ownerUid,
+      name: productForm.name.trim(),
+      maxCpa: toNumber(productForm.maxCpa),
+      active: true,
+      createdDate: startDate,
+      effectiveStartDate: startDate,
+      stateChangedDate: startDate,
+      stateHistory: [{ date: startDate, active: true }],
+      createdAt: serverTimestamp()
+    });
+    setProductForm({ name: '', maxCpa: '20000', createdDate: todayColombiaCC() });
+  };
+  const editProduct = async product => {
+    const name = window.prompt('Nombre del producto:', product.name); if (!name) return;
+    const maxCpa = window.prompt('CPA máximo Meta:', String(product.maxCpa || 20000)); if (!maxCpa || toNumber(maxCpa) <= 0) return;
+    await updateDoc(doc(db, COLLECTIONS.products, product.id), { name: name.trim(), maxCpa: toNumber(maxCpa), updatedAt: serverTimestamp() });
+  };
+
+  const editProductStartDate = async product => {
+    const oldStart = dateToIso(product.effectiveStartDate || product.createdDate) || today;
+    const value = window.prompt(
+      `Fecha de creación / inicio de "${product.name}" (AAAA-MM-DD):`,
+      oldStart
+    );
+    if (value === null) return;
+
+    const newStart = dateToIso(value);
+    if (!newStart) {
+      showManagerMessage('error', 'La fecha del producto no es válida. Usa formato AAAA-MM-DD.');
       return;
     }
-    setIsSaving(true);
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const regPrefix = activeModule === 'winners' ? 'WIN' : 'IMP';
-    const regNumber = `${regPrefix}-${(products.length + 1).toString().padStart(3, '0')}`;
+    if (newStart > today) {
+      showManagerMessage('error', 'La fecha del producto no puede ser posterior a hoy.');
+      return;
+    }
+
+    if (newStart === oldStart) {
+      showManagerMessage('success', 'La fecha del producto no cambió.');
+      return;
+    }
+
+    if (!window.confirm(
+      `Cambiar inicio de "${product.name}" de ${oldStart} a ${newStart}.
+
+` +
+      `No se borrarán registros. La fecha del producto es independiente de las fechas configuradas en sus campañas.`
+    )) return;
+
     try {
-      if (!auth.currentUser) throw new Error("Debes iniciar sesión para crear registros");
-      const currentDateTime = getCurrentDateTime();
-      const payloadRaw = { ...newProduct, regNumber, order: Date.now(), createdBy: auth.currentUser.uid, createdAtText: currentDateTime };
-      const cleanPayload = JSON.parse(JSON.stringify(payloadRaw));
-      cleanPayload.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), cleanPayload);
-      setIsCreating(false);
-      setNewProduct(activeModule === 'winners' ? getInitialWinner() : getInitialImport());
-      setActiveTab('pending');
-      setFormError('');
-      setNotification('¡Registro guardado en la Nube! ✨');
-      setTimeout(() => setNotification(''), 3000);
-    } catch (e) {
-      console.error("Firebase Save Error:", e);
-      setFormError(`⚠️ FALLO DE SERVIDOR: ${e.message}`);
+      const nextStateHistory = rebaseInitialStateHistory(product.stateHistory, oldStart, newStart);
+      const patch = {
+        createdDate: newStart,
+        effectiveStartDate: newStart,
+        stateHistory: nextStateHistory,
+        startDateHistory: [
+          ...(Array.isArray(product.startDateHistory) ? product.startDateHistory : []),
+          { from: oldStart, to: newStart, changedDate: today }
+        ],
+        updatedAt: serverTimestamp()
+      };
+
+      if (String(product.stateChangedDate || '') === oldStart) {
+        patch.stateChangedDate = newStart;
+      }
+
+      await updateDoc(doc(db, COLLECTIONS.products, product.id), patch);
+      showManagerMessage('success', `Fecha de "${product.name}" actualizada a ${newStart}.`);
+    } catch (error) {
+      console.error('Campaign Control · editar fecha producto', error);
+      showManagerMessage('error', readableFirebaseError(error, 'No se pudo cambiar la fecha del producto'));
+    }
+  };
+  const toggleProduct = async product => {
+    const next = product.active === false;
+    await updateDoc(doc(db, COLLECTIONS.products, product.id), { active: next, stateChangedDate: today, stateHistory: [...(product.stateHistory || []), { date: today, active: next }], stateChangedAt: serverTimestamp() });
+  };
+  const deleteProduct = async product => {
+    if (campaigns.some(c => c.productId === product.id)) return alert('Primero archiva o elimina las campañas de este producto.');
+    if (!window.confirm(`¿Eliminar definitivamente ${product.name}?`)) return;
+    await deleteDoc(doc(db, COLLECTIONS.products, product.id));
+  };
+
+  const expandAllProductCampaigns = productId => {
+    const ids = campaigns
+      .filter(c => c.productId === productId && (showArchived || !c.archived))
+      .map(c => c.id);
+
+    setExpanded(prev => {
+      const next = { ...prev };
+      ids.forEach(id => { next[id] = true; });
+      return next;
+    });
+  };
+
+  const collapseAllProductCampaigns = productId => {
+    const ids = campaigns
+      .filter(c => c.productId === productId && (showArchived || !c.archived))
+      .map(c => c.id);
+
+    setExpanded(prev => {
+      const next = { ...prev };
+      ids.forEach(id => { next[id] = false; });
+      return next;
+    });
+
+    setExpandedAds(prev => {
+      const next = { ...prev };
+      ids.forEach(id => { next[id] = false; });
+      return next;
+    });
+  };
+  const addCampaign = async productId => {
+    const name = String(campaignNameByProduct[productId] || '').trim();
+    if (!name) {
+      showManagerMessage('error', 'Escribe el nombre de la campaña antes de crearla.');
+      return;
+    }
+    if (!ownerUid) {
+      showManagerMessage('error', 'No hay una sesión autenticada disponible para guardar la campaña.');
+      return;
+    }
+    const parentProduct = products.find(p => p.id === productId);
+    if (!parentProduct) {
+      showManagerMessage('error', 'No se encontró el producto al que pertenece la campaña.');
+      return;
+    }
+    if (campaigns.some(c => c.productId === productId && !c.archived && String(c.name || '').trim().toLowerCase() === name.toLowerCase())) {
+      showManagerMessage('error', `Ya existe una campaña llamada "${name}" dentro de este producto.`);
+      return;
+    }
+
+    const campaignStartDate = dateToIso(campaignDateByProduct[productId] || today);
+    if (!campaignStartDate) {
+      showManagerMessage('error', 'Selecciona una fecha válida para la campaña.');
+      return;
+    }
+    if (campaignStartDate > today) {
+      showManagerMessage('error', 'La fecha de la campaña no puede ser posterior a hoy.');
+      return;
+    }
+
+    const ref = doc(collection(db, COLLECTIONS.campaigns));
+    setBusyKey(`campaign:${productId}`);
+    try {
+      await setDoc(ref, {
+        ownerUid,
+        productId,
+        name,
+        active: true,
+        archived: false,
+        // Fecha operativa elegida por el usuario. Es independiente del producto.
+        createdDate: campaignStartDate,
+        effectiveStartDate: campaignStartDate,
+        stateChangedDate: campaignStartDate,
+        stateHistory: [{ date: campaignStartDate, active: true }],
+        startDateHistory: [],
+        // Fecha técnica real de creación del documento en Firestore.
+        createdAt: serverTimestamp(),
+        previousAdStates: {}
+      });
+      setCampaignNameByProduct(x => ({ ...x, [productId]: '' }));
+      setCampaignDateByProduct(x => ({ ...x, [productId]: today }));
+      setExpanded(x => ({ ...x, [ref.id]: true }));
+      setExpandedAds(x => ({ ...x, [ref.id]: false }));
+      showManagerMessage('success', `Campaña "${name}" creada con fecha de inicio ${campaignStartDate}.`);
+    } catch (error) {
+      console.error('Campaign Control · crear campaña', error);
+      showManagerMessage('error', readableFirebaseError(error, 'No se pudo crear la campaña'));
     } finally {
-      setIsSaving(false);
+      setBusyKey('');
+    }
+  };
+  const editCampaignStartDate = async campaign => {
+    const oldStart = dateToIso(campaign.effectiveStartDate || campaign.createdDate) || today;
+
+    const value = window.prompt(
+      `Fecha de creación / inicio de "${campaign.name}" (AAAA-MM-DD):`,
+      oldStart
+    );
+    if (value === null) return;
+
+    const newStart = dateToIso(value);
+    if (!newStart) {
+      showManagerMessage('error', 'La fecha de la campaña no es válida. Usa formato AAAA-MM-DD.');
+      return;
+    }
+    if (newStart > today) {
+      showManagerMessage('error', 'La fecha de la campaña no puede ser posterior a hoy.');
+      return;
+    }
+    if (newStart === oldStart) {
+      showManagerMessage('success', 'La fecha de la campaña no cambió.');
+      return;
+    }
+
+    if (!window.confirm(
+      `Cambiar inicio de "${campaign.name}" de ${oldStart} a ${newStart}.\n\n` +
+      `No se borrarán registros. La nueva fecha será el inicio operativo independiente de esta campaña y podrá ser anterior o posterior a la fecha del producto.`
+    )) return;
+
+    try {
+      const nextStateHistory = rebaseInitialStateHistory(campaign.stateHistory, oldStart, newStart);
+      const patch = {
+        // createdAt conserva la fecha técnica real de Firestore.
+        // createdDate/effectiveStartDate representan el inicio operativo editable.
+        createdDate: newStart,
+        effectiveStartDate: newStart,
+        stateHistory: nextStateHistory,
+        startDateHistory: [
+          ...(Array.isArray(campaign.startDateHistory) ? campaign.startDateHistory : []),
+          { from: oldStart, to: newStart, changedDate: today }
+        ],
+        updatedAt: serverTimestamp()
+      };
+
+      if (String(campaign.stateChangedDate || '') === oldStart) {
+        patch.stateChangedDate = newStart;
+      }
+
+      await updateDoc(doc(db, COLLECTIONS.campaigns, campaign.id), patch);
+      showManagerMessage('success', `Fecha de "${campaign.name}" actualizada a ${newStart}.`);
+    } catch (error) {
+      console.error('Campaign Control · editar fecha campaña', error);
+      showManagerMessage('error', readableFirebaseError(error, 'No se pudo cambiar la fecha de la campaña'));
     }
   };
 
-  const updateDocField = async (id, f, v) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [f]: v }); } catch (e) { console.error(e); }
-  };
-  const updateNestedField = async (id, parent, f, v) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const item = products.find(x => x.id === id);
-    if (!item) return;
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id), { [parent]: { ...item[parent], [f]: v } }); } catch (e) { console.error(e); }
-  };
-  const updateUpsell = async (p, uid, f, v) => {
-    const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const newUpsells = currentUpsells.map(u => u.id === uid ? { ...u, [f]: v } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: newUpsells }); } catch (e) { console.error(e); }
-  };
-  const resetUpsell = async (p, uid) => {
-    const currentUpsells = p.upsells || getInitialWinner().upsells;
-    const clearedUpsells = currentUpsells.map(u => u.id === uid ? { id: uid, name: '', cost: 0, price: 0, image: null } : u);
-    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', p.id), { upsells: clearedUpsells }); } catch (e) { console.error(e); }
-  };
-  const deleteItem = async (id) => {
-    if (window.confirm('¿Estás seguro de borrar este registro de la base de datos?')) {
-      const colName = activeModule === 'winners' ? 'products' : 'import_products';
-      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, id)); } catch (e) { console.error(e); }
-    }
-  };
-  const moveItem = async (id, dir) => {
-    const colName = activeModule === 'winners' ? 'products' : 'import_products';
-    const list = displayedProducts;
-    const idx = list.findIndex(p => p.id === id);
-    const targetIdx = idx + dir;
-    if (targetIdx >= 0 && targetIdx < list.length) {
-      const a = list[idx], b = list[targetIdx];
-      try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, a.id), { order: b.order || Date.now() });
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, b.id), { order: a.order || Date.now() - 100 });
-      } catch (e) { console.error(e); }
-    }
-  };
-  const handleImage = (e, targetId = null, upsellId = null) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      let result = reader.result;
-      if (file.size > 500 * 1024) {
-        try { result = await compressImage(reader.result); } catch(err) { console.error("Error comprimiendo:", err); }
-      }
-      if (!targetId) {
-        if (upsellId) {
-          const up = (newProduct.upsells || []).map(u => u.id === upsellId ? {...u, image: result} : u);
-          setNewProduct({...newProduct, upsells: up});
-        } else {
-          setNewProduct({...newProduct, image: result});
-        }
-      } else {
-        const colName = activeModule === 'winners' ? 'products' : 'import_products';
-        const item = products.find(x => x.id === targetId);
-        if (!item) return;
-        if (upsellId) {
-          const up = (item.upsells || getInitialWinner().upsells).map(u => u.id === upsellId ? {...u, image: result} : u);
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { upsells: up });
-        } else {
-          updateDoc(doc(db, 'artifacts', appId, 'public', 'data', colName, targetId), { image: result });
-        }
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-  const updateVariable = async (p, varId, field, value) => {
-    const newVars = (p.variables || getInitialImport().variables).map(v => v.id === varId ? { ...v, [field]: value } : v);
-    await updateDocField(p.id, 'variables', newVars);
-  };
-  const updateTestingData = async (p, testId, field, value) => {
-    const currentData = p.testingData || getInitialWinner().testingData;
-    const newData = currentData.map(t => t.id === testId ? { ...t, [field]: value } : t);
-    await updateDocField(p.id, 'testingData', newData);
+  const requestCampaignOff = campaign => {
+    const campaignStart = dateToIso(campaign.effectiveStartDate || campaign.createdDate) || today;
+    setCampaignOffPicker({
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      date: today,
+      minDate: campaignStart
+    });
   };
 
-  const renderProjectionModule = () => {
-    const val = (key) => parseFloat(proj[key]) || 0;
-    const handleChange = (key) => (newVal) => setProj({...proj, [key]: newVal});
-    const resetProjection = () => setProj(getInitialProjection());
-    const impressions = val('cpm') > 0 ? (val('adSpend') / val('cpm')) * 1000 : 0;
-    const costPerImpression = impressions > 0 ? val('adSpend') / impressions : 0;
-    const linkClicks = impressions * (val('ctr') / 100);
-    const cpc = linkClicks > 0 ? val('adSpend') / linkClicks : 0;
-    const pageVisits = linkClicks * (val('loadSpeed') / 100);
-    const costPerVisit = pageVisits > 0 ? val('adSpend') / pageVisits : 0;
-    const salesCol1 = pageVisits * (val('conversionRate') / 100);
-    const salesCol2 = salesCol1 * val('price');
-    const cpaFb = salesCol1 > 0 ? val('adSpend') / salesCol1 : 0;
-    const dispatchedOrders = salesCol1 * (val('effectiveness') / 100);
-    const costPerDispatched = dispatchedOrders > 0 ? val('adSpend') / dispatchedOrders : 0;
-    const returns = dispatchedOrders * (val('returnRate') / 100);
-    const effectiveDeliveries = dispatchedOrders - returns;
-    const realRevenue = effectiveDeliveries * val('price');
-    const cpaReal = effectiveDeliveries > 0 ? val('adSpend') / effectiveDeliveries : 0;
-    const roasFb = val('adSpend') > 0 ? salesCol2 / val('adSpend') : 0;
-    const roasReal = val('adSpend') > 0 ? realRevenue / val('adSpend') : 0;
-    const totalProductCost = effectiveDeliveries * val('productCost');
-    const totalFreightCost = val('freight') * dispatchedOrders;
-    const totalReturnCost = val('freight') * returns;
-    const totalFulfillmentCost = val('fulfillment') * dispatchedOrders;
-    const totalCommissionCost = val('commission') * effectiveDeliveries;
-    const intermediationCosts = totalProductCost + totalFreightCost + totalReturnCost + totalFulfillmentCost + totalCommissionCost;
-    const grossProfit = realRevenue - intermediationCosts - val('adSpend');
-    const prorateCampaign = val('activeCampaigns') > 0 ? val('fixedExpenses') / val('activeCampaigns') : 0;
-    const netProfit = grossProfit - prorateCampaign;
-    const grossMargin = realRevenue > 0 ? (grossProfit / realRevenue) * 100 : 0;
-    const netMargin = realRevenue > 0 ? (netProfit / realRevenue) * 100 : 0;
-    const downloadReport = () => {
-      const productName = proj.name || 'Sin Nombre';
-      const reportContent = `======================================
-📊 REPORTE DE PROYECCIÓN: ${productName.toUpperCase()}
-======================================
-🎯 MÉTRICAS DE MARKETING:
-- Inversión Facebook:     ${formatCurrency(val('adSpend'))}
-- CPM:                    ${formatCurrency(val('cpm'))}
-- Impresiones:            ${impressions.toFixed(0)}
-- CTR:                    ${val('ctr').toFixed(2)}%
-- Clics en Enlace:        ${linkClicks.toFixed(0)}
-- Costo por Clic (CPC):   ${formatCurrency(cpc)}
-- Velocidad de Carga:     ${val('loadSpeed').toFixed(2)}%
-- Visitas a la Página:    ${pageVisits.toFixed(0)}
-- Costo por Visita:       ${formatCurrency(costPerVisit)}
-- % Conversión:           ${val('conversionRate').toFixed(2)}%
-📦 EMBUDO DE VENTAS Y ENTREGAS:
-- Ventas Generadas (Col1): ${salesCol1.toFixed(2)} pedidos
-- % Efectividad:          ${val('effectiveness').toFixed(2)}%
-- Pedidos Despachados:    ${dispatchedOrders.toFixed(2)} pedidos
-- % Devolución:           ${val('returnRate').toFixed(2)}%
-- Total Devoluciones:     ${returns.toFixed(2)} pedidos
-- ENTREGAS EFECTIVAS:     ${effectiveDeliveries.toFixed(2)} pedidos
-💳 ANÁLISIS DE ADQUISICIÓN (CPA & ROAS):
-- CPA Facebook:           ${formatCurrency(cpaFb)}
-- CPA Real:               ${formatCurrency(cpaReal)}
-- ROAS Facebook:          ${roasFb.toFixed(2)}
-- ROAS Real ⭐:            ${roasReal.toFixed(2)}
-💰 FINANZAS Y COSTOS DE OPERACIÓN:
-- Precio de Venta:        ${formatCurrency(val('price'))}
-- Costo de Producto:      ${formatCurrency(val('productCost'))}
-- Flete por envío:        ${formatCurrency(val('freight'))}
-- Costo Fulfillment:      ${formatCurrency(val('fulfillment'))}
-- Comisión + Fijos:       ${formatCurrency(val('commission'))}
-- Facturado Tienda Web:   ${formatCurrency(salesCol2)}
-- Ingresos Reales ⭐:      ${formatCurrency(realRevenue)}
-- Total Intermediación:   ${formatCurrency(intermediationCosts)}
-- Gastos Fijos (Prorrateo): ${formatCurrency(prorateCampaign)}
-🏆 RESULTADOS FINALES:
-- Profit Bruto:           ${formatCurrency(grossProfit)}
-- Profit Neto Real:       ${formatCurrency(netProfit)}
-- Margen Bruto:           ${grossMargin.toFixed(2)}%
-- Margen Neto:            ${netMargin.toFixed(2)}%
-======================================
-Reporte generado por WinnerProduct OS
-======================================`;
-      const blob = new Blob([reportContent], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Reporte_PyG_${productName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'producto'}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    };
-    return (
-      <div className="space-y-6 md:space-y-10 pb-20 animate-in fade-in duration-500 text-left">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white rounded-[2rem] p-5 md:p-8 shadow-sm border border-zinc-200/50">
-          <div className="w-full md:flex-1">
-            <label className="text-[9px] md:text-[11px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Producto a Analizar</label>
-            <input type="text" value={proj.name || ''} onChange={(e) => setProj({...proj, name: e.target.value})} className="w-full bg-zinc-50 border-2 border-zinc-100 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm md:text-base focus:outline-none focus:border-indigo-400 transition-all text-zinc-900 font-bold" placeholder="Ej. Nombre del producto..." />
-          </div>
-          <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-            <button onClick={downloadReport} className="w-full md:w-auto bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-indigo-100 flex items-center justify-center gap-2 shrink-0">📄 Descargar Informe</button>
-            <button onClick={resetProjection} className="w-full md:w-auto bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all border border-rose-100 flex items-center justify-center gap-2 shrink-0">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-              Limpiar Datos
-            </button>
-          </div>
-        </div>
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Datos de Operación y Costos</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-6">
-            <InputP label="Precio Venta" value={proj.price} onChange={handleChange('price')} type="currency" prefix="$" />
-            <InputP label="Costo Producto" value={proj.productCost} onChange={handleChange('productCost')} type="currency" prefix="$" />
-            <InputP label="Flete" value={proj.freight} onChange={handleChange('freight')} type="currency" prefix="$" />
-            <InputP label="Fulfillment" value={proj.fulfillment} onChange={handleChange('fulfillment')} type="currency" prefix="$" />
-            <InputP label="Comisión + Fijos" value={proj.commission} onChange={handleChange('commission')} type="currency" prefix="$" />
-          </div>
-        </div>
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Análisis de Métricas</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
-            <InputP label="Inv. Facebook" value={proj.adSpend} onChange={handleChange('adSpend')} type="currency" prefix="$" />
-            <InputP label="CPM" value={proj.cpm} onChange={handleChange('cpm')} type="currency" prefix="$" />
-            <OutputP label="Impresiones" value={impressions} type="number" decimals={0} />
-            <OutputP label="Costo x Impresión" value={costPerImpression} type="currency" />
-            <InputP label="CTR" value={proj.ctr} onChange={handleChange('ctr')} type="number" suffix="%" />
-            <OutputP label="Clics en enlace" value={linkClicks} type="number" decimals={0} />
-            <OutputP label="Costo por Clic" value={cpc} type="currency" />
-            <InputP label="Vel. de Carga" value={proj.loadSpeed} onChange={handleChange('loadSpeed')} type="number" suffix="%" />
-            <OutputP label="Visitas a página" value={pageVisits} type="number" decimals={0} />
-            <OutputP label="Costo x Visita" value={costPerVisit} type="currency" />
-            <InputP label="Conversión" value={proj.conversionRate} onChange={handleChange('conversionRate')} type="number" suffix="%" />
-            <OutputP label="Ventas (Pedidos)" value={salesCol1} type="number" decimals={2} />
-            <OutputP label="Ventas ($)" value={salesCol2} type="currency" />
-            <OutputP label="CPA Facebook" value={cpaFb} type="currency" customBg="bg-blue-600 border-blue-700 shadow-lg" customText="text-white" />
-            <InputP label="% Efectividad" value={proj.effectiveness} onChange={handleChange('effectiveness')} type="number" suffix="%" />
-            <OutputP label="Ped. Despachados" value={dispatchedOrders} type="number" decimals={2} />
-            <OutputP label="Costo x Despachado" value={costPerDispatched} type="currency" />
-            <InputP label="% Devolución" value={proj.returnRate} onChange={handleChange('returnRate')} type="number" suffix="%" />
-            <OutputP label="Devoluciones" value={returns} type="number" decimals={2} />
-            <OutputP label="Entregas Efectivas" value={effectiveDeliveries} type="number" decimals={2} />
-            <OutputP label="Ingresos Reales" value={realRevenue} type="currency" highlight />
-            <OutputP label="CPA Real" value={cpaReal} type="currency" customBg="bg-orange-500 border-orange-600 shadow-lg" customText="text-white" />
-            <OutputP label="ROAS FACEBOOK" value={roasFb} type="number" decimals={2} />
-            <OutputP label="ROAS REAL ⭐" value={roasReal} type="number" decimals={2} highlight />
-          </div>
-        </div>
-        <div className="bg-white rounded-[2rem] p-5 md:p-10 shadow-sm border border-zinc-200/50">
-          <h2 className="text-lg md:text-2xl font-black text-zinc-900 uppercase italic mb-6 border-b-2 border-zinc-100 pb-3">Pérdidas y Ganancias</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
-            <div className="space-y-3">
-              <OutputP label="Facturado Tienda Web" value={salesCol2} type="currency" />
-              <OutputP label="Facturado Real ⭐" value={realRevenue} type="currency" highlight />
-              <OutputP label="Ingresos Totales" value={realRevenue} type="currency" />
-              <OutputP label="Inversión Publicidad" value={proj.adSpend} type="currency" />
+  const toggleCampaign = async (campaign, requestedOffDate = null) => {
+    const campaignAds = ads.filter(a => a.campaignId === campaign.id);
+    const batch = writeBatch(db);
+
+    if (campaign.active !== false) {
+      const offDate = dateToIso(requestedOffDate || today);
+      const campaignStart = dateToIso(campaign.effectiveStartDate || campaign.createdDate) || today;
+
+      if (!offDate) {
+        showManagerMessage('error', 'Selecciona una fecha válida para apagar la campaña.');
+        return;
+      }
+      if (offDate > today) {
+        showManagerMessage('error', 'La fecha de apagado no puede ser posterior a hoy.');
+        return;
+      }
+      if (offDate < campaignStart) {
+        showManagerMessage('error', `La campaña no puede apagarse antes de su fecha de inicio (${campaignStart}).`);
+        return;
+      }
+
+      if (!window.confirm(
+        `Apagar "${campaign.name}" con fecha efectiva ${offDate}?\n\n` +
+        `Desde esa fecha dejará de aparecer en Registro diario. ` +
+        `Los datos anteriores se conservarán y seguirán disponibles en los informes.`
+      )) return;
+
+      const previousAdStates = {};
+      campaignAds.forEach(a => { previousAdStates[a.id] = a.active !== false; });
+
+      batch.update(doc(db, COLLECTIONS.campaigns, campaign.id), {
+        active: false,
+        previousAdStates,
+        stateChangedDate: offDate,
+        deactivatedDate: offDate,
+        stateHistory: terminalStateHistoryCC(campaign.stateHistory, offDate, false),
+        stateChangedAt: serverTimestamp()
+      });
+
+      campaignAds.forEach(a => {
+        batch.update(doc(db, COLLECTIONS.ads, a.id), {
+          active: false,
+          savedActiveBeforeCampaignOff: a.active !== false,
+          disabledByCampaign: true,
+          stateChangedDate: offDate,
+          stateHistory: terminalStateHistoryCC(a.stateHistory, offDate, false),
+          stateChangedAt: serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      await addDecision(
+        ownerUid,
+        campaign,
+        null,
+        'Campaña apagada',
+        `Fecha efectiva de apagado: ${offDate}. Desde esa fecha quedó excluida de Registro diario; histórico anterior conservado.`
+      );
+      setCampaignOffPicker(null);
+      showManagerMessage('success', `"${campaign.name}" apagada con fecha efectiva ${offDate}.`);
+    } else {
+      const previous = campaign.previousAdStates || {};
+
+      batch.update(doc(db, COLLECTIONS.campaigns, campaign.id), {
+        active: true,
+        stateChangedDate: today,
+        deactivatedDate: null,
+        stateHistory: [...(campaign.stateHistory || []), { date: today, active: true }],
+        stateChangedAt: serverTimestamp()
+      });
+
+      campaignAds.forEach(a => {
+        const restored = previous[a.id] !== undefined
+          ? previous[a.id]
+          : (a.savedActiveBeforeCampaignOff === true);
+
+        batch.update(doc(db, COLLECTIONS.ads, a.id), {
+          active: restored,
+          disabledByCampaign: false,
+          stateChangedDate: today,
+          stateHistory: [...(a.stateHistory || []), { date: today, active: restored }],
+          stateChangedAt: serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      await addDecision(
+        ownerUid,
+        campaign,
+        null,
+        'Campaña encendida',
+        `Reactivada el ${today}. Se restauró el estado individual previo de los anuncios.`
+      );
+      showManagerMessage('success', `"${campaign.name}" encendida desde ${today}.`);
+    }
+  };
+  const archiveCampaign = async campaign => {
+    if (!window.confirm(`¿Archivar ${campaign.name}? Se conserva todo el histórico.`)) return;
+    const campaignAds = ads.filter(a => a.campaignId === campaign.id); const batch = writeBatch(db);
+    batch.update(doc(db, COLLECTIONS.campaigns, campaign.id), { archived: true, active: false, archivedDate: today, deactivatedDate: campaign.deactivatedDate || today, stateChangedDate: today, stateHistory: [...(campaign.stateHistory || []), { date: today, active: false }], archivedAt: serverTimestamp() });
+    campaignAds.forEach(a => batch.update(doc(db, COLLECTIONS.ads, a.id), { active: false, savedActiveBeforeCampaignOff: a.active !== false, disabledByCampaign: true, stateChangedDate: today, stateHistory: [...(a.stateHistory || []), { date: today, active: false }], stateChangedAt: serverTimestamp() }));
+    await batch.commit(); await addDecision(ownerUid, campaign, null, 'Campaña archivada', 'Histórico conservado; excluida del análisis activo.');
+  };
+  const restoreCampaign = async campaign => {
+    await updateDoc(doc(db, COLLECTIONS.campaigns, campaign.id), { archived: false, active: false, archivedDate: null, restoredDate: today, stateChangedDate: today, restoredAt: serverTimestamp() });
+    await addDecision(ownerUid, campaign, null, 'Campaña restaurada', 'Restaurada como apagada. Enciéndela cuando corresponda.');
+  };
+  const permanentDeleteCampaign = async campaign => {
+    if (!window.confirm(`ELIMINACIÓN DEFINITIVA: ¿borrar ${campaign.name} y todo su histórico Campaign Control?`)) return;
+    const targets = [...ads.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.ads,x.id]), ...dailyCampaigns.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.dailyCampaigns,x.id]), ...dailyAds.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.dailyAds,x.id]), ...budgetChanges.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.budgetChanges,x.id]), ...recommendations.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.recommendations,x.id]), ...decisions.filter(x => x.campaignId === campaign.id).map(x => [COLLECTIONS.decisions,x.id]), [COLLECTIONS.campaigns,campaign.id]];
+    for (let i=0;i<targets.length;i+=400) { const batch=writeBatch(db); targets.slice(i,i+400).forEach(([col,id])=>batch.delete(doc(db,col,id))); await batch.commit(); }
+  };
+  const addAd = async campaign => {
+    const name = String(adNameByCampaign[campaign.id] || '').trim();
+    if (!name) {
+      showManagerMessage('error', 'Escribe el nombre del anuncio antes de crearlo.');
+      return;
+    }
+    if (!ownerUid) {
+      showManagerMessage('error', 'No hay una sesión autenticada disponible para guardar el anuncio.');
+      return;
+    }
+    if (!campaign?.id) {
+      showManagerMessage('error', 'No se pudo identificar la campaña.');
+      return;
+    }
+    if (campaign.archived) {
+      showManagerMessage('error', 'No puedes agregar anuncios a una campaña archivada.');
+      return;
+    }
+
+    const normalizedName = normalizeAdName(name);
+    if (ads.some(a => a.campaignId === campaign.id && normalizeAdName(a.name) === normalizedName)) {
+      showManagerMessage('error', `Ya existe un anuncio llamado "${name}" dentro de esta campaña.`);
+      return;
+    }
+
+    const parentProduct = products.find(p => p.id === campaign.productId);
+    const effectiveStartDate =
+      dateToIso(campaign.effectiveStartDate || campaign.createdDate) ||
+      today;
+
+    const ref = doc(collection(db, COLLECTIONS.ads));
+    setBusyKey(`ad:${campaign.id}`);
+    try {
+      await setDoc(ref, {
+        ownerUid,
+        productId: campaign.productId,
+        campaignId: campaign.id,
+        name,
+        normalizedName,
+        active: campaign.active !== false,
+        // Alta técnica hoy; fecha efectiva conserva la posibilidad de backfill.
+        createdDate: today,
+        effectiveStartDate,
+        stateChangedDate: effectiveStartDate,
+        stateHistory: [{ date: effectiveStartDate, active: campaign.active !== false }],
+        createdAt: serverTimestamp(),
+        stateChangedAt: serverTimestamp(),
+        disabledByCampaign: campaign.active === false
+      });
+      setAdNameByCampaign(x => ({ ...x, [campaign.id]: '' }));
+      setExpanded(x => ({ ...x, [campaign.id]: true }));
+      showManagerMessage('success', `Anuncio "${name}" creado correctamente en "${campaign.name}".`);
+    } catch (error) {
+      console.error('Campaign Control · crear anuncio', error);
+      showManagerMessage('error', readableFirebaseError(error, 'No se pudo crear el anuncio'));
+    } finally {
+      setBusyKey('');
+    }
+  };
+  const toggleAd = async (ad,campaign) => {
+    if(campaign.active===false&&ad.active===false) return alert('Primero debes encender la campaña.');
+    const next=ad.active===false;
+    await updateDoc(doc(db,COLLECTIONS.ads,ad.id),{ active:next,savedActiveBeforeCampaignOff:next,disabledByCampaign:false,stateChangedDate:today,stateHistory:[...(ad.stateHistory||[]),{date:today,active:next}],stateChangedAt:serverTimestamp() });
+    await addDecision(ownerUid,campaign,ad,next?'Anuncio encendido':'Anuncio apagado',`Estado cambiado manualmente: ${ad.name}`);
+  };
+  const deleteAd = async (ad,campaign) => {
+    const relatedDaily=dailyAds.filter(x=>x.adId===ad.id); const relatedDecisions=decisions.filter(x=>x.adId===ad.id); const relatedRecommendations=recommendations.filter(x=>x.adId===ad.id);
+    const ok=window.confirm(`¿Eliminar definitivamente el anuncio "${ad.name}" de "${campaign.name}"?\n\nSe eliminarán también ${relatedDaily.length} registro(s) diarios y sus decisiones/recomendaciones asociadas. La campaña y los demás anuncios NO se modificarán.`);
+    if(!ok) return;
+    const targets=[...relatedDaily.map(x=>[COLLECTIONS.dailyAds,x.id]),...relatedDecisions.map(x=>[COLLECTIONS.decisions,x.id]),...relatedRecommendations.map(x=>[COLLECTIONS.recommendations,x.id]),[COLLECTIONS.ads,ad.id]];
+    for(let i=0;i<targets.length;i+=400){const batch=writeBatch(db);targets.slice(i,i+400).forEach(([col,id])=>batch.delete(doc(db,col,id)));await batch.commit();}
+  };
+
+  return <div className="space-y-5">
+    {managerMessage && <div className={`rounded-2xl border p-3 text-[10px] font-black ${managerMessage.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>{managerMessage.type === 'success' ? '✓ ' : '⚠ '}{managerMessage.text}</div>}
+    <SectionCard accent="#059669" soft="#ecfdf5"><div className="flex flex-col md:flex-row md:items-end gap-3"><div className="flex-1"><p className="text-[9px] font-black uppercase text-emerald-700 mb-1">Nuevo producto Campaign Control</p><input value={productForm.name} onChange={e=>setProductForm(x=>({...x,name:e.target.value}))} placeholder="Ej: ACTIVE CHIC" className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-bold outline-none"/></div><div className="md:w-48"><p className="text-[9px] font-black uppercase text-slate-400 mb-1">CPA máximo</p><input type="number" value={productForm.maxCpa} onChange={e=>setProductForm(x=>({...x,maxCpa:e.target.value}))} className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-bold outline-none"/></div><div className="md:w-48"><p className="text-[9px] font-black uppercase text-slate-400 mb-1">Fecha de inicio</p><input type="date" max={today} value={productForm.createdDate} onChange={e=>setProductForm(x=>({...x,createdDate:e.target.value}))} className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-bold outline-none"/><p className="text-[7px] text-slate-400 mt-1">Puede ser anterior a hoy</p></div><button onClick={addProduct} className="bg-emerald-500 text-zinc-950 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2"><Plus size={14}/> Crear producto</button></div></SectionCard>
+    {products.length===0?<EmptyState>No existen productos dentro de Campaign Control.</EmptyState>:products.map(product=>{const productCampaigns=campaigns.filter(c=>c.productId===product.id&&(showArchived||!c.archived));const productAccent=ccVisualAccent(product.id||product.name);const productOpen=expandedProductsManager[product.id]===true;return <SectionCard key={product.id} className={product.active===false?'opacity-70':''} accent={productAccent.border} soft={productAccent.soft}>
+      <button
+        type="button"
+        aria-expanded={productOpen}
+        onClick={()=>setExpandedProductsManager(x=>({...x,[product.id]:!productOpen}))}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
+        <h3 className="font-black uppercase text-base" style={{color:productAccent.text}}>{product.name}</h3>
+        {productOpen?<ChevronUp size={16} style={{color:productAccent.text}}/>:<ChevronDown size={16} style={{color:productAccent.text}}/>}
+      </button>
+
+      {productOpen&&<div className="mt-4 pt-4 border-t" style={{borderColor:productAccent.border}}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="w-2.5 h-2.5 rounded-full" style={{backgroundColor:productAccent.border}}></span>
+              <StateBadge active={product.active!==false}/>
             </div>
-            <div className="space-y-3 p-4 md:p-6 bg-rose-50/50 rounded-[1.5rem] border border-rose-100">
-              <h3 className="text-[10px] md:text-[12px] font-black text-rose-500 uppercase mb-4">Desglose de Costos Operativos</h3>
-              <OutputP label="Costo Prod. Vendido" value={totalProductCost} type="currency" />
-              <OutputP label="Costo Envío Efectivo 🚚" value={totalFreightCost} type="currency" />
-              <OutputP label="Costo Devoluciones" value={totalReturnCost} type="currency" customBg="bg-rose-500 border-rose-600 shadow-lg" customText="text-white" />
-              <OutputP label="Costo Fulfillment" value={totalFulfillmentCost} type="currency" />
-              <OutputP label="Costo Comisión" value={totalCommissionCost} type="currency" />
-              <div className="pt-2"><OutputP label="Total Costos Intermediación" value={intermediationCosts} type="currency" highlight /></div>
+            <p className="text-[9px] font-black text-slate-400 mt-1">
+              CPA máximo: <span className="text-purple-600">{fmtMoney(product.maxCpa)}</span> · {productCampaigns.length} campaña(s) · Inicio: {(product.effectiveStartDate || product.createdDate) ? parseDateSafe(product.effectiveStartDate || product.createdDate)?.toLocaleDateString('es-CO') : '—'}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <button title="Editar nombre y CPA" onClick={()=>editProduct(product)} className="p-2 rounded-xl bg-slate-100 text-slate-600"><Settings2 size={14}/></button>
+            <button title="Editar fecha de creación / inicio" onClick={()=>editProductStartDate(product)} className="p-2 rounded-xl bg-blue-50 text-blue-600"><CalendarDays size={14}/></button>
+            <button onClick={()=>toggleProduct(product)} className={`p-2 rounded-xl ${product.active===false?'bg-emerald-100 text-emerald-600':'bg-rose-100 text-rose-600'}`}>{product.active===false?<Power size={14}/>:<PowerOff size={14}/>}</button>
+            <button onClick={()=>deleteProduct(product)} className="p-2 rounded-xl bg-rose-50 text-rose-500"><Trash2 size={14}/></button>
+            <button type="button" title="Cerrar producto" onClick={()=>setExpandedProductsManager(x=>({...x,[product.id]:false}))} className="p-2 rounded-xl bg-slate-100 text-slate-500"><ChevronUp size={14}/></button>
+          </div>
+        </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_190px_auto] gap-2 mt-4">
+        <div>
+          <p className="text-[8px] font-black uppercase text-slate-400 mb-1">Nombre campaña</p>
+          <input
+            value={campaignNameByProduct[product.id]||''}
+            onChange={e=>setCampaignNameByProduct(x=>({...x,[product.id]:e.target.value}))}
+            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addCampaign(product.id);}}}
+            placeholder="Nombre nueva campaña"
+            className="w-full bg-slate-50 rounded-xl px-3 py-2 text-xs font-bold"
+          />
+        </div>
+        <div>
+          <p className="text-[8px] font-black uppercase text-slate-400 mb-1">Fecha inicio campaña</p>
+          <input
+            type="date"
+            max={today}
+            value={campaignDateByProduct[product.id] || today}
+            onChange={e=>setCampaignDateByProduct(x=>({...x,[product.id]:e.target.value}))}
+            className="w-full bg-slate-50 rounded-xl px-3 py-2 text-xs font-bold"
+          />
+          <p className="text-[7px] text-slate-400 mt-1">Independiente de la fecha del producto</p>
+        </div>
+        <button
+          type="button"
+          disabled={busyKey === `campaign:${product.id}`}
+          onClick={()=>addCampaign(product.id)}
+          className="md:self-end bg-zinc-950 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase disabled:opacity-50"
+        >
+          <Plus size={12} className="inline mr-1"/> {busyKey === `campaign:${product.id}` ? 'Creando...' : 'Campaña'}
+        </button>
+      </div>
+      {productCampaigns.length > 0 && <div className="flex items-center justify-between gap-2 mt-3">
+        <p className="text-[8px] font-bold text-slate-400">Producto → Campaña → resumen y controles → anuncios</p>
+        <div className="flex gap-1.5 shrink-0">
+          <button type="button" onClick={()=>expandAllProductCampaigns(product.id)} className="px-2.5 py-1.5 rounded-lg bg-white/80 border border-slate-200 text-[8px] font-black uppercase text-slate-600 flex items-center gap-1"><ChevronDown size={11}/> Expandir campañas</button>
+          <button type="button" onClick={()=>collapseAllProductCampaigns(product.id)} className="px-2.5 py-1.5 rounded-lg bg-white/80 border border-slate-200 text-[8px] font-black uppercase text-slate-600 flex items-center gap-1"><ChevronUp size={11}/> Contraer campañas</button>
+        </div>
+      </div>}
+      <div className="space-y-3 mt-3">{productCampaigns.length===0?<EmptyState>0 campañas. Puedes agregar una nueva sin perder el producto.</EmptyState>:productCampaigns.map(campaign=>{const campaignAds=ads.filter(a=>a.campaignId===campaign.id);const isOpen=expanded[campaign.id]===true;const adsOpen=expandedAds[campaign.id]===true;const campaignAccent=ccVisualAccent(campaign.id||campaign.name,2);return <div key={campaign.id} className={`rounded-2xl overflow-hidden ${campaign.archived?'opacity-75':''}`} style={{border:`2px solid ${campaignAccent.border}`,backgroundColor:campaignAccent.soft,boxShadow:`0 6px 18px ${campaignAccent.border}10`}}>
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          onClick={()=>setExpanded(x=>({...x,[campaign.id]:!isOpen}))}
+          className="w-full p-3 flex items-center justify-between gap-3 text-left hover:bg-white/35 transition-colors"
+        >
+          <span className="font-black text-xs uppercase" style={{color:campaignAccent.text}}>{campaign.name}</span>
+          {isOpen?<ChevronUp size={14} style={{color:campaignAccent.text}}/>:<ChevronDown size={14} style={{color:campaignAccent.text}}/>}
+        </button>
+
+        {isOpen&&<div className="border-t" style={{borderColor:campaignAccent.border,backgroundColor:'#ffffffcc'}}>
+          <div className="p-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <StateBadge active={campaign.active!==false} archived={campaign.archived}/>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-slate-200 text-[8px] font-black text-slate-500">
+                    {campaignAds.length} anuncio(s)
+                  </span>
+                </div>
+                <p className="text-[8px] text-slate-400 mt-2">
+                  inicio campaña {campaign.effectiveStartDate||campaign.createdDate||'—'} · fecha independiente del producto · alta técnica conservada · último cambio {campaign.stateChangedDate||'—'}{campaign.active===false ? ` · apagada desde ${campaign.deactivatedDate||campaign.stateChangedDate||'—'}` : ''}
+                </p>
+              </div>
+
+              <div className="flex gap-1 flex-wrap">
+                <button title="Editar fecha de creación / inicio" onClick={()=>editCampaignStartDate(campaign)} className="p-1.5 rounded-lg bg-blue-50 text-blue-600"><CalendarDays size={12}/></button>
+                {!campaign.archived&&<button
+                  onClick={()=>campaign.active===false ? toggleCampaign(campaign) : requestCampaignOff(campaign)}
+                  className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase ${campaign.active===false?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-600'}`}
+                >{campaign.active===false?'Encender':'Apagar'}</button>}
+                {!campaign.archived?<button onClick={()=>archiveCampaign(campaign)} className="px-2 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[8px] font-black uppercase flex items-center gap-1"><Archive size={11}/> Archivar</button>:<button onClick={()=>restoreCampaign(campaign)} className="px-2 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-[8px] font-black uppercase flex items-center gap-1"><ArchiveRestore size={11}/> Restaurar</button>}
+                <button title="Eliminar campaña definitivamente" onClick={()=>permanentDeleteCampaign(campaign)} className="p-1.5 rounded-lg bg-rose-50 text-rose-500"><Trash2 size={12}/></button>
+                <button type="button" onClick={()=>setExpanded(x=>({...x,[campaign.id]:false}))} className="px-2 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-[8px] font-black uppercase flex items-center gap-1"><ChevronUp size={10}/> Cerrar campaña</button>
+              </div>
             </div>
-            <div className="space-y-3">
-              <InputP label="Gastos Fijos (Globales)" value={proj.fixedExpenses} onChange={handleChange('fixedExpenses')} type="currency" prefix="$" />
-              <InputP label="Campañas Activas" value={proj.activeCampaigns} onChange={handleChange('activeCampaigns')} type="number" />
-              <OutputP label="Prorrateo x Campaña" value={prorateCampaign} type="currency" />
-              <div className="mt-6">
-                <div className={`rounded-[1.5rem] p-5 shadow-lg text-white transition-colors duration-500 ${grossProfit < 0 ? 'bg-rose-600' : 'bg-emerald-500'}`}>
-                  <label className="text-[10px] font-black uppercase tracking-widest opacity-80 block mb-1">Profit Bruto ⭐⭐⭐⭐⭐</label>
-                  <div className="text-3xl md:text-4xl font-black font-mono">{formatCurrency(grossProfit)}</div>
+
+            {campaignOffPicker?.campaignId === campaign.id && campaign.active !== false && !campaign.archived && (
+              <div className="mt-3 rounded-2xl border-2 border-rose-200 bg-rose-50 p-3">
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-rose-700">Fecha efectiva de apagado</p>
+                    <p className="text-[8px] text-rose-600 mt-1">
+                      Desde esta fecha la campaña dejará de aparecer en Registro diario. El histórico anterior seguirá disponible en informes.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <p className="text-[7px] font-black uppercase text-rose-500 mb-1">Apagar desde</p>
+                      <input
+                        type="date"
+                        min={campaignOffPicker.minDate}
+                        max={today}
+                        value={campaignOffPicker.date}
+                        onChange={e=>setCampaignOffPicker(x=>x ? ({...x,date:e.target.value}) : x)}
+                        className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-800"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={()=>toggleCampaign(campaign, campaignOffPicker.date)}
+                      className="px-3 py-2 rounded-xl bg-rose-600 text-white text-[8px] font-black uppercase"
+                    >
+                      Confirmar apagado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={()=>setCampaignOffPicker(null)}
+                      className="px-3 py-2 rounded-xl bg-white border border-rose-200 text-rose-600 text-[8px] font-black uppercase"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            <button
+              type="button"
+              aria-expanded={adsOpen}
+              onClick={()=>setExpandedAds(x=>({...x,[campaign.id]:!adsOpen}))}
+              className="w-full mt-3 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors"
+            >
+              <span className="text-[9px] font-black uppercase text-slate-600">
+                Anuncios de la campaña · {campaignAds.length}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase" style={{color:campaignAccent.text}}>
+                {adsOpen ? 'Ocultar anuncios' : 'Ver anuncios'}
+                {adsOpen?<ChevronUp size={12}/>:<ChevronDown size={12}/>}
+              </span>
+            </button>
           </div>
-          <div className="mt-8 bg-zinc-900 rounded-[2.5rem] p-6 md:p-12 text-white shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] -mr-32 -mt-32"></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 text-center md:text-left">
-              <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:pr-8">
-                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Profit Neto Real</p>
-                <p className={`text-4xl md:text-6xl font-black font-mono tracking-tighter ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>{formatCurrency(netProfit)}</p>
-              </div>
-              <div className="border-b md:border-b-0 md:border-r border-zinc-800 pb-6 md:pb-0 md:px-8">
-                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Bruto</p>
-                <p className="text-3xl md:text-5xl font-black italic">{grossMargin.toFixed(2)}%</p>
-              </div>
-              <div className="md:pl-8">
-                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Margen Neto</p>
-                <p className={`text-3xl md:text-5xl font-black italic ${netMargin < 0 ? 'text-rose-500' : 'text-indigo-400'}`}>{netMargin.toFixed(2)}%</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+
+          {adsOpen&&<div className="border-t p-3" style={{borderColor:campaignAccent.border,backgroundColor:'#ffffff'}}>
+          {!campaign.archived&&<div className="flex gap-2 mb-3"><input value={adNameByCampaign[campaign.id]||''} onChange={e=>setAdNameByCampaign(x=>({...x,[campaign.id]:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAd(campaign);}}} placeholder="Nombre nuevo anuncio" className="flex-1 bg-white border rounded-xl px-3 py-2 text-xs font-bold"/><button type="button" disabled={busyKey === `ad:${campaign.id}`} onClick={()=>addAd(campaign)} className="bg-emerald-500 text-zinc-950 px-3 rounded-xl text-[9px] font-black uppercase disabled:opacity-50"><Plus size={12} className="inline"/> {busyKey === `ad:${campaign.id}` ? 'Creando...' : 'Anuncio'}</button></div>}{campaignAds.length===0?<EmptyState>Sin anuncios.</EmptyState>:<div className="space-y-2">{campaignAds.map(ad=>{const adAccent=ccVisualAccent(ad.id||ad.name,4);return <div key={ad.id} className="rounded-xl p-2.5 flex items-center justify-between gap-2" style={{border:`2px solid ${adAccent.border}`,backgroundColor:adAccent.soft}}><div><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{backgroundColor:adAccent.border}}></span><p className="text-[10px] font-black" style={{color:adAccent.text}}>{ad.name}</p></div><p className="text-[8px] text-slate-400">Alta {ad.createdDate||'—'} · datos desde {ad.effectiveStartDate||ad.createdDate||'—'} · último cambio {ad.stateChangedDate||'—'} · {campaign.active===false?'apagado por campaña':ad.active===false?'excluido de métricas':'incluido en métricas'}</p></div><div className="flex items-center gap-1.5"><StateBadge active={ad.active!==false}/><button disabled={campaign.archived} onClick={()=>toggleAd(ad,campaign)} className={`px-2 py-1.5 rounded-lg text-[8px] font-black ${ad.active===false?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-600'} disabled:opacity-30`}>{ad.active===false?'Encender':'Apagar'}</button><button title="Eliminar anuncio definitivamente" onClick={()=>deleteAd(ad,campaign)} className="p-1.5 rounded-lg bg-rose-50 text-rose-500"><Trash2 size={12}/></button></div></div>})}</div>}</div>}
+        </div>}
+      </div>})}</div>
+      </div>}
+    </SectionCard>})}
+    <label className="flex items-center gap-2 text-[9px] font-black uppercase text-slate-500"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Mostrar campañas archivadas</label>
+  </div>;
+}
+
+async function addDecision(ownerUid, campaign, ad, action, detail) {
+  await addDoc(collection(db, COLLECTIONS.decisions), {
+    ownerUid,
+    productId: campaign?.productId || ad?.productId || null,
+    campaignId: campaign?.id || ad?.campaignId || null,
+    adId: ad?.id || null,
+    date: todayColombiaCC(),
+    action,
+    detail,
+    createdAt: serverTimestamp()
+  });
+}
+
+
+function DailyRegisterFull({ ownerUid, products, campaigns, ads, dailyCampaigns, dailyAds, recommendations }) {
+  const [date, setDate] = useState(todayColombiaCC());
+  const [expandedProducts, setExpandedProducts] = useState({});
+  const [expandedCampaigns, setExpandedCampaigns] = useState({});
+  const [colombiaClock, setColombiaClock] = useState(colombiaDateTimeLabelCC());
+
+  useEffect(() => {
+    const refresh = () => {
+      setColombiaClock(colombiaDateTimeLabelCC());
+      const colombiaToday = todayColombiaCC();
+      setDate(current => current > colombiaToday ? colombiaToday : current);
+    };
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const colombiaToday = todayColombiaCC();
+  const lastCompleteDate = lastCompleteColombiaDateCC();
+
+  const visibleProducts = products
+    .filter(p => {
+      const productStart = dateToIso(p.effectiveStartDate || p.createdDate);
+      const productAlreadyExists = !productStart || productStart <= date;
+      const hasHistoricalCampaign = campaigns.some(c =>
+        c.productId === p.id &&
+        !c.archived &&
+        (!(c.effectiveStartDate || c.createdDate) || (c.effectiveStartDate || c.createdDate) <= date) &&
+        entityActiveOnDate(c, date)
+      );
+      return productAlreadyExists || hasHistoricalCampaign;
+    })
+    .sort((a,b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+  const expandAll = () => {
+    const p = {}, c = {};
+    visibleProducts.forEach(product => {
+      p[product.id] = true;
+      campaigns.filter(x =>
+        x.productId === product.id &&
+        !x.archived &&
+        (!(x.effectiveStartDate || x.createdDate) || (x.effectiveStartDate || x.createdDate) <= date) &&
+        entityActiveOnDate(x, date)
+      ).forEach(campaign => { c[campaign.id] = true; });
+    });
+    setExpandedProducts(p);
+    setExpandedCampaigns(c);
   };
 
-  const renderCreationForm = () => {
-    if (activeModule === 'winners') {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative"><input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Comercial (Obligatorio)"/></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">CÓDIGO DROPI</label><input value={newProduct.dropiCode || ''} onChange={(e)=>setNewProduct({...newProduct, dropiCode: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="ID-000"/></div>
-              <div><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor</label><input value={newProduct.supplier || ''} onChange={(e)=>setNewProduct({...newProduct, supplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/></div>
-            </div>
-          </div>
-          <div className="space-y-6">
-            <div className="bg-zinc-50 p-4 md:p-6 rounded-2xl border border-zinc-100 shadow-sm">
-              <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-4 border-b pb-2">Costos Winner (COP)</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {['base', 'cpa', 'freight', 'fulfillment', 'commission', 'returns', 'fixed'].map(k => (
-                  <div key={k}><label className="text-[8px] font-bold text-zinc-500 uppercase block mb-1 leading-none">{k}</label>
-                  <input type="number" value={newProduct.costs?.[k] || ''} onChange={(e)=>setNewProduct({...newProduct, costs: {...newProduct.costs, [k]: parseFloat(e.target.value)||0}})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base font-mono text-zinc-800 outline-none"/></div>
-                ))}
-              </div>
-            </div>
-            <div className="bg-zinc-900 p-5 md:p-6 rounded-2xl text-white shadow-xl">
-              <label className="text-[9px] font-bold uppercase text-zinc-500 mb-2 block leading-none">PVP Sugerido</label>
-              <div className="flex items-center gap-2"><span className="text-2xl font-bold opacity-30">$</span>
-              <input type="number" value={newProduct.targetPrice || ''} onChange={(e)=>setNewProduct({...newProduct, targetPrice: parseFloat(e.target.value)||0})} className="w-full bg-transparent border-b border-zinc-700 text-3xl md:text-4xl font-bold outline-none text-white"/></div>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 text-zinc-900 text-left">
-          <div className="space-y-4">
-            <div className="aspect-square bg-zinc-50 rounded-xl md:rounded-2xl border-2 border-dashed border-zinc-200 relative flex items-center justify-center overflow-hidden shadow-inner group max-w-sm mx-auto w-full text-center">
-              {newProduct.image ? <img src={newProduct.image} className="w-full h-full object-cover" alt="Preview"/> : <span className="text-xs md:text-4xl opacity-10 font-bold flex items-center justify-center h-full italic">IMG</span>}
-              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e)}/>
-            </div>
-            <div className="relative"><input value={newProduct.name || ''} onChange={(e)=>setNewProduct({...newProduct, name: e.target.value})} className="w-full border-b-2 border-zinc-200 pb-2 font-bold text-xl md:text-2xl outline-none focus:border-zinc-900 bg-transparent text-zinc-900 placeholder:text-zinc-300" placeholder="* Nombre Producto (Obligatorio)"/></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-left"><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Proveedor Chino</label><input value={newProduct.chineseSupplier || ''} onChange={(e)=>setNewProduct({...newProduct, chineseSupplier: e.target.value})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm w-full text-zinc-800 outline-none" placeholder="Nombre..."/></div>
-              <div className="text-left"><label className="text-[9px] font-black text-zinc-400 uppercase px-1 leading-none">Dólar Hoy</label><input type="number" value={newProduct.dollarRate || ''} onChange={(e)=>setNewProduct({...newProduct, dollarRate: parseFloat(e.target.value)||0})} className="bg-zinc-50 border border-zinc-100 rounded-xl p-3 text-sm font-mono w-full text-zinc-800 outline-none" placeholder="0.00"/></div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-3 md:gap-4 text-left">
-              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo USD</label><input type="number" value={newProduct.prodCostUSD || ''} onChange={(e)=>setNewProduct({...newProduct, prodCostUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Costo CBM</label><input type="number" value={newProduct.cbmCostCOP || ''} onChange={(e)=>setNewProduct({...newProduct, cbmCostCOP: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-              <div><label className="text-[8px] font-black text-zinc-400 uppercase">Unidades</label><input type="number" value={newProduct.unitsQty || ''} onChange={(e)=>setNewProduct({...newProduct, unitsQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-              <div><label className="text-[8px] font-black text-zinc-400 uppercase">CTN qty</label><input type="number" value={newProduct.ctnQty || ''} onChange={(e)=>setNewProduct({...newProduct, ctnQty: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-              <div className="col-span-2"><label className="text-[8px] font-black text-zinc-400 uppercase">Flete YIWU (USD)</label><input type="number" value={newProduct.yiwuFreightUSD || ''} onChange={(e)=>setNewProduct({...newProduct, yiwuFreightUSD: parseFloat(e.target.value)||0})} className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-base text-zinc-800 outline-none"/></div>
-            </div>
-            <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 text-left">
-              <h4 className="text-[8px] font-black text-zinc-400 uppercase mb-2 px-1">Medidas CTN (W x H x L cm)</h4>
-              <div className="grid grid-cols-3 gap-2 px-1">
-                <input type="number" value={newProduct.measures?.width || ''} placeholder="W" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, width: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                <input type="number" value={newProduct.measures?.height || ''} placeholder="H" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, height: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-                <input type="number" value={newProduct.measures?.length || ''} placeholder="L" onChange={(e)=>setNewProduct({...newProduct, measures: {...newProduct.measures, length: parseFloat(e.target.value)||0}})} className="bg-white border border-zinc-200 p-2 rounded text-sm w-full text-zinc-800 outline-none"/>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
+  const collapseAll = () => {
+    setExpandedProducts({});
+    setExpandedCampaigns({});
   };
 
-  if (loading) return <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div><p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p></div></div>;
-  if (!user) return <LoginScreen />;
+  const availableCampaignsForDate = campaigns.filter(c =>
+    !c.archived &&
+    (!(c.effectiveStartDate || c.createdDate) || (c.effectiveStartDate || c.createdDate) <= date) &&
+    entityActiveOnDate(c, date)
+  );
+  const availableCampaignIdsForDate = new Set(availableCampaignsForDate.map(c => c.id));
+  const registeredCampaigns = new Set(
+    dailyCampaigns
+      .filter(r => r.date === date && availableCampaignIdsForDate.has(r.campaignId))
+      .map(r => r.campaignId)
+  ).size;
+  const totalCampaigns = availableCampaignsForDate.length;
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans">
-      {notification && <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50">{notification}</div>}
-      <div className="max-w-[1400px] mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
-          <div className="bg-white p-1 rounded-2xl shadow-xl flex flex-wrap">
-            <button onClick={()=>handleModuleChange('winners')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='winners'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Winners</button>
-            <button onClick={()=>handleModuleChange('imports')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='imports'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Importación</button>
-            <button onClick={()=>handleModuleChange('projection')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='projection'?'bg-indigo-600 text-white':'text-indigo-400'}`}>Proyección P&G</button>
-            <button onClick={()=>handleModuleChange('agenda')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='agenda'?'bg-emerald-600 text-white':'text-emerald-600'}`}>📅 Agenda</button>
-            <button onClick={()=>handleModuleChange('prompts')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='prompts'?'bg-rose-600 text-white':'text-rose-600/70 hover:text-rose-600'}`}>🎨 Prompts</button>
+    <div className="space-y-5">
+      <SectionCard accent="#0891b2" soft="#ecfeff">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-black uppercase text-cyan-800">Registro diario de Meta Ads</h3>
+            <p className="text-[9px] text-slate-400 mt-1">Fecha → Productos → Campañas → Anuncios. Cada registro se guarda por fecha y campaña; volver a guardarlo actualiza el mismo documento, nunca crea duplicados.</p>
+            <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-cyan-50 border border-cyan-200">
+              <span className="text-[8px] font-black uppercase text-cyan-700">🇨🇴 Hora Colombia · America/Bogota</span>
+              <span className="text-[8px] font-black text-cyan-900">{colombiaClock}</span>
+            </div>
           </div>
-          <button onClick={handleLogout} className="text-zinc-400 text-[10px] font-black uppercase">SALIR</button>
+          <div className="flex flex-wrap gap-2 items-end">
+            <div>
+              <p className="text-[8px] font-black uppercase text-slate-400 mb-1">Fecha</p>
+              <input type="date" max={colombiaToday} value={date} onChange={e => setDate(e.target.value > colombiaToday ? colombiaToday : e.target.value)} className="bg-zinc-950 text-white border border-zinc-800 rounded-xl px-3 py-2 text-xs font-black" />
+            </div>
+            <button onClick={expandAll} className="bg-slate-100 text-slate-700 px-3 py-2 rounded-xl text-[9px] font-black uppercase">Expandir todo</button>
+            <button onClick={collapseAll} className="bg-slate-100 text-slate-700 px-3 py-2 rounded-xl text-[9px] font-black uppercase">Contraer todo</button>
+          </div>
         </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+          <MiniCard label="Campañas disponibles" value={totalCampaigns} />
+          <MiniCard label="Registradas en fecha" value={registeredCampaigns} tone={registeredCampaigns ? 'good' : 'default'} />
+          <MiniCard label="Pendientes" value={Math.max(0, totalCampaigns - registeredCampaigns)} />
+          <MiniCard label="Fecha" value={date} />
+        </div>
+      </SectionCard>
 
-        {activeModule === 'agenda' && <AgendaModule />}
-        {activeModule === 'prompts' && <PromptModule />}
-        {activeModule === 'projection' && renderProjectionModule()}
-        {activeModule !== 'agenda' && activeModule !== 'prompts' && activeModule !== 'projection' && (
-          <>
-            <div className="grid md:grid-cols-4 gap-3 mb-4">
-              <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="md:col-span-2 bg-white border rounded-xl p-3 text-sm" />
-              <select value={supplierFilter} onChange={(e)=>setSupplierFilter(e.target.value)} className="bg-white border rounded-xl p-3 text-sm"><option value="all">TODOS PROV.</option>{uniqueSuppliers.filter(s=>s!=='all').map(s=><option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
-              <select value={sortOrder} onChange={(e)=>setSortOrder(e.target.value)} className="bg-white border rounded-xl p-3 text-sm"><option value="manual">ORDEN MANUAL</option><option value="roi-desc">ROI ↑</option><option value="roi-asc">ROI ↓</option><option value="recent">RECIENTES</option></select>
-            </div>
-            <header className="bg-white rounded-2xl p-4 flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white text-xl font-black">W</div><h1 className="text-xl font-black">{activeModule==='winners'?'Winner OS':'Importación'}</h1></div>
-              <button onClick={()=>{setIsCreating(true); setFormError('');}} className="bg-zinc-900 text-white px-6 py-2 rounded-xl text-xs font-black">➕ Crear Registro</button>
-            </header>
-            <div className="flex gap-2 mb-6 overflow-x-auto">
-              {Object.values(activeModule==='winners'?WINNER_STATUS:IMPORT_STATUS).map(c=>(
-                <button key={c.id} onClick={()=>setActiveTab(c.id)} className={`px-4 py-2 rounded-xl text-[11px] font-black ${activeTab===c.id?c.activeColor:'bg-white text-zinc-400'}`}>{c.emoji} {c.label} ({products.filter(p=>p.status===c.id).length})</button>
-              ))}
-            </div>
-            <div className="space-y-6">
-              {displayedProducts.map((p,idx)=>{
-                const isWinner = activeModule==='winners';
-                const mWinner = isWinner ? calculateWinnerMetrics(p) : null;
-                const mImport = !isWinner ? calculateImportMetrics(p) : null;
-                const stCfg = (isWinner?WINNER_STATUS[p.status]:IMPORT_STATUS[p.status]) || (isWinner?WINNER_STATUS.pending:IMPORT_STATUS.pending);
-                let cardBgClass = p.isWorking ? 'bg-amber-50 border-amber-400' : 'bg-white';
-                if(!isWinner && p.status==='approved') cardBgClass = (IMPORT_STATES_LIST[p.importStatus]||IMPORT_STATES_LIST.warehouse).bgColor;
-                return (
-                  <div key={p.id} className={`rounded-2xl shadow-sm border ${cardBgClass} overflow-hidden`}>
-                    <div className="px-4 py-2 flex justify-between items-center border-b bg-zinc-50/20">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="bg-zinc-900 text-white px-2 py-0.5 rounded-lg text-[10px] font-black">{p.regNumber}</div>
-                        {p.createdAtText && <div className="text-[10px] text-zinc-500">📅 {p.createdAtText}</div>}
-                        <div className="flex items-center gap-1 cursor-pointer" onClick={()=>updateDocField(p.id,'isWorking',!p.isWorking)}>
-                          <span className="text-[9px] font-black">{p.isWorking?'🔴 EN PROCESO':'⚪ EN PROCESO'}</span>
-                          <div className={`w-7 h-4 rounded-full ${p.isWorking?'bg-amber-500':'bg-zinc-200'}`}><div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-all ${p.isWorking?'translate-x-3':'translate-x-0'}`}></div></div>
-                        </div>
-                        <span className="text-[10px] font-black">{stCfg.emoji} {stCfg.label}</span>
-                        {sortOrder==='manual' && <div className="flex gap-1"><button onClick={()=>moveItem(p.id,-1)} disabled={idx===0}>▲</button><span className="text-[10px]">#{idx+1}</span><button onClick={()=>moveItem(p.id,1)} disabled={idx===displayedProducts.length-1}>▼</button></div>}
-                      </div>
-                      <button onClick={()=>deleteItem(p.id)} className="text-zinc-300 hover:text-rose-600">🗑️</button>
-                    </div>
-                    <div className="flex flex-col xl:flex-row">
-                      <div className="w-full xl:w-1/3 p-4 border-r">
-                        <div className="flex flex-col items-center">
-                          <div className="w-32 h-32 bg-white rounded-2xl border relative overflow-hidden cursor-pointer group">
-                            {p.image ? <img src={p.image} className="w-full h-full object-cover"/> : <div className="flex items-center justify-center h-full text-2xl opacity-20">IMG</div>}
-                            <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e)=>handleImage(e,p.id)}/>
-                          </div>
-                          <input value={p.name||''} onChange={(e)=>updateDocField(p.id,'name',e.target.value)} className="w-full text-center font-bold text-lg mt-2 border-b border-transparent hover:border-zinc-200 focus:border-zinc-900 outline-none" placeholder="Nombre..."/>
-                          <div className="grid grid-cols-2 gap-2 w-full mt-2">
-                            {isWinner ? (
-                              <>
-                                <div onClick={()=>copyToClipboard(p.dropiCode)} className="bg-white border p-1 rounded-lg text-center cursor-pointer"><span className="text-[8px] font-black">DROPI</span><input value={p.dropiCode||''} onChange={(e)=>updateDocField(p.id,'dropiCode',e.target.value)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
-                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">PROV.</span><input value={p.supplier||''} onChange={(e)=>updateDocField(p.id,'supplier',e.target.value)} className="w-full text-xs bg-transparent outline-none"/></div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">CH-PROV</span><input value={p.chineseSupplier||''} onChange={(e)=>updateDocField(p.id,'chineseSupplier',e.target.value)} className="w-full text-xs bg-transparent outline-none"/></div>
-                                <div className="bg-white border p-1 rounded-lg"><span className="text-[8px] font-black">TRM</span><input type="number" value={p.dollarRate||0} onChange={(e)=>updateDocField(p.id,'dollarRate',parseFloat(e.target.value)||0)} className="w-full text-xs bg-transparent outline-none"/></div>
-                              </>
-                            )}
-                          </div>
-                          {isWinner && (
-                            <button onClick={()=>setExpandedItems({...expandedItems,[`desc_${p.id}`]:!expandedItems[`desc_${p.id}`]})} className="w-full text-left text-[9px] font-black mt-2 flex justify-between"><span>Ver Estrategia</span><span>{expandedItems[`desc_${p.id}`]?'▲':'▼'}</span></button>
-                          )}
-                          {isWinner && expandedItems[`desc_${p.id}`] && <textarea value={p.description||''} onChange={(e)=>updateDocField(p.id,'description',e.target.value)} rows={2} className="w-full mt-1 text-xs bg-white p-2 rounded border" placeholder="Estrategia..."/>}
-                        </div>
-                      </div>
-                      <div className="flex-1 p-4 space-y-4">
-                        {isWinner ? (
-                          <div className="grid grid-cols-4 gap-2">
-                            {['base','cpa','freight','fulfillment','commission','returns','fixed'].map(k=>(
-                              <div key={k} className="bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">{k}</label><input type="number" value={p.costs?.[k]||0} onChange={(e)=>updateNestedField(p.id,'costs',k,parseFloat(e.target.value)||0)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-4 gap-2">
-                            {[{k:'prodCostUSD',l:'USD'},{k:'cbmCostCOP',l:'CBM'},{k:'unitsQty',l:'Uds'},{k:'ctnQty',l:'CTN'},{k:'yiwuFreightUSD',l:'Yiwu'}].map(f=>(
-                              <div key={f.k} className="bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">{f.l}</label><input type="number" value={p[f.k]||0} onChange={(e)=>updateDocField(p.id,f.k,parseFloat(e.target.value)||0)} className="w-full text-xs font-mono bg-transparent outline-none"/></div>
-                            ))}
-                            <div className="col-span-2 bg-zinc-50 p-2 rounded-lg"><label className="text-[8px] font-black">Medidas (cm)</label><div className="flex gap-1"><input type="number" value={p.measures?.width||0} onChange={(e)=>updateNestedField(p.id,'measures','width',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/><input type="number" value={p.measures?.height||0} onChange={(e)=>updateNestedField(p.id,'measures','height',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/><input type="number" value={p.measures?.length||0} onChange={(e)=>updateNestedField(p.id,'measures','length',parseFloat(e.target.value)||0)} className="w-1/3 text-xs"/></div></div>
-                            <div className="col-span-2 md:col-span-1 bg-indigo-50 p-2 rounded-lg"><label className="text-[8px] font-black">TOTAL CBM</label><div className="font-mono text-sm font-black">{mImport.totalCbm.toFixed(3)}</div></div>
-                          </div>
-                        )}
-                        <div className="bg-zinc-900 rounded-2xl p-4 text-white relative overflow-hidden">
-                          {isWinner ? (
-                            <div className="space-y-2"><div className="flex justify-between"><div><label className="text-[9px] font-black">PVP Sugerido</label><input type="number" value={p.targetPrice||0} onChange={(e)=>updateDocField(p.id,'targetPrice',parseFloat(e.target.value)||0)} className="bg-transparent text-3xl font-black w-32 outline-none"/></div><div className="text-right"><label className="text-[9px] font-black">Costos</label><div className="text-lg font-mono">{formatCurrency(mWinner.totalCost)}</div></div></div><div className="flex justify-between"><div><label className="text-[9px] font-black">Utilidad Neta</label><div className={`text-2xl font-mono font-black ${mWinner.profit>0?'text-emerald-400':'text-rose-500'}`}>{formatCurrency(mWinner.profit)}</div></div><div><label className="text-[9px] font-black">Margen ROI</label><div className="text-3xl font-black italic">{mWinner.margin.toFixed(1)}%</div></div></div></div>
-                          ) : (
-                            <div className="space-y-2"><div className="flex justify-between"><div><label className="text-[9px] font-black">China (1.03x)</label><div className="text-xl font-mono">{formatCurrency(mImport.costChinaCOP)}</div></div><div><label className="text-[9px] font-black">Logística</label><div className="text-xl font-mono">{formatCurrency(mImport.nationalizationCOP)}</div></div></div><div className="bg-emerald-500/10 p-3 rounded-xl"><div><label className="text-[9px] font-black">Costo Prod. Colombia</label><div className="text-2xl font-black">{formatCurrency(mImport.unitCostColombia)}</div></div><div><label className="text-[8px] font-black">Inversión Total</label><div className="text-xs opacity-50">{formatCurrency(mImport.totalLandCostCOP)}</div></div></div></div>
-                          )}
-                        </div>
-                        <div className="flex gap-2 flex-wrap">
-                          {Object.values(isWinner?WINNER_STATUS:IMPORT_STATUS).map(s=>(
-                            <button key={s.id} onClick={()=>updateDocField(p.id,'status',s.id)} className={`px-3 py-1.5 rounded-xl text-[10px] font-black border-2 ${p.status===s.id ? `bg-white ${s.activeColor} border-zinc-900` : 'bg-white border-zinc-100 text-zinc-400'}`}>{s.emoji} {s.label}</button>
-                          ))}
-                        </div>
-                        {isWinner && p.status === 'testing' && (
-                          <div className="bg-amber-50 p-3 rounded-xl space-y-2"><h4 className="text-xs font-black">🧪 Datos de Testeo</h4>{(p.testingData||getInitialWinner().testingData).map(t=><div key={t.id} className="grid grid-cols-1 md:grid-cols-3 gap-2"><input value={t.sellerName||''} onChange={(e)=>updateTestingData(p,t.id,'sellerName',e.target.value)} placeholder={`Vendedora ${t.id}`} className="bg-white border rounded-lg p-1 text-sm"/><input type="date" value={t.startDate||''} onChange={(e)=>updateTestingData(p,t.id,'startDate',e.target.value)} className="bg-white border rounded-lg p-1 text-sm"/><input type="date" value={t.endDate||''} onChange={(e)=>updateTestingData(p,t.id,'endDate',e.target.value)} className="bg-white border rounded-lg p-1 text-sm"/></div>)}</div>
-                        )}
-                        {isWinner && p.status === 'rejected' && (
-                          <textarea value={p.rejectionReason||''} onChange={(e)=>updateDocField(p.id,'rejectionReason',e.target.value)} rows={2} className="w-full border-rose-200 border rounded-lg p-2 text-sm" placeholder="Motivo de rechazo..."/>
-                        )}
-                        {!isWinner && p.status === 'approved' && (
-                          <div className="bg-white/50 rounded-2xl p-4 space-y-5 border border-emerald-200">
-                            <h4 className="text-sm font-black text-emerald-700">📋 Gestión de Compra</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📅 Fecha de Compra</label>
-                                <input type="date" value={p.purchaseDate || ''} onChange={(e) => updateDocField(p.id, 'purchaseDate', e.target.value)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💰 Anticipo (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.advancePayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.advancePayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'advancePayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">💵 Pago Total (COP)</label>
-                                <div className="flex gap-2">
-                                  <input type="number" value={p.totalPayment?.amount || 0} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'amount', parseFloat(e.target.value) || 0)} placeholder="Monto" className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  <input type="date" value={p.totalPayment?.date || ''} onChange={(e) => updateNestedField(p.id, 'totalPayment', 'date', e.target.value)} className="w-1/2 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-black text-zinc-500 mb-1">📦 Cantidad Real Comprada</label>
-                                <input type="number" value={p.actualQuantity || 0} onChange={(e) => updateDocField(p.id, 'actualQuantity', parseFloat(e.target.value) || 0)} className="w-full bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                              </div>
-                            </div>
-                            <div className="bg-indigo-50 rounded-xl p-3">
-                              <h5 className="text-[10px] font-black text-indigo-700 mb-2">🇨🇳 Saldo Pendiente con Proveedor Chino</h5>
-                              {(() => {
-                                const prodUSD = (p.prodCostUSD || 0) * (p.unitsQty || 0);
-                                const flete = p.yiwuFreightUSD || 0;
-                                const totalUSD = prodUSD + flete;
-                                const trm = p.dollarRate || 0;
-                                const valorCOP = totalUSD * trm * 1.03;
-                                const anticipo = p.advancePayment?.amount || 0;
-                                const pagoTotal = p.totalPayment?.amount || 0;
-                                const totalPagado = anticipo + pagoTotal;
-                                const saldoCOP = valorCOP - totalPagado;
-                                const saldoUSD = saldoCOP / (trm || 1);
-                                const porcentajePagado = valorCOP > 0 ? (totalPagado / valorCOP) * 100 : 0;
-                                return (
-                                  <div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                      <div>💰 Productos: {prodUSD.toFixed(2)} USD</div>
-                                      <div>🚢 Flete Yiwu: {flete.toFixed(2)} USD</div>
-                                      <div>💱 TRM: {trm.toLocaleString()} COP</div>
-                                      <div>📦 Total compra (1.03x): {formatCurrency(valorCOP)}</div>
-                                    </div>
-                                    <div className="mt-2 bg-white rounded-lg p-2">
-                                      <div className="flex justify-between"><span>Anticipo:</span><span>{formatCurrency(anticipo)}</span></div>
-                                      <div className="flex justify-between"><span>Pago Total:</span><span>{formatCurrency(pagoTotal)}</span></div>
-                                      <div className="flex justify-between"><span>Total Pagado:</span><span className="font-bold">{formatCurrency(totalPagado)}</span></div>
-                                      <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${porcentajePagado}%` }}></div>
-                                      </div>
-                                      <div className="flex justify-between font-bold mt-2">
-                                        <span className="text-amber-700">🔴 SALDO PENDIENTE:</span>
-                                        <span className={saldoCOP>0?'text-rose-600':'text-emerald-600'}>{formatCurrency(saldoCOP)}</span>
-                                      </div>
-                                      <div className="flex justify-between"><span>Saldo en USD:</span><span>${saldoUSD.toFixed(2)} USD</span></div>
-                                      {saldoCOP>0 && <div className="mt-1 text-[10px] text-amber-700 text-center">⚠️ Pendiente de pago</div>}
-                                      {saldoCOP<0 && <div className="mt-1 text-[10px] text-emerald-700 text-center">✓ Pagos superan el valor de compra. Saldo a favor</div>}
-                                      {saldoCOP===0 && valorCOP>0 && <div className="mt-1 text-[10px] text-green-700 text-center">✓ Compra pagada en totalidad</div>}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🎨 Variables (color, talla, etc.)</label>
-                              <div className="space-y-2">
-                                {(p.variables || getInitialImport().variables).map(v => (
-                                  <div key={v.id} className="flex gap-2 items-center">
-                                    <input type="text" value={v.name || ''} onChange={(e) => updateVariable(p, v.id, 'name', e.target.value)} placeholder={`Variable ${v.id}`} className="flex-1 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                    <input type="number" value={v.qty || 0} onChange={(e) => updateVariable(p, v.id, 'qty', parseFloat(e.target.value) || 0)} placeholder="Cantidad" className="w-24 bg-white border border-zinc-200 rounded-xl p-2 text-sm" />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-black text-zinc-500 mb-1">🚢 Estado de Importación</label>
-                              <div className="flex flex-wrap gap-2">
-                                {Object.values(IMPORT_STATES_LIST).map(state => (
-                                  <button key={state.id} onClick={() => updateDocField(p.id, 'importStatus', state.id)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all ${p.importStatus === state.id ? 'bg-zinc-800 text-white shadow-md' : 'bg-white text-zinc-500 border border-zinc-200'}`}>
-                                    {state.emoji} {state.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {isWinner && (
-                        <div className="w-full xl:w-1/3 bg-[#fcfdfe] p-3 border-l">
-                          <button onClick={()=>setExpandedItems({...expandedItems,[`u_${p.id}`]:!expandedItems[`u_${p.id}`]})} className={`w-full flex justify-between p-3 rounded-xl border-2 ${expandedItems[`u_${p.id}`]?'bg-zinc-900 text-white':'bg-white'}`}><span>🍱 Bundles ({mWinner.activeUpsells} Activos)</span><span>{expandedItems[`u_${p.id}`]?'▲':'▼'}</span></button>
-                          {expandedItems[`u_${p.id}`] && <div className="mt-3 space-y-2">{(p.upsells||getInitialWinner().upsells).map(u=><div key={u.id} className="bg-white p-2 rounded-xl border flex gap-2"><div className="w-12 h-12 bg-zinc-100 rounded-lg relative"><input type="file" className="absolute inset-0 opacity-0" onChange={(e)=>handleImage(e,p.id,u.id)}/>{u.image?<img src={u.image} className="w-full h-full object-cover"/>:<span className="flex items-center justify-center h-full text-xs">+</span>}</div><div className="flex-1"><input value={u.name||''} onChange={(e)=>updateUpsell(p,u.id,'name',e.target.value)} placeholder="Nombre" className="w-full text-sm font-black border-b"/><div className="flex gap-2 mt-1"><input type="number" value={u.cost||0} onChange={(e)=>updateUpsell(p,u.id,'cost',parseFloat(e.target.value)||0)} placeholder="Costo" className="w-1/2 text-xs bg-zinc-50 rounded p-1"/><input type="number" value={u.price||0} onChange={(e)=>updateUpsell(p,u.id,'price',parseFloat(e.target.value)||0)} placeholder="Venta" className="w-1/2 text-xs bg-indigo-50 rounded p-1"/></div></div><button onClick={()=>resetUpsell(p,u.id)} className="text-zinc-300">✖</button></div>)}</div>}
-                        </div>
+      {visibleProducts.length === 0 ? <EmptyState>No existen productos de Campaign Control para esta fecha.</EmptyState> :
+        visibleProducts.map(product => {
+          const productCampaigns = campaigns
+            .filter(c =>
+              c.productId === product.id &&
+              !c.archived &&
+              (!(c.effectiveStartDate || c.createdDate) || (c.effectiveStartDate || c.createdDate) <= date) &&
+              entityActiveOnDate(c, date)
+            )
+            .sort((a,b) => String(a.name || '').localeCompare(String(b.name || '')));
+          const isOpen = expandedProducts[product.id] === true;
+
+          const productCampaignIds = new Set(productCampaigns.map(c => c.id));
+          const productRegistered = new Set(
+            dailyCampaigns
+              .filter(r =>
+                r.date === date &&
+                r.productId === product.id &&
+                productCampaignIds.has(r.campaignId)
+              )
+              .map(r => r.campaignId)
+          ).size;
+          const productPending = Math.max(0, productCampaigns.length - productRegistered);
+          const productRegistrationComplete =
+            productCampaigns.length > 0 && productPending === 0;
+
+          const productAccent = ccVisualAccent(product.id || product.name);
+          return <div
+            key={product.id}
+            className={product.active === false ? 'opacity-80' : ''}
+            style={{
+              border: `3px solid ${productAccent.border}`,
+              borderRadius: '24px',
+              backgroundColor: productAccent.soft,
+              boxShadow: `0 8px 24px ${productAccent.border}14`
+            }}
+          >
+            <div className="bg-white rounded-[21px] p-4 md:p-5">
+            <button onClick={() => setExpandedProducts(x => ({ ...x, [product.id]: !isOpen }))} className="w-full flex items-center justify-between gap-3 text-left">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: productAccent.border }}></span>
+                  <h3 className="font-black uppercase text-sm" style={{ color: productAccent.text }}>{product.name}</h3>
+                  <StateBadge active={
+                    entityActiveOnDate(product, date) ||
+                    productCampaigns.some(c => entityActiveOnDate(c, date))
+                  } />
+
+                  {productCampaigns.length > 0 ? (
+                    <>
+                      <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase ${
+                        productRegistrationComplete
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        Campañas registradas {productRegistered} de {productCampaigns.length}
+                      </span>
+
+                      {productRegistrationComplete ? (
+                        <span className="px-2 py-1 rounded-full bg-emerald-500 text-white text-[8px] font-black uppercase">
+                          Al día
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full bg-rose-100 text-rose-700 text-[8px] font-black uppercase">
+                          {productPending} pendiente{productPending === 1 ? '' : 's'}
+                        </span>
                       )}
-                    </div>
-                  </div>
-                );
-              })}
+                    </>
+                  ) : (
+                    <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase">
+                      Sin campañas para esta fecha
+                    </span>
+                  )}
+                </div>
+                <p className="text-[8px] text-slate-400 mt-1">
+                  CPA máximo {fmtMoney(product.maxCpa)} · seguimiento del registro visible sin desplegar el producto
+                </p>
+              </div>
+              {isOpen ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+            </button>
+
+            {isOpen && <div className="space-y-3 mt-4 pt-4 border-t">
+              {productCampaigns.length === 0 ? <EmptyState>Este producto no tiene campañas disponibles para la fecha.</EmptyState> :
+                productCampaigns.map(campaign => {
+                  const campaignOpen = expandedCampaigns[campaign.id] === true;
+                  const existing = dailyCampaigns.find(r => r.campaignId === campaign.id && r.date === date);
+                  const previousBudgetRecord = previousCampaignBudgetCC(dailyCampaigns, campaign.id, date);
+                  const existingBudgetValue = toNumber(existing?.budget);
+                  const included = entityActiveOnDate(campaign, date);
+                  const registrationCoverage = campaignRegistrationCoverageCC(
+                    campaign,
+                    product,
+                    dailyCampaigns,
+                    lastCompleteDate
+                  );
+                  const campaignAccent = ccVisualAccent(campaign.id || campaign.name, 2);
+                  return <div
+                    key={campaign.id}
+                    className="rounded-2xl overflow-hidden"
+                    style={{
+                      border: `2px solid ${campaignAccent.border}`,
+                      backgroundColor: campaignAccent.soft
+                    }}
+                  >
+                    <button
+                      onClick={() => setExpandedCampaigns(x => ({ ...x, [campaign.id]: !campaignOpen }))}
+                      className="w-full p-3 flex items-center justify-between gap-3 text-left"
+                      style={{ backgroundColor: campaignAccent.soft }}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: campaignAccent.border }}></span>
+                          <span className="font-black text-xs uppercase" style={{ color: campaignAccent.text }}>{campaign.name}</span>
+                          <StateBadge active={included} />
+                          {existing && <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-[8px] font-black uppercase">Registrada</span>}
+                          {existingBudgetValue > 0 ? (
+                            <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-black uppercase">
+                              Presupuesto día · {fmtMoney(existingBudgetValue)}
+                            </span>
+                          ) : previousBudgetRecord ? (
+                            <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-[8px] font-black uppercase">
+                              Presupuesto previo · {fmtMoney(previousBudgetRecord.budget)}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase">
+                              Sin presupuesto previo
+                            </span>
+                          )}
+                          {registrationCoverage.requiredDays === 0 ? (
+                            <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-500 text-[8px] font-black uppercase">
+                              Sin días completos pendientes
+                            </span>
+                          ) : registrationCoverage.missingDays === 0 ? (
+                            <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-black uppercase">
+                              Histórico al día · {registrationCoverage.registeredDays}/{registrationCoverage.requiredDays}
+                            </span>
+                          ) : (
+                            <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase ${
+                              registrationCoverage.missingDays >= 4
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              Faltan {registrationCoverage.missingDays} día(s) por registrar
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[8px] text-slate-400 mt-1">
+                          {included ? 'Este día participa en diagnósticos.' : 'Este día está OFF y será excluido de diagnósticos aunque exista un registro.'}
+                        </p>
+                        <p className="text-[8px] text-slate-500 mt-1">
+                          Historial completo: {registrationCoverage.registeredDays}/{registrationCoverage.requiredDays} días activos registrados desde {registrationCoverage.startDate || '—'} hasta {registrationCoverage.throughDate || '—'}. HOY no cuenta porque es intradía; días OFF tampoco.
+                        </p>
+                      </div>
+                      {campaignOpen ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                    </button>
+                    {campaignOpen && <CampaignDailyEditor
+                      ownerUid={ownerUid}
+                      date={date}
+                      product={product}
+                      campaign={campaign}
+                      ads={ads.filter(a => a.campaignId === campaign.id)}
+                      dailyCampaigns={dailyCampaigns}
+                      dailyAds={dailyAds}
+                      recommendations={recommendations}
+                    />}
+                  </div>;
+                })
+              }
+            </div>}
             </div>
-          </>
-        )}
+          </div>;
+        })
+      }
+    </div>
+  );
+}
+
+function CampaignDailyEditor({ ownerUid, date, product, campaign, ads, dailyCampaigns, dailyAds, recommendations }) {
+  const existingCampaignRecord = dailyCampaigns.find(r => r.campaignId === campaign.id && r.date === date);
+  const [editing, setEditing] = useState(!existingCampaignRecord);
+  const [campaignForm, setCampaignForm] = useState({});
+  const [adForms, setAdForms] = useState({});
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [message, setMessage] = useState('');
+
+  const previousBudgetRecord = useMemo(
+    () => previousCampaignBudgetCC(dailyCampaigns, campaign.id, date),
+    [dailyCampaigns, campaign.id, date]
+  );
+
+  useEffect(() => {
+    const cRec = dailyCampaigns.find(r => r.campaignId === campaign.id && r.date === date);
+    const recordedBudget = toNumber(cRec?.budget);
+    const inheritedBudget = toNumber(previousBudgetRecord?.budget);
+    setCampaignForm({
+      budget: recordedBudget > 0 ? recordedBudget : (inheritedBudget > 0 ? inheritedBudget : ''), spend: cRec?.spend ?? '', purchases: cRec?.purchases ?? '',
+      ctr: cRec?.ctr ?? '', cpc: cRec?.cpc ?? '', cpm: cRec?.cpm ?? '', frequency: cRec?.frequency ?? '',
+      landingViews: cRec?.landingViews ?? '', atc: cRec?.atc ?? '', roas: cRec?.roas ?? ''
+    });
+    const nextAds = {};
+    ads.forEach(ad => {
+      const rec = dailyAds.find(r => r.adId === ad.id && r.date === date);
+      nextAds[ad.id] = {
+        spend: rec?.spend ?? '', purchases: rec?.purchases ?? '', ctr: rec?.ctr ?? '', cpc: rec?.cpc ?? '',
+        cpm: rec?.cpm ?? '', frequency: rec?.frequency ?? '', landingViews: rec?.landingViews ?? '',
+        atc: rec?.atc ?? '', roas: rec?.roas ?? '', impressions: rec?.impressions ?? '', clicks: rec?.clicks ?? ''
+      };
+    });
+    setAdForms(nextAds);
+    setEditing(!cRec);
+    setCsvPreview(null);
+  }, [date, campaign.id, dailyCampaigns, dailyAds, ads, previousBudgetRecord?.budget, previousBudgetRecord?.date]);
+
+  const recordedBudgetForDay = toNumber(existingCampaignRecord?.budget);
+  const previousBudgetValue = toNumber(previousBudgetRecord?.budget);
+  const currentBudgetValue = toNumber(campaignForm.budget);
+  const hasRecordedBudgetForDay = recordedBudgetForDay > 0;
+  const isInheritedBudget = !hasRecordedBudgetForDay && previousBudgetValue > 0 && currentBudgetValue === previousBudgetValue;
+  const isChangedFromInherited = !hasRecordedBudgetForDay && previousBudgetValue > 0 && currentBudgetValue > 0 && currentBudgetValue !== previousBudgetValue;
+  const isExistingBudgetEdited = hasRecordedBudgetForDay && editing && currentBudgetValue > 0 && currentBudgetValue !== recordedBudgetForDay;
+  const inheritedNeedsConfirmation = !!existingCampaignRecord && !hasRecordedBudgetForDay && isInheritedBudget;
+
+  const save = async () => {
+    const campaignRecordId = `${date}_${campaign.id}`;
+    const budgetValueToSave = toNumber(campaignForm.budget);
+    const budgetIsInherited = previousBudgetValue > 0 && budgetValueToSave === previousBudgetValue && !hasRecordedBudgetForDay;
+    const budgetSourceToSave = budgetIsInherited
+      ? 'inherited_previous'
+      : (hasRecordedBudgetForDay && budgetValueToSave === recordedBudgetForDay
+          ? (existingCampaignRecord?.budgetSource || 'registered')
+          : 'manual');
+
+    await setDoc(doc(db, COLLECTIONS.dailyCampaigns, campaignRecordId), {
+      ownerUid, date, productId: product.id, campaignId: campaign.id,
+      budget: budgetValueToSave,
+      budgetSource: budgetSourceToSave,
+      budgetInheritedFromDate: budgetIsInherited ? (previousBudgetRecord?.date || null) : null,
+      budgetPreviousValue: previousBudgetValue > 0 ? previousBudgetValue : null,
+      spend: toNumber(campaignForm.spend), purchases: toNumber(campaignForm.purchases),
+      ctr: toNumber(campaignForm.ctr), cpc: toNumber(campaignForm.cpc), cpm: toNumber(campaignForm.cpm),
+      frequency: toNumber(campaignForm.frequency), landingViews: toNumber(campaignForm.landingViews),
+      atc: toNumber(campaignForm.atc), roas: toNumber(campaignForm.roas),
+      source: 'manual',
+      registrationTimezone: 'America/Bogota',
+      updatedAtColombia: colombiaDateTimeStorageCC(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    for (const ad of ads) {
+      const f = adForms[ad.id] || {};
+      const hasAny = Object.values(f).some(v => v !== '' && v !== null && v !== undefined);
+      if (!hasAny) continue;
+      await setDoc(doc(db, COLLECTIONS.dailyAds, `${date}_${ad.id}`), {
+        ownerUid, date, productId: product.id, campaignId: campaign.id, adId: ad.id,
+        adName: ad.name, normalizedName: ad.normalizedName,
+        spend: toNumber(f.spend), purchases: toNumber(f.purchases), impressions: toNumber(f.impressions), clicks: toNumber(f.clicks),
+        ctr: toNumber(f.ctr), cpc: toNumber(f.cpc), cpm: toNumber(f.cpm), frequency: toNumber(f.frequency),
+        landingViews: toNumber(f.landingViews), atc: toNumber(f.atc), roas: toNumber(f.roas),
+        source: 'manual',
+        registrationTimezone: 'America/Bogota',
+        updatedAtColombia: colombiaDateTimeStorageCC(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    await detectBudgetChange({
+      ownerUid, date, campaign, currentBudget: toNumber(campaignForm.budget),
+      dailyCampaigns, recommendations
+    });
+
+    setEditing(false);
+    setMessage(
+      budgetIsInherited
+        ? `Registro guardado · presupuesto heredado confirmado en ${fmtMoney(budgetValueToSave)}.`
+        : existingCampaignRecord
+          ? 'Registro actualizado sin duplicar.'
+          : 'Registro guardado correctamente.'
+    );
+    setTimeout(() => setMessage(''), 2500);
+  };
+
+  const handleCsv = async file => {
+    if (!file) return;
+    const rows = parseCsvText(await file.text());
+    setCsvPreview(parseMetaRows(rows, ads, date, campaign));
+  };
+
+  const applyCsv = async () => {
+    if (!csvPreview) return;
+    const conflicts = csvPreview.filter(x => x.status === 'conflict');
+    if (conflicts.length) return alert('Hay nombres duplicados dentro del CSV. Debes resolverlos antes de importar.');
+
+    const imported = [];
+    for (const item of csvPreview) {
+      // Protección crítica: un anuncio marcado como desactivado/pausado
+      // en el CSV de Meta NO se crea y NO genera registro diario.
+      if (item.status === 'ignored_inactive' || item.ignoredFromImport) continue;
+
+      let ad = item.existingAd;
+      if (!ad) {
+        const ref = await addDoc(collection(db, COLLECTIONS.ads), {
+          ownerUid, productId: product.id, campaignId: campaign.id,
+          name: item.adName, normalizedName: item.normalizedName,
+          active: entityActiveOnDate(campaign, item.reportDate),
+          createdDate: item.reportDate || date,
+          stateChangedDate: item.reportDate || date,
+          stateHistory: [{ date: item.reportDate || date, active: entityActiveOnDate(campaign, item.reportDate || date) }],
+          createdAt: serverTimestamp(), stateChangedAt: serverTimestamp()
+        });
+        ad = { id: ref.id, name: item.adName, normalizedName: item.normalizedName };
+      }
+
+      await setDoc(doc(db, COLLECTIONS.dailyAds, `${item.reportDate}_${ad.id}`), {
+        ownerUid, date: item.reportDate, productId: product.id, campaignId: campaign.id,
+        adId: ad.id, adName: ad.name, normalizedName: ad.normalizedName,
+        ...item.metrics,
+        source: item.syntheticZero ? 'meta_csv_zero_fill' : 'meta_csv',
+        metaOmittedNoDelivery: item.syntheticZero === true,
+        registrationTimezone: 'America/Bogota',
+        updatedAtColombia: colombiaDateTimeStorageCC(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      imported.push(item);
+    }
+
+    const byDate = {};
+    imported.forEach(item => {
+      if (!byDate[item.reportDate]) byDate[item.reportDate] = [];
+      byDate[item.reportDate].push({ ...item.metrics, date: item.reportDate });
+    });
+
+    for (const [reportDate, metrics] of Object.entries(byDate)) {
+      const agg = aggregateRecords(metrics);
+      const existing = dailyCampaigns.find(r => r.campaignId === campaign.id && r.date === reportDate);
+      const previousBudgetForImport = previousCampaignBudgetCC(dailyCampaigns, campaign.id, reportDate);
+      const existingBudgetForImport = toNumber(existing?.budget);
+      const visibleBudgetForSelectedDate = reportDate === date ? toNumber(campaignForm.budget) : 0;
+      const budgetForImport = existingBudgetForImport > 0
+        ? existingBudgetForImport
+        : visibleBudgetForSelectedDate > 0
+          ? visibleBudgetForSelectedDate
+          : toNumber(previousBudgetForImport?.budget);
+      const inheritedImportBudget = existingBudgetForImport <= 0 &&
+        previousBudgetForImport?.budget > 0 &&
+        budgetForImport === toNumber(previousBudgetForImport.budget);
+
+      await setDoc(doc(db, COLLECTIONS.dailyCampaigns, `${reportDate}_${campaign.id}`), {
+        ownerUid, date: reportDate, productId: product.id, campaignId: campaign.id,
+        budget: budgetForImport,
+        budgetSource: inheritedImportBudget ? 'inherited_previous' : (existing?.budgetSource || 'manual'),
+        budgetInheritedFromDate: inheritedImportBudget ? previousBudgetForImport?.date || null : null,
+        budgetPreviousValue: previousBudgetForImport?.budget || null,
+        spend: agg.spend, purchases: agg.purchases, ctr: agg.ctr, cpc: agg.cpc, cpm: agg.cpm,
+        frequency: agg.frequency, landingViews: agg.landingViews, atc: agg.atc, roas: agg.roas,
+        source: 'meta_csv_aggregate',
+        registrationTimezone: 'America/Bogota',
+        updatedAtColombia: colombiaDateTimeStorageCC(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    await addDoc(collection(db, COLLECTIONS.imports), {
+      ownerUid, productId: product.id, campaignId: campaign.id,
+      requestedDate: date,
+      rows: imported.length,
+      newAds: csvPreview.filter(x => x.status === 'new').length,
+      existingAds: csvPreview.filter(x => x.status === 'existing').length,
+      zeroFilledAds: csvPreview.filter(x => x.status === 'zero_fill').length,
+      ignoredInactiveAds: csvPreview.filter(x => x.status === 'ignored_inactive').length,
+      registrationTimezone: 'America/Bogota',
+      importedAtColombia: colombiaDateTimeStorageCC(),
+      importedAt: serverTimestamp()
+    });
+
+    const zeroFilledCount = imported.filter(x => x.status === 'zero_fill').length;
+    const ignoredInactiveCount = csvPreview.filter(x => x.status === 'ignored_inactive').length;
+    const metaRowsCount = imported.length - zeroFilledCount;
+    setCsvPreview(null);
+    setMessage(
+      `CSV importado: ${metaRowsCount} anuncio(s) procesados` +
+      `${zeroFilledCount > 0 ? ` + ${zeroFilledCount} activo(s) sin entrega guardados en cero` : ''}` +
+      `${ignoredInactiveCount > 0 ? ` · ${ignoredInactiveCount} desactivado(s) en Meta ignorados y NO creados` : ''}.`
+    );
+    setTimeout(() => setMessage(''), 4000);
+  };
+
+  const included = entityActiveOnDate(campaign, date);
+
+  return <div className="p-3 space-y-4 bg-white">
+    <div className={`rounded-xl p-3 border ${included ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-200'}`}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+        <div>
+          <p className="text-[9px] font-black uppercase">{existingCampaignRecord ? 'Registro existente' : 'Nuevo registro'}</p>
+          <p className="text-[8px] text-slate-500 mt-1">{existingCampaignRecord ? 'Para evitar duplicados, primero debes presionar Editar. Al guardar se actualiza el documento existente.' : 'Completa manualmente o importa el CSV de Meta.'}</p>
+        </div>
+        {existingCampaignRecord && !editing && <button onClick={() => setEditing(true)} className="bg-amber-500 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase flex items-center gap-1"><Pencil size={12}/> Editar</button>}
       </div>
-      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
-            <div className="p-6">{renderCreationForm()}{formError && <div className="bg-rose-100 text-rose-700 p-3 rounded-xl mt-4 text-center text-sm">{formError}</div>}<button onClick={handleSave} disabled={isSaving} className="w-full mt-6 bg-zinc-900 text-white py-4 rounded-2xl font-black">{isSaving?'Guardando...':'Confirmar Registro'}</button></div>
+    </div>
+
+    <div className="rounded-2xl p-3 bg-indigo-50/50" style={{border:'2px solid #6366f1'}}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+        <div><p className="font-black text-xs uppercase text-indigo-800">Importar CSV de Meta Ads</p><p className="text-[8px] text-slate-400 mt-1">El archivo se aplica solo a {campaign.name}. Matching por nombre normalizado; nunca por ID de Meta. Los anuncios activos que Meta omita por no tener entrega se completan automáticamente en 0. Si el CSV marca un anuncio como desactivado/pausado, se ignora y NO se crea en la plataforma.</p></div>
+        <label className="cursor-pointer bg-zinc-950 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase flex items-center gap-2"><FileUp size={13}/> Seleccionar CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={e => handleCsv(e.target.files?.[0])}/></label>
+      </div>
+      {csvPreview && <CsvPreview rows={csvPreview} onApply={applyCsv}/>}
+    </div>
+
+    <div className="rounded-2xl p-3 bg-blue-50/40" style={{border:'2px solid #2563eb'}}>
+      <p className="font-black text-xs uppercase mb-3 text-blue-800">Métricas generales de campaña</p>
+
+      <div className={`rounded-xl border p-3 mb-3 ${
+        isExistingBudgetEdited || isChangedFromInherited
+          ? 'bg-blue-50 border-blue-200'
+          : hasRecordedBudgetForDay
+            ? 'bg-emerald-50 border-emerald-200'
+            : isInheritedBudget
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-slate-50 border-slate-200'
+      }`}>
+        {isExistingBudgetEdited ? <>
+          <p className="text-[9px] font-black uppercase text-blue-700">Presupuesto modificado · pendiente de guardar</p>
+          <p className="text-[8px] text-blue-600 mt-1">
+            Registrado para este día: <strong>{fmtMoney(recordedBudgetForDay)}</strong> → nuevo valor: <strong>{fmtMoney(currentBudgetValue)}</strong>.
+          </p>
+        </> : isChangedFromInherited ? <>
+          <p className="text-[9px] font-black uppercase text-blue-700">Presupuesto actualizado para este día</p>
+          <p className="text-[8px] text-blue-600 mt-1">
+            Presupuesto anterior: <strong>{fmtMoney(previousBudgetValue)}</strong> ({previousBudgetRecord?.date || '—'}) → nuevo: <strong>{fmtMoney(currentBudgetValue)}</strong>. Al guardar quedará registrado el cambio.
+          </p>
+        </> : hasRecordedBudgetForDay ? <>
+          <p className="text-[9px] font-black uppercase text-emerald-700">Presupuesto registrado para este día</p>
+          <p className="text-[8px] text-emerald-600 mt-1">
+            Este registro ya tiene <strong>{fmtMoney(recordedBudgetForDay)}</strong> como presupuesto. Si Meta cambió el presupuesto, presiona Editar y actualízalo.
+          </p>
+        </> : isInheritedBudget ? <>
+          <p className="text-[9px] font-black uppercase text-amber-700">Presupuesto heredado del registro anterior</p>
+          <p className="text-[8px] text-amber-700 mt-1">
+            Se precargó <strong>{fmtMoney(previousBudgetValue)}</strong>, último presupuesto registrado el <strong>{previousBudgetRecord?.date || '—'}</strong>. Verifica si continúa igual antes de guardar.
+          </p>
+          {inheritedNeedsConfirmation && <p className="text-[8px] font-black text-amber-800 mt-1">Este día existía sin presupuesto confirmado. Presiona Editar y Guardar para confirmarlo.</p>}
+        </> : <>
+          <p className="text-[9px] font-black uppercase text-slate-600">Sin presupuesto anterior</p>
+          <p className="text-[8px] text-slate-500 mt-1">No encontramos un presupuesto registrado antes de esta fecha. Ingresa el presupuesto de Meta para este día.</p>
+        </>}
+      </div>
+
+      <MetricForm form={campaignForm} setForm={setCampaignForm} includeBudget disabled={!editing}/>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+        <MiniCard label="CPA calculado" value={fmtCpa(calcCpa(campaignForm.spend, campaignForm.purchases))}/>
+        <MiniCard label="Visita → ATC" value={`${fmtNum(safeRate(campaignForm.atc, campaignForm.landingViews), 2)}%`}/>
+        <MiniCard label="Visita → Compra" value={`${fmtNum(safeRate(campaignForm.purchases, campaignForm.landingViews), 2)}%`}/>
+        <MiniCard label="ATC → Compra" value={`${fmtNum(safeRate(campaignForm.purchases, campaignForm.atc), 2)}%`}/>
+      </div>
+    </div>
+
+    <div className="rounded-2xl p-3 bg-emerald-50/40" style={{border:'2px solid #059669'}}>
+      <p className="font-black text-xs uppercase mb-3 text-emerald-800">Anuncios de la campaña</p>
+      {ads.length === 0 ? <EmptyState>No hay anuncios. Puedes crearlos en Ver campañas o importarlos desde un CSV.</EmptyState> :
+        <div className="space-y-3">{ads.map(ad => {
+          const f = adForms[ad.id] || {};
+          const activeThisDate = entityActiveOnDate(ad, date) && entityActiveOnDate(campaign, date);
+          const adAccent = ccVisualAccent(ad.id || ad.name, 4);
+          return <div
+            key={ad.id}
+            className={`rounded-2xl p-3 ${activeThisDate ? '' : 'opacity-75'}`}
+            style={{
+              border: `2px solid ${adAccent.border}`,
+              backgroundColor: activeThisDate ? adAccent.soft : '#f8fafc'
+            }}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: adAccent.border }}></span>
+                  <p className="font-black text-xs" style={{ color: adAccent.text }}>{ad.name}</p>
+                </div>
+                <p className="text-[8px] text-slate-400">{activeThisDate ? 'Activo en esta fecha · incluido en análisis' : 'OFF en esta fecha · excluido de análisis'}</p>
+              </div>
+              <div className="text-right"><p className="text-[8px] font-black uppercase text-slate-400">CPA</p><p className="font-black">{fmtCpa(calcCpa(f.spend, f.purchases))}</p></div>
+            </div>
+            <MetricForm form={f} disabled={!editing} setForm={next => setAdForms(prev => ({ ...prev, [ad.id]: typeof next === 'function' ? next(prev[ad.id] || {}) : next }))}/>
+          </div>;
+        })}</div>
+      }
+    </div>
+
+    {editing && <button onClick={save} className="w-full bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><Save size={14}/> {existingCampaignRecord ? 'Actualizar registro' : 'Guardar registro'}</button>}
+    {message && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl p-3 text-[10px] font-black">✓ {message}</div>}
+  </div>;
+}
+
+
+function DailyRegister({ ownerUid, products, campaigns, ads, dailyCampaigns, dailyAds, recommendations }) {
+  const [date, setDate] = useState(todayColombiaCC());
+  const [productId, setProductId] = useState('');
+  const [campaignId, setCampaignId] = useState('');
+  const [campaignForm, setCampaignForm] = useState({ budget: '', spend: '', purchases: '', ctr: '', cpc: '', cpm: '', frequency: '', landingViews: '', atc: '', roas: '' });
+  const [adForms, setAdForms] = useState({});
+  const [savedMessage, setSavedMessage] = useState('');
+  const [csvPreview, setCsvPreview] = useState(null);
+
+  const availableProducts = products.filter(p => p.active !== false);
+  const productCampaigns = campaigns.filter(c => c.productId === productId && !c.archived);
+  const selectedCampaign = campaigns.find(c => c.id === campaignId) || null;
+  const campaignAds = ads.filter(a => a.campaignId === campaignId);
+
+  useEffect(() => {
+    setCampaignId('');
+    setCsvPreview(null);
+  }, [productId]);
+
+  useEffect(() => {
+    if (!campaignId) {
+      setCampaignForm({ budget: '', spend: '', purchases: '', ctr: '', cpc: '', cpm: '', frequency: '', landingViews: '', atc: '', roas: '' });
+      setAdForms({});
+      return;
+    }
+    const cRec = dailyCampaigns.find(r => r.campaignId === campaignId && r.date === date);
+    setCampaignForm({
+      budget: cRec?.budget ?? '', spend: cRec?.spend ?? '', purchases: cRec?.purchases ?? '', ctr: cRec?.ctr ?? '', cpc: cRec?.cpc ?? '', cpm: cRec?.cpm ?? '',
+      frequency: cRec?.frequency ?? '', landingViews: cRec?.landingViews ?? '', atc: cRec?.atc ?? '', roas: cRec?.roas ?? ''
+    });
+    const forms = {};
+    campaignAds.forEach(ad => {
+      const rec = dailyAds.find(r => r.adId === ad.id && r.date === date);
+      forms[ad.id] = { spend: rec?.spend ?? '', purchases: rec?.purchases ?? '', ctr: rec?.ctr ?? '', cpc: rec?.cpc ?? '', cpm: rec?.cpm ?? '', frequency: rec?.frequency ?? '', landingViews: rec?.landingViews ?? '', atc: rec?.atc ?? '', roas: rec?.roas ?? '', impressions: rec?.impressions ?? '', clicks: rec?.clicks ?? '' };
+    });
+    setAdForms(forms);
+    setCsvPreview(null);
+  }, [campaignId, date, dailyCampaigns, dailyAds, ads]);
+
+  const saveAll = async () => {
+    if (!productId || !campaignId) return alert('Selecciona producto y campaña.');
+    const campaignRecordId = `${date}_${campaignId}`;
+    const campaignData = {
+      ownerUid, date, productId, campaignId,
+      budget: toNumber(campaignForm.budget), spend: toNumber(campaignForm.spend), purchases: toNumber(campaignForm.purchases),
+      ctr: toNumber(campaignForm.ctr), cpc: toNumber(campaignForm.cpc), cpm: toNumber(campaignForm.cpm), frequency: toNumber(campaignForm.frequency),
+      landingViews: toNumber(campaignForm.landingViews), atc: toNumber(campaignForm.atc), roas: toNumber(campaignForm.roas), updatedAt: serverTimestamp()
+    };
+    await setDoc(doc(db, COLLECTIONS.dailyCampaigns, campaignRecordId), campaignData, { merge: true });
+
+    for (const ad of campaignAds) {
+      const f = adForms[ad.id] || {};
+      const hasData = Object.values(f).some(v => v !== '' && toNumber(v) !== 0);
+      if (!hasData) continue;
+      await setDoc(doc(db, COLLECTIONS.dailyAds, `${date}_${ad.id}`), {
+        ownerUid, date, productId, campaignId, adId: ad.id, adName: ad.name, normalizedName: ad.normalizedName,
+        spend: toNumber(f.spend), purchases: toNumber(f.purchases), impressions: toNumber(f.impressions), clicks: toNumber(f.clicks),
+        ctr: toNumber(f.ctr), cpc: toNumber(f.cpc), cpm: toNumber(f.cpm), frequency: toNumber(f.frequency), landingViews: toNumber(f.landingViews), atc: toNumber(f.atc), roas: toNumber(f.roas), updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    await detectBudgetChange({ ownerUid, date, campaign: selectedCampaign, currentBudget: toNumber(campaignForm.budget), dailyCampaigns, recommendations });
+    setSavedMessage('Registro guardado / actualizado correctamente.');
+    setTimeout(() => setSavedMessage(''), 2500);
+  };
+
+  const handleCsv = async file => {
+    if (!file || !campaignId) return;
+    const text = await file.text();
+    const rows = parseCsvText(text);
+    const parsed = parseMetaRows(rows, campaignAds, date, selectedCampaign);
+    setCsvPreview(parsed);
+  };
+
+  const applyCsv = async () => {
+    if (!csvPreview || !selectedCampaign) return;
+    if (csvPreview.some(x => x.status === 'conflict')) return alert('Hay nombres duplicados dentro del CSV. Resuelve el conflicto antes de importar.');
+    const imported = [];
+
+    for (const item of csvPreview) {
+      // Protección crítica: un anuncio marcado como desactivado/pausado
+      // en el CSV de Meta NO se crea y NO genera registro diario.
+      if (item.status === 'ignored_inactive' || item.ignoredFromImport) continue;
+
+      let ad = item.existingAd;
+      if (!ad) {
+        const ref = await addDoc(collection(db, COLLECTIONS.ads), {
+          ownerUid,
+          productId,
+          campaignId,
+          name: item.adName,
+          normalizedName: item.normalizedName,
+          active: selectedCampaign.active !== false,
+          createdDate: item.reportDate || date,
+          createdAt: serverTimestamp(),
+          stateChangedAt: serverTimestamp()
+        });
+        ad = { id: ref.id, name: item.adName, normalizedName: item.normalizedName };
+      }
+      await setDoc(doc(db, COLLECTIONS.dailyAds, `${item.reportDate}_${ad.id}`), {
+        ownerUid,
+        date: item.reportDate,
+        productId,
+        campaignId,
+        adId: ad.id,
+        adName: ad.name,
+        normalizedName: ad.normalizedName,
+        ...item.metrics,
+        source: 'meta_csv',
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      imported.push(item);
+    }
+
+    // Agregado automático a nivel campaña. El presupuesto se conserva manualmente.
+    const byDate = {};
+    imported.forEach(item => {
+      if (!byDate[item.reportDate]) byDate[item.reportDate] = [];
+      byDate[item.reportDate].push({ ...item.metrics, date: item.reportDate });
+    });
+    for (const [reportDate, metrics] of Object.entries(byDate)) {
+      const agg = aggregateRecords(metrics);
+      const existing = dailyCampaigns.find(r => r.campaignId === campaignId && r.date === reportDate);
+      await setDoc(doc(db, COLLECTIONS.dailyCampaigns, `${reportDate}_${campaignId}`), {
+        ownerUid, date: reportDate, productId, campaignId,
+        budget: toNumber(existing?.budget),
+        spend: agg.spend, purchases: agg.purchases, ctr: agg.ctr, cpc: agg.cpc, cpm: agg.cpm,
+        frequency: agg.frequency, landingViews: agg.landingViews, atc: agg.atc, roas: agg.roas,
+        source: 'meta_csv_aggregate', updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    const ignoredInactiveCount = csvPreview.filter(x => x.status === 'ignored_inactive').length;
+    setSavedMessage(
+      `CSV importado: ${imported.length} anuncio(s) procesados` +
+      `${ignoredInactiveCount > 0 ? ` · ${ignoredInactiveCount} desactivado(s) en Meta ignorados y NO creados` : ''}.`
+    );
+    setCsvPreview(null);
+    setTimeout(() => setSavedMessage(''), 3000);
+  };
+
+  return (
+    <div className="space-y-5">
+      <SectionCard>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div><p className="text-[9px] font-black uppercase text-slate-400 mb-1">Fecha</p><input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-xs font-black" /></div>
+          <div><p className="text-[9px] font-black uppercase text-slate-400 mb-1">Producto</p><select value={productId} onChange={e => setProductId(e.target.value)} className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-xs font-black"><option value="">Seleccionar...</option>{availableProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+          <div><p className="text-[9px] font-black uppercase text-slate-400 mb-1">Campaña</p><select value={campaignId} onChange={e => setCampaignId(e.target.value)} disabled={!productId} className="w-full bg-slate-50 rounded-xl px-3 py-2.5 text-xs font-black disabled:opacity-40"><option value="">Seleccionar...</option>{productCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}{c.active === false ? ' (OFF)' : ''}</option>)}</select></div>
+        </div>
+      </SectionCard>
+
+      {selectedCampaign && <>
+        <SectionCard>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+            <div><h3 className="font-black uppercase text-sm">Importar CSV de Meta Ads</h3><p className="text-[9px] text-slate-400">Se aplica únicamente a <strong>{selectedCampaign.name}</strong>. Matching por nombre normalizado, nunca por ID de Meta.</p></div>
+            <label className="cursor-pointer bg-zinc-950 text-white px-4 py-2.5 rounded-xl text-[9px] font-black uppercase flex items-center gap-2"><FileUp size={14} /> Seleccionar CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={e => handleCsv(e.target.files?.[0])} /></label>
+          </div>
+          {csvPreview && <CsvPreview rows={csvPreview} onApply={applyCsv} />}
+        </SectionCard>
+
+        <SectionCard>
+          <h3 className="font-black uppercase text-sm mb-3">Métricas generales de campaña</h3>
+          <MetricForm form={campaignForm} setForm={setCampaignForm} includeBudget />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+            <MiniCard label="CPA calculado" value={fmtCpa(calcCpa(campaignForm.spend, campaignForm.purchases))} />
+            <MiniCard label="Visita → ATC" value={`${fmtNum(safeRate(campaignForm.atc, campaignForm.landingViews), 2)}%`} />
+            <MiniCard label="Visita → Compra" value={`${fmtNum(safeRate(campaignForm.purchases, campaignForm.landingViews), 2)}%`} />
+            <MiniCard label="ATC → Compra" value={`${fmtNum(safeRate(campaignForm.purchases, campaignForm.atc), 2)}%`} />
+          </div>
+        </SectionCard>
+
+        <SectionCard>
+          <h3 className="font-black uppercase text-sm mb-3">Anuncios de la campaña</h3>
+          {campaignAds.length === 0 ? <EmptyState>No hay anuncios. Puedes crearlos desde Ver campañas o importarlos desde el CSV.</EmptyState> : <div className="space-y-3">{campaignAds.map(ad => {
+            const f = adForms[ad.id] || {};
+            return <div key={ad.id} className="border rounded-2xl p-3">
+              <div className="flex items-center justify-between mb-3"><div><p className="font-black text-xs">{ad.name}</p><p className="text-[8px] text-slate-400">{ad.active === false ? 'OFF · el registro no cambia su estado' : 'ON'}</p></div><div className="text-right"><p className="text-[8px] uppercase font-black text-slate-400">CPA</p><p className="font-black text-sm">{fmtCpa(calcCpa(f.spend, f.purchases))}</p></div></div>
+              <MetricForm form={f} setForm={next => setAdForms(s => ({ ...s, [ad.id]: typeof next === 'function' ? next(s[ad.id] || {}) : next }))} />
+            </div>;
+          })}</div>}
+          <button onClick={saveAll} className="w-full mt-4 bg-emerald-500 text-zinc-950 py-3 rounded-xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><Save size={14} /> Guardar / actualizar día</button>
+          {savedMessage && <div className="mt-3 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl p-3 text-[10px] font-black">✓ {savedMessage}</div>}
+        </SectionCard>
+      </>}
+    </div>
+  );
+}
+
+function MetricForm({ form, setForm, includeBudget = false, disabled = false }) {
+  const fields = [
+    ...(includeBudget ? [['budget', 'Presupuesto']] : []),
+    ['spend', 'Gasto'], ['purchases', 'Compras'], ['ctr', 'CTR %'], ['cpc', 'CPC'], ['cpm', 'CPM'], ['frequency', 'Frecuencia'], ['landingViews', 'Landing'], ['atc', 'ATC'], ['roas', 'ROAS']
+  ];
+  const update = (key, value) => {
+    if (disabled) return;
+    setForm(prev => ({ ...(prev || {}), [key]: value }));
+  };
+  return <div className="grid grid-cols-2 md:grid-cols-5 gap-2">{fields.map(([key, label]) => <div key={key}><p className="text-[8px] font-black uppercase text-slate-400 mb-1">{label}</p><input disabled={disabled} type="number" step="any" value={form?.[key] ?? ''} onChange={e => update(key, e.target.value)} className="w-full bg-slate-50 border border-transparent focus:border-emerald-300 rounded-xl px-2.5 py-2 text-xs font-bold outline-none disabled:opacity-60 disabled:bg-slate-100" /></div>)}</div>;
+}
+
+function CsvPreview({ rows, onApply }) {
+  const existing = rows.filter(r => r.status === 'existing').length;
+  const news = rows.filter(r => r.status === 'new').length;
+  const zeroFilled = rows.filter(r => r.status === 'zero_fill').length;
+  const ignoredInactive = rows.filter(r => r.status === 'ignored_inactive').length;
+  const conflicts = rows.filter(r => r.status === 'conflict').length;
+
+  return <div className="space-y-3 rounded-2xl p-3 bg-amber-50/50" style={{border:'2px solid #d97706'}}>
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <MiniCard label="Existentes Meta" value={existing} tone="good" />
+      <MiniCard label="Nuevos" value={news} />
+      <MiniCard label="Activos sin entrega → 0" value={zeroFilled} tone={zeroFilled ? 'default' : 'good'} />
+      <MiniCard label="Desactivados ignorados" value={ignoredInactive} tone={ignoredInactive ? 'default' : 'good'} />
+      <MiniCard label="Conflictos" value={conflicts} tone={conflicts ? 'bad' : 'default'} />
+    </div>
+
+    {zeroFilled > 0 && (
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+        <p className="text-[9px] font-black uppercase text-blue-700">Meta omitió {zeroFilled} anuncio(s) activo(s) sin entrega</p>
+        <p className="text-[8px] text-blue-600 mt-1">
+          El sistema los agregará automáticamente para ese día con gasto, impresiones, clics, compras y demás métricas en 0.
+          Esto permite que el día exista en el histórico del anuncio. Los anuncios OFF no se completan con ceros.
+        </p>
+      </div>
+    )}
+
+    {ignoredInactive > 0 && (
+      <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
+        <p className="text-[9px] font-black uppercase text-slate-700">Desactivados en Meta: {ignoredInactive}</p>
+        <p className="text-[8px] text-slate-600 mt-1">
+          Estas filas se muestran solo para control. Al importar no se crea el anuncio, no se guarda un registro diario y no entra al agregado de campaña.
+        </p>
+      </div>
+    )}
+
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-[10px]">
+        <thead>
+          <tr className="text-left text-[8px] uppercase text-slate-400">
+            <th>Anuncio</th><th>Estado</th><th>Fecha</th><th>Gasto</th><th>Compras</th><th>CTR</th><th>CPC</th><th>CPM</th><th>Frec.</th><th>Landing</th><th>ATC</th><th>ROAS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => <tr
+            key={`${r.reportDate}-${r.normalizedName}-${i}`}
+            className={`border-t ${
+              r.status === 'zero_fill'
+                ? 'bg-blue-50/70'
+                : r.status === 'ignored_inactive'
+                  ? 'bg-slate-100/80 opacity-70'
+                  : ''
+            }`}
+          >
+            <td className="py-2 font-black">{r.adName}</td>
+            <td className={`font-black ${
+              r.status === 'conflict' ? 'text-rose-600' :
+              r.status === 'new' ? 'text-amber-600' :
+              r.status === 'zero_fill' ? 'text-blue-600' :
+              r.status === 'ignored_inactive' ? 'text-slate-500' :
+              'text-emerald-600'
+            }`}>
+              {r.status === 'existing'
+                ? 'Reportado por Meta'
+                : r.status === 'new'
+                  ? 'Nuevo anuncio'
+                  : r.status === 'zero_fill'
+                    ? 'Activo · Meta sin entrega → 0'
+                    : r.status === 'ignored_inactive'
+                      ? `Ignorado · desactivado en Meta${r.deliveryRaw ? ` (${r.deliveryRaw})` : ''}`
+                      : 'Conflicto'}
+            </td>
+            <td>{r.reportDate}</td>
+            <td>{fmtMoney(r.metrics.spend)}</td>
+            <td>{fmtNum(r.metrics.purchases, 2)}</td>
+            <td>{fmtNum(r.metrics.ctr, 2)}%</td>
+            <td>{fmtMoney(r.metrics.cpc)}</td>
+            <td>{fmtMoney(r.metrics.cpm)}</td>
+            <td>{fmtNum(r.metrics.frequency, 2)}</td>
+            <td>{fmtNum(r.metrics.landingViews, 2)}</td>
+            <td>{fmtNum(r.metrics.atc, 2)}</td>
+            <td>{fmtNum(r.metrics.roas, 2)}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+
+    <button
+      onClick={onApply}
+      disabled={conflicts > 0}
+      className="bg-zinc-950 text-white px-4 py-2.5 rounded-xl text-[9px] font-black uppercase disabled:opacity-30"
+    >
+      Importar válidos · ignorar desactivados
+    </button>
+  </div>;
+}
+
+
+async function detectBudgetChange({ ownerUid, date, campaign, currentBudget, dailyCampaigns, recommendations }) {
+  if (!campaign || currentBudget <= 0) return;
+  const previousRecords = dailyCampaigns
+    .filter(r => r.campaignId === campaign.id && r.date < date && toNumber(r.budget) > 0)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const previousBudget = toNumber(previousRecords[0]?.budget);
+  if (!previousBudget || previousBudget === currentBudget) return;
+
+  const recommendation = recommendations
+    .filter(r => r.campaignId === campaign.id && r.type === 'budget' && r.status === 'active')
+    .sort((a, b) => String(b.createdDate || '').localeCompare(String(a.createdDate || '')))
+    .find(r => toNumber(r.recommendedBudget) === currentBudget);
+
+  const origin = recommendation ? 'recommendation' : 'manual';
+  await setDoc(doc(db, COLLECTIONS.budgetChanges, `${campaign.id}_${date}`), {
+    ownerUid,
+    productId: campaign.productId,
+    campaignId: campaign.id,
+    date,
+    previousBudget,
+    newBudget: currentBudget,
+    changePct: ((currentBudget - previousBudget) / previousBudget) * 100,
+    origin,
+    recommendationId: recommendation?.id || null,
+    createdAt: serverTimestamp()
+  }, { merge: true });
+
+  if (recommendation) await updateDoc(doc(db, COLLECTIONS.recommendations, recommendation.id), { status: 'applied', appliedDate: date, appliedAt: serverTimestamp() });
+
+  await addDoc(collection(db, COLLECTIONS.decisions), {
+    ownerUid,
+    productId: campaign.productId,
+    campaignId: campaign.id,
+    adId: null,
+    date,
+    action: origin === 'recommendation' ? 'Recomendación de presupuesto aplicada' : 'Cambio manual de presupuesto',
+    detail: `${fmtMoney(previousBudget)} → ${fmtMoney(currentBudget)} (${fmtNum(((currentBudget - previousBudget) / previousBudget) * 100, 2)}%)`,
+    createdAt: serverTimestamp()
+  });
+}
+
+// ─── APP PRINCIPAL ───────────────────────────────────────────────────────────
+export default function App() {
+  const { user, loading } = useAuth();
+  const [configs, setConfigs] = useState([]);
+  const [months, setMonths] = useState([]);
+  const [activeTab, setTab] = useState('dashboard');
+
+  useEffect(() => {
+    if (!user) return;
+    const u1 = onSnapshot(collection(db, 'sales_configs'), snap => setConfigs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const u2 = onSnapshot(collection(db, 'sales_months'), snap => setMonths(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { u1(); u2(); };
+  }, [user]);
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100"><p className="text-slate-400">Cargando...</p></div>;
+  if (!user) return <Login />;
+
+  const tabs = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'records', icon: ClipboardList, label: 'Cierres' },
+    { id: 'config', icon: Settings, label: 'Estrategias' },
+    { id: 'agenda', icon: CalendarDays, label: 'Agenda' },
+    { id: 'campaignControl', icon: BarChart3, label: 'Campaign Control' }
+  ];
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'DM Sans', sans-serif", color: '#0f172a', paddingBottom: '5rem' }}>
+      <header style={{ background: '#09090b', position: 'sticky', top: 0, zIndex: 40 }}>
+        <div style={{ maxWidth: '72rem', margin: '0 auto', padding: '0.75rem 1rem' }}>
+          <div className="flex justify-between items-center">
+            <div><p className="font-black italic text-emerald-400 text-sm md:text-base">Winner System 360</p><p className="text-[9px] md:text-[10px] font-bold text-zinc-500 tracking-widest">Control Ventas · Contraentrega CO</p></div>
+            <div className="flex items-center gap-3">
+              <nav className="flex gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                {tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-wider transition-all ${activeTab === t.id ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-500'}`}><t.icon size={12} /><span className="hidden sm:inline">{t.label}</span></button>))}
+              </nav>
+              <button onClick={() => { import('./src/firebase').then(({ logout }) => logout()); }} className="bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase">Salir</button>
+            </div>
           </div>
         </div>
-      )}
+      </header>
+      <main style={{ maxWidth: '72rem', margin: '0 auto', padding: '1rem 1rem 3rem' }}>
+        {activeTab === 'dashboard' && <VistaDashboard configs={configs} months={months} />}
+        {activeTab === 'records' && <VistaRegistro configs={configs} months={months} activeTab={activeTab} />}
+        {activeTab === 'config' && <VistaConfig configs={configs} />}
+        {activeTab === 'agenda' && <AgendaModule />}
+        {activeTab === 'campaignControl' && <CampaignControlModule />}
+      </main>
     </div>
   );
 }
