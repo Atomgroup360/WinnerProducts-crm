@@ -922,7 +922,7 @@ export default function App() {
   const [userRole,setUserRole]=useState(null);
   const [roleLoading,setRoleLoading]=useState(true);
   const [mobileMenu,setMobileMenu]=useState(false);
-  const [theme,setTheme]=useState(()=>localStorage.getItem('winner-theme')||'light');
+  const [theme,setTheme]=useState('light');
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -946,8 +946,19 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');if(user)localStorage.setItem('winner-theme:'+user.uid,theme);},[theme,user]);
-  useEffect(()=>{if(user)setTheme(localStorage.getItem('winner-theme:'+user.uid)||'light');},[user?.uid]);
+  useEffect(()=>{
+    const stored = user ? localStorage.getItem('winner-theme:'+user.uid) : null;
+    setTheme(stored === 'dark' ? 'dark' : 'light');
+  },[user?.uid]);
+  useEffect(()=>{
+    document.documentElement.classList.toggle('dark',theme==='dark');
+    document.documentElement.style.colorScheme=theme;
+  },[theme]);
+  const toggleTheme=()=>{
+    const next=theme==='light'?'dark':'light';
+    setTheme(next);
+    if(user)localStorage.setItem('winner-theme:'+user.uid,next);
+  };
   useEffect(()=>{
     if(!user){setUserRole(null);setRoleLoading(false);return;}
     setRoleLoading(true);
@@ -961,7 +972,7 @@ export default function App() {
   },[user]);
   useEffect(()=>{if(userRole==='digital'&&activeModule!=='digital')setActiveModule('digital');},[userRole,activeModule]);
   useEffect(() => {
-    if (!user || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts' || activeModule === 'digital') return;
+    if (!user || userRole !== 'admin' || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts' || activeModule === 'digital') return;
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -973,7 +984,7 @@ export default function App() {
       setTimeout(() => setNotification(''), 4000);
     });
     return () => unsubscribe();
-  }, [user, activeModule]);
+  }, [user, userRole, activeModule]);
 
   const uniqueSuppliers = useMemo(() => {
     if (activeModule !== 'winners' && activeModule !== 'imports') return [];
@@ -1422,7 +1433,7 @@ Reporte generado por WinnerProduct OS
           <div className="mt-auto space-y-3 border-t border-white/10 pt-4"><div className="truncate text-xs text-slate-400" title={user.email}>{user.email}</div><button onClick={handleLogout} className="w-full rounded-xl border border-white/20 px-4 py-2 text-left text-xs font-bold hover:bg-white/10">↪ Cerrar sesión</button></div>
         </aside>
         <main className="min-w-0 flex-1 p-3 sm:p-5 lg:p-8">
-          <header className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-4"><div className="flex min-w-0 items-center gap-3"><button aria-label="Abrir menú" className="rounded-xl border px-3 py-2 lg:hidden dark:border-slate-700" onClick={()=>setMobileMenu(true)}>☰</button><div className="min-w-0"><div className="truncate text-sm font-black sm:text-lg">{({winners:'Winners',imports:'Importaciones',projection:'Proyección P&G',agenda:'Agenda',prompts:'Prompts IA',digital:'Área Digital'})[activeModule]}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Gestión inteligente · Tu Pedido Colombia</div></div></div><button title="Cambiar tema" aria-label="Cambiar tema claro u oscuro" className="shrink-0 rounded-xl border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" onClick={()=>setTheme(t=>t==='light'?'dark':'light')}>{theme==='light'?'🌙 Oscuro':'☀️ Claro'}</button></header>
+          <header className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-4"><div className="flex min-w-0 items-center gap-3"><button aria-label="Abrir menú" className="rounded-xl border px-3 py-2 lg:hidden dark:border-slate-700" onClick={()=>setMobileMenu(true)}>☰</button><div className="min-w-0"><div className="truncate text-sm font-black sm:text-lg">{({winners:'Winners',imports:'Importaciones',projection:'Proyección P&G',agenda:'Agenda',prompts:'Prompts IA',digital:'Área Digital'})[activeModule]}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Gestión inteligente · Tu Pedido Colombia</div></div></div><button title="Cambiar tema" aria-label="Cambiar tema claro u oscuro" className="shrink-0 rounded-xl border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" onClick={toggleTheme}>{theme==='light'?'🌙 Oscuro':'☀️ Claro'}</button></header>
           <div className="mx-auto max-w-[1500px]">
         {activeModule === 'digital' && <DigitalModule user={user} />}
         {activeModule === 'agenda' && <AgendaModule />}
