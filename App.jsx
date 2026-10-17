@@ -226,7 +226,7 @@ function LoginScreen({ setErrorExt }) {
       let msg = 'Credenciales inválidas.';
       if (err.code === 'auth/network-request-failed') msg = 'Error de red o API restringida.';
       setError(msg);
-      setErrorExt(msg);
+      setErrorExt?.(msg);
     } finally {
       setLoading(false);
     }
@@ -846,14 +846,85 @@ function PromptModule() {
             );
           })
         )}
+          </div>
+        </main>
       </div>
     </div>
   );
 }
 
+
+// ==================== ÁREA DIGITAL 2.0 (COLECCIONES INDEPENDIENTES) ====================
+const DIGITAL_STATES = [
+  ['pending','Pendiente','⏳'],['research','Investigación','🔎'],['production','Producción','🎨'],
+  ['review','Revisión','👀'],['ready','Listo para lanzar','✅'],['launched','Lanzado','🚀']
+];
+const DIGITAL_BASE = ['artifacts',appId,'public','data'];
+const digitalCollection = name => collection(db,...DIGITAL_BASE,name);
+const digitalDoc = (name,id) => doc(db,...DIGITAL_BASE,name,id);
+const driveFolderIsValid = value => { try { const u=new URL(value); return u.protocol==='https:' && (u.hostname==='drive.google.com' || u.hostname==='docs.google.com') && (u.pathname.includes('/folders/') || u.pathname.includes('/drive/')); } catch { return false; } };
+function DigitalModule({user}) {
+  const [tab,setTab]=useState('products');
+  const [products,setProducts]=useState([]);
+  const [categories,setCategories]=useState([]);
+  const [prompts,setPrompts]=useState([]);
+  const [search,setSearch]=useState('');
+  const [category,setCategory]=useState('all');
+  const [productForm,setProductForm]=useState(null);
+  const [promptForm,setPromptForm]=useState(null);
+  const [categoryForm,setCategoryForm]=useState(null);
+  const [notice,setNotice]=useState('');
+  useEffect(()=>{
+    const listeners=[['digital_products',setProducts],['digital_prompt_categories',setCategories],['digital_prompts',setPrompts]];
+    const off=listeners.map(([name,setter])=>onSnapshot(digitalCollection(name),s=>setter(s.docs.map(d=>({id:d.id,...d.data()}))),e=>setNotice('No se pudo cargar '+name+': '+e.message)));
+    return ()=>off.forEach(fn=>fn());
+  },[]);
+  const sortedCats=[...categories].sort((a,b)=>(a.order||0)-(b.order||0));
+  const sortedPrompts=[...prompts].filter(p=>(category==='all'||p.categoryId===category)&&`${p.name} ${p.content}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>(a.order||0)-(b.order||0));
+  const filteredProducts=[...products].filter(p=>`${p.name} ${p.description||''}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>(a.order||0)-(b.order||0));
+  const save=async (name,form,close)=>{
+    try {
+      const {id,...rest}=form;
+      const payload={...rest,updatedAt:serverTimestamp(),updatedBy:user.uid};
+      if(id) await updateDoc(digitalDoc(name,id),payload);
+      else await addDoc(digitalCollection(name),{...payload,createdAt:serverTimestamp(),createdBy:user.uid});
+      close(null);setNotice('Cambios guardados');
+    }catch(e){setNotice('Error al guardar: '+e.message);}
+  };
+  const remove=async (name,id)=>{if(!window.confirm('¿Eliminar este registro?'))return;try{await deleteDoc(digitalDoc(name,id));}catch(e){setNotice('Error: '+e.message);}};
+  const copy=async text=>{try{await navigator.clipboard.writeText(text);setNotice('Prompt copiado');}catch{setNotice('No fue posible copiar automáticamente');}};
+  const changeStatus=async (p,status)=>{try{await updateDoc(digitalDoc('digital_products',p.id),{status,updatedAt:serverTimestamp()});}catch(e){setNotice('Error: '+e.message);}};
+  const field='w-full min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
+  const action='rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700';
+  return <div className="space-y-5 digital-area">
+    <div className="rounded-3xl bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 p-5 text-white shadow-xl md:p-8">
+      <div className="text-[10px] font-black tracking-[.22em] text-cyan-300">TU PEDIDO COLOMBIA · AI WORKSPACE</div>
+      <h2 className="mt-2 text-2xl font-black md:text-3xl">✦ Área Digital</h2>
+      <p className="mt-1 text-sm text-slate-300">Producción de contenido y biblioteca independiente de prompts.</p>
+      <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">{[['Productos',products.length],['En producción',products.filter(p=>p.status==='production').length],['Listos',products.filter(p=>p.status==='ready').length],['Prompts',prompts.length]].map(([n,v])=><div key={n} className="rounded-xl border border-white/15 bg-white/10 p-3"><div className="text-2xl font-black">{v}</div><div className="text-[11px] text-slate-300">{n}</div></div>)}</div>
+    </div>
+    <div className="flex flex-wrap gap-2"><button onClick={()=>{setTab('products');setSearch('');}} className={tab==='products'?action:'rounded-xl border px-4 py-2 text-sm dark:border-slate-600'}>📦 Productos</button><button onClick={()=>{setTab('prompts');setSearch('');}} className={tab==='prompts'?action:'rounded-xl border px-4 py-2 text-sm dark:border-slate-600'}>🧠 Biblioteca IA</button></div>
+    {notice&&<div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{notice}<button className="ml-3 underline" onClick={()=>setNotice('')}>Cerrar</button></div>}
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><input aria-label="Buscar" className={field+' sm:max-w-md'} placeholder="🔍 Buscar productos o prompts..." value={search} onChange={e=>setSearch(e.target.value)}/>{tab==='products'?<button className={action} onClick={()=>setProductForm({name:'',description:'',image:'',status:'pending',driveFolderUrl:'',responsible:'',order:products.length})}>＋ Nuevo producto</button>:<div className="flex gap-2"><button className={action} onClick={()=>setCategoryForm({name:'',description:'',order:categories.length})}>＋ Categoría</button><button className={action} onClick={()=>setPromptForm({name:'',content:'',description:'',categoryId:category==='all'?'':category,order:prompts.length})}>＋ Prompt</button></div>}</div>
+    {tab==='products'?<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{filteredProducts.map(p=><article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800"><div className="flex gap-3">{p.image?<img src={p.image} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover"/>:<div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-3xl dark:bg-slate-700">📦</div>}<div className="min-w-0 flex-1"><h3 className="break-words font-black">{p.name}</h3><p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-300">{p.description||'Sin descripción'}</p><p className="mt-2 text-xs">👤 {p.responsible||'Sin asignar'}</p></div></div><label className="mt-4 block text-[10px] font-black uppercase text-slate-500">Estado de producción</label><select className={field+' mt-1'} value={p.status||'pending'} onChange={e=>changeStatus(p,e.target.value)}>{DIGITAL_STATES.map(([id,name,emoji])=><option key={id} value={id}>{emoji} {name}</option>)}</select>
+      {driveFolderIsValid(p.driveFolderUrl)?<a className="digital-drive mt-4 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-cyan-600 px-4 py-4 text-center text-sm font-black text-white shadow-lg" href={p.driveFolderUrl} target="_blank" rel="noopener noreferrer">📂 MATERIAL DE TRABAJO ↗</a>:<div className="mt-4 rounded-xl border border-dashed border-amber-300 p-3 text-center text-xs text-amber-700 dark:text-amber-300">📂 Sin carpeta Drive vinculada</div>}
+      <div className="mt-3 flex justify-end gap-3 text-xs"><button onClick={()=>setProductForm({...p})} className="font-bold text-blue-600 dark:text-cyan-300">✏️ Editar / Vincular Drive</button><button onClick={()=>remove('digital_products',p.id)} className="text-rose-500">Eliminar</button></div></article>)}{filteredProducts.length===0&&<div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No hay productos. Crea el primero.</div>}</div>:
+    <div className="space-y-4"><div className="flex flex-wrap gap-2"><button className={category==='all'?action:'rounded-xl border px-3 py-2 text-xs dark:border-slate-600'} onClick={()=>setCategory('all')}>Todas ({prompts.length})</button>{sortedCats.map(c=><div key={c.id} className="flex items-center gap-1 rounded-xl border border-slate-200 p-1 dark:border-slate-600"><button onClick={()=>setCategory(c.id)} className={(category===c.id?'bg-blue-600 text-white ':'')+'rounded-lg px-3 py-2 text-xs font-bold'}>📁 {c.name} ({prompts.filter(p=>p.categoryId===c.id).length})</button><button title="Editar categoría" onClick={()=>setCategoryForm({...c})} className="px-1 text-xs">✏️</button><button title="Eliminar categoría" onClick={()=>{if(prompts.some(p=>p.categoryId===c.id)){setNotice('Mueve o elimina sus prompts antes de borrar la categoría');return;}remove('digital_prompt_categories',c.id);if(category===c.id)setCategory('all');}} className="px-1 text-xs text-rose-500">✕</button></div>)}</div>
+    {category!=='all'&&categories.find(c=>c.id===category)?.description&&<p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-900 dark:bg-slate-800 dark:text-blue-200">{categories.find(c=>c.id===category).description}</p>}
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{sortedPrompts.map(p=><article key={p.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-black">{p.name}</h3><p className="mt-1 text-[11px] text-blue-600 dark:text-cyan-300">{categories.find(c=>c.id===p.categoryId)?.name||'Sin categoría'}</p></div><button className={action} onClick={()=>copy(p.content)}>📋 Copiar</button></div>{p.description&&<p className="mt-2 text-xs text-slate-500 dark:text-slate-300">{p.description}</p>}<pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900">{p.content}</pre><div className="mt-3 flex justify-end gap-3 text-xs"><button onClick={()=>setPromptForm({...p})} className="font-bold text-blue-600 dark:text-cyan-300">Editar</button><button onClick={()=>setPromptForm({...p,id:undefined,name:p.name+' (copia)',order:prompts.length})} className="font-bold">Duplicar</button><button onClick={()=>remove('digital_prompts',p.id)} className="text-rose-500">Eliminar</button></div></article>)}{sortedPrompts.length===0&&<div className="rounded-xl border border-dashed p-8 text-center text-sm">Sin prompts en esta selección.</div>}</div></div>}
+    {productForm&&<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3" onClick={()=>setProductForm(null)}><form onClick={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();if(productForm.driveFolderUrl&&!driveFolderIsValid(productForm.driveFolderUrl)){setNotice('Ingresa una URL válida de carpeta de Google Drive');return;}save('digital_products',productForm,setProductForm);}} className="max-h-[92dvh] w-full max-w-xl space-y-3 overflow-y-auto rounded-2xl bg-white p-5 text-slate-900 dark:bg-slate-800 dark:text-white"><h3 className="text-xl font-black">Producto digital</h3><label className="block text-xs">Nombre *<input required className={field+' mt-1'} value={productForm.name} onChange={e=>setProductForm({...productForm,name:e.target.value})}/></label><label className="block text-xs">Descripción<textarea className={field+' mt-1'} rows="2" value={productForm.description||''} onChange={e=>setProductForm({...productForm,description:e.target.value})}/></label><label className="block text-xs">Responsable<input className={field+' mt-1'} value={productForm.responsible||''} onChange={e=>setProductForm({...productForm,responsible:e.target.value})}/></label><label className="block text-xs">URL imagen (opcional)<input type="url" className={field+' mt-1'} value={productForm.image||''} onChange={e=>setProductForm({...productForm,image:e.target.value})}/></label><label className="block text-xs">Carpeta Google Drive<input type="url" className={field+' mt-1'} placeholder="https://drive.google.com/drive/folders/..." value={productForm.driveFolderUrl||''} onChange={e=>setProductForm({...productForm,driveFolderUrl:e.target.value})}/></label><div className="flex justify-end gap-2"><button type="button" onClick={()=>setProductForm(null)}>Cancelar</button><button type="submit" className={action}>Guardar producto</button></div></form></div>}
+    {categoryForm&&<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3" onClick={()=>setCategoryForm(null)}><form onClick={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();save('digital_prompt_categories',categoryForm,setCategoryForm);}} className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-5 dark:bg-slate-800"><h3 className="font-black">Categoría de prompts</h3><input required className={field} placeholder="Nombre" value={categoryForm.name} onChange={e=>setCategoryForm({...categoryForm,name:e.target.value})}/><textarea className={field} placeholder="Instrucciones de esta fase" value={categoryForm.description||''} onChange={e=>setCategoryForm({...categoryForm,description:e.target.value})}/><input className={field} type="number" placeholder="Orden" value={categoryForm.order??0} onChange={e=>setCategoryForm({...categoryForm,order:Number(e.target.value)})}/><div className="flex justify-end gap-2"><button type="button" onClick={()=>setCategoryForm(null)}>Cancelar</button><button className={action}>Guardar</button></div></form></div>}
+    {promptForm&&<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3" onClick={()=>setPromptForm(null)}><form onClick={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();if(!promptForm.categoryId){setNotice('Crea o selecciona una categoría');return;}save('digital_prompts',promptForm,setPromptForm);}} className="max-h-[92dvh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-2xl bg-white p-5 dark:bg-slate-800"><h3 className="font-black">Prompt IA</h3><input required className={field} placeholder="Nombre del prompt" value={promptForm.name} onChange={e=>setPromptForm({...promptForm,name:e.target.value})}/><select required className={field} value={promptForm.categoryId||''} onChange={e=>setPromptForm({...promptForm,categoryId:e.target.value})}><option value="">Selecciona categoría</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><input className={field} placeholder="Descripción breve" value={promptForm.description||''} onChange={e=>setPromptForm({...promptForm,description:e.target.value})}/><textarea required className={field+' font-mono'} rows="10" placeholder="Contenido completo del prompt" value={promptForm.content} onChange={e=>setPromptForm({...promptForm,content:e.target.value})}/><label className="block text-xs">Orden<input className={field+' mt-1'} type="number" value={promptForm.order??0} onChange={e=>setPromptForm({...promptForm,order:Number(e.target.value)})}/></label><div className="flex justify-end gap-2"><button type="button" onClick={()=>setPromptForm(null)}>Cancelar</button><button className={action}>Guardar prompt</button></div></form></div>}
+  </div>;
+}
+
 // ==================== COMPONENTE PRINCIPAL APP ====================
 export default function App() {
   const [activeModule, setActiveModule] = useState('winners');
+  const [userRole,setUserRole]=useState(null);
+  const [roleLoading,setRoleLoading]=useState(true);
+  const [mobileMenu,setMobileMenu]=useState(false);
+  const [theme,setTheme]=useState(()=>localStorage.getItem('winner-theme')||'light');
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -877,8 +948,22 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark');if(user)localStorage.setItem('winner-theme:'+user.uid,theme);},[theme,user]);
+  useEffect(()=>{if(user)setTheme(localStorage.getItem('winner-theme:'+user.uid)||'light');},[user?.uid]);
+  useEffect(()=>{
+    if(!user){setUserRole(null);setRoleLoading(false);return;}
+    setRoleLoading(true);
+    const off=onSnapshot(doc(db,'user_roles',user.uid),snap=>{
+      const role=snap.exists()?snap.data().role:null;
+      setUserRole(role==='digital'?'digital':role==='admin'?'admin':null);
+      setRoleLoading(false);
+      if(role==='digital')setActiveModule('digital');
+    },()=>{setUserRole(null);setRoleLoading(false);});
+    return ()=>off();
+  },[user]);
+  useEffect(()=>{if(userRole==='digital'&&activeModule!=='digital')setActiveModule('digital');},[userRole,activeModule]);
   useEffect(() => {
-    if (!user || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts') return;
+    if (!user || activeModule === 'projection' || activeModule === 'agenda' || activeModule === 'prompts' || activeModule === 'digital') return;
     const colName = activeModule === 'winners' ? 'products' : 'import_products';
     const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -930,7 +1015,7 @@ export default function App() {
     setSearchTerm('');
     setSupplierFilter('all');
     setSortOrder('manual');
-    if (mod !== 'projection' && mod !== 'agenda' && mod !== 'prompts') {
+    if (mod !== 'projection' && mod !== 'agenda' && mod !== 'prompts' && mod !== 'digital') {
       setNewProduct(mod === 'winners' ? getInitialWinner() : getInitialImport());
     }
     setIsCreating(false);
@@ -1324,26 +1409,28 @@ Reporte generado por WinnerProduct OS
 
   if (loading) return <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center"><div className="bg-white p-8 rounded-2xl shadow-xl text-center"><div className="w-12 h-12 border-4 border-zinc-200 border-t-zinc-900 rounded-full animate-spin mx-auto mb-4"></div><p className="text-zinc-500 font-bold text-sm">Cargando sesión...</p></div></div>;
   if (!user) return <LoginScreen />;
+  if(roleLoading) return <div className="p-8 text-center">Validando permisos...</div>;
+  if(!userRole)return <div className="min-h-screen flex items-center justify-center bg-slate-100 p-5"><div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-xl"><h2 className="text-xl font-black">Acceso pendiente de autorización</h2><p className="my-4 text-sm">Un administrador debe asignar tu UID en Firestore /user_roles/ con role: admin o digital.</p><button className="rounded-xl bg-slate-900 px-5 py-3 text-white" onClick={()=>signOut(auth)}>Cerrar sesión</button></div></div>;
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] p-2 md:p-8 font-sans">
-      {notification && <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-zinc-900 text-white px-6 py-3 rounded-xl text-xs font-black z-50">{notification}</div>}
-      <div className="max-w-[1400px] mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
-          <div className="bg-white p-1 rounded-2xl shadow-xl flex flex-wrap">
-            <button onClick={()=>handleModuleChange('winners')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='winners'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Winners</button>
-            <button onClick={()=>handleModuleChange('imports')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='imports'?'bg-zinc-900 text-white':'text-zinc-400'}`}>Importación</button>
-            <button onClick={()=>handleModuleChange('projection')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='projection'?'bg-indigo-600 text-white':'text-indigo-400'}`}>Proyección P&G</button>
-            <button onClick={()=>handleModuleChange('agenda')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='agenda'?'bg-emerald-600 text-white':'text-emerald-600'}`}>📅 Agenda</button>
-            <button onClick={()=>handleModuleChange('prompts')} className={`px-6 py-2 text-[11px] font-black uppercase rounded-xl ${activeModule==='prompts'?'bg-rose-600 text-white':'text-rose-600/70 hover:text-rose-600'}`}>🎨 Prompts</button>
-          </div>
-          <button onClick={handleLogout} className="text-zinc-400 text-[10px] font-black uppercase">SALIR</button>
-        </div>
-
+    <div className="winner-shell min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      {notification && <div className="fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded-xl bg-slate-900 px-6 py-3 text-xs font-black text-white">{notification}</div>}
+      <div className="flex min-h-screen">
+        {mobileMenu&&<button aria-label="Cerrar menú" className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={()=>setMobileMenu(false)}/>}
+        <aside className={`${mobileMenu?'translate-x-0':'-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[#0B1220] p-4 text-white shadow-2xl transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
+          <div className="mb-8 flex items-center gap-3 border-b border-white/10 pb-5"><div className="rounded-xl bg-blue-600 p-3 font-black">W</div><div><div className="font-black tracking-wide">WINNER OS 2.0</div><div className="text-[10px] text-cyan-300">TU PEDIDO COLOMBIA</div></div></div>
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Navegación</div>
+          {(userRole==='digital'?[['digital','✦','Área Digital']]:[['winners','🏆','Winners'],['imports','🚢','Importaciones'],['projection','📈','Proyección P&G'],['agenda','📅','Agenda'],['prompts','🧠','Prompts'],['digital','✦','Área Digital']]).map(([id,icon,label])=><button key={id} onClick={()=>{handleModuleChange(id);setMobileMenu(false);}} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-bold transition-colors ${activeModule===id?'bg-blue-600 text-white shadow-lg':'text-slate-300 hover:bg-white/10'}`}><span>{icon}</span>{label}</button>)}
+          <div className="mt-auto space-y-3 border-t border-white/10 pt-4"><div className="truncate text-xs text-slate-400" title={user.email}>{user.email}</div><button onClick={handleLogout} className="w-full rounded-xl border border-white/20 px-4 py-2 text-left text-xs font-bold hover:bg-white/10">↪ Cerrar sesión</button></div>
+        </aside>
+        <main className="min-w-0 flex-1 p-3 sm:p-5 lg:p-8">
+          <header className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-4"><div className="flex min-w-0 items-center gap-3"><button aria-label="Abrir menú" className="rounded-xl border px-3 py-2 lg:hidden dark:border-slate-700" onClick={()=>setMobileMenu(true)}>☰</button><div className="min-w-0"><div className="truncate text-sm font-black sm:text-lg">{({winners:'Winners',imports:'Importaciones',projection:'Proyección P&G',agenda:'Agenda',prompts:'Prompts IA',digital:'Área Digital'})[activeModule]}</div><div className="text-[10px] text-slate-500 dark:text-slate-400">Gestión inteligente · Tu Pedido Colombia</div></div></div><button title="Cambiar tema" aria-label="Cambiar tema claro u oscuro" className="shrink-0 rounded-xl border border-slate-200 px-4 py-2 text-sm dark:border-slate-700" onClick={()=>setTheme(t=>t==='light'?'dark':'light')}>{theme==='light'?'🌙 Oscuro':'☀️ Claro'}</button></header>
+          <div className="mx-auto max-w-[1500px]">
+        {activeModule === 'digital' && <DigitalModule user={user} />}
         {activeModule === 'agenda' && <AgendaModule />}
         {activeModule === 'prompts' && <PromptModule />}
         {activeModule === 'projection' && renderProjectionModule()}
-        {activeModule !== 'agenda' && activeModule !== 'prompts' && activeModule !== 'projection' && (
+        {activeModule !== 'agenda' && activeModule !== 'prompts' && activeModule !== 'projection' && activeModule !== 'digital' && (
           <>
             <div className="grid md:grid-cols-4 gap-3 mb-4">
               <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="md:col-span-2 bg-white border rounded-xl p-3 text-sm" />
@@ -1550,7 +1637,7 @@ Reporte generado por WinnerProduct OS
           </>
         )}
       </div>
-      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && (
+      {isCreating && activeModule !== 'projection' && activeModule !== 'agenda' && activeModule !== 'prompts' && activeModule !== 'digital' && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white p-4 border-b flex justify-between"><h2 className="font-black">Registro Cloud</h2><button onClick={()=>{setIsCreating(false); setFormError('');}}>✕</button></div>
