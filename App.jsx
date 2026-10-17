@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, serverTimestamp, Timestamp, setDoc 
+  onSnapshot, serverTimestamp, Timestamp, setDoc, writeBatch 
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -861,7 +861,7 @@ const DIGITAL_STATES = [
   {id:'ready',name:'Listo para lanzar',color:'#10b981'},
   {id:'launched',name:'Lanzado',color:'#2563eb'}
 ];
-const DIGITAL_SETTINGS_ID='__digital_workspace_settings__';
+const DIGITAL_SETTINGS_ID='digital_workspace_settings';
 const compressDigitalImage=file=>new Promise((resolve,reject)=>{
   if(!file?.type?.startsWith('image/')){reject(new Error('Selecciona una imagen válida.'));return;}
   if(file.size>12*1024*1024){reject(new Error('La imagen original no puede superar 12 MB.'));return;}
@@ -912,9 +912,24 @@ function DigitalModule({user}) {
     try{await setDoc(settingsRef,{...next,_kind:'digital_settings',updatedAt:serverTimestamp()},{merge:true});setSettings(next);setNotice('Configuración guardada');}
     catch(e){setNotice('No se pudo guardar la configuración: '+e.message);}
   };
+  const [workingSaving,setWorkingSaving]=useState(false);
   const setWorking=async p=>{
-    const nextId=settings.activeProductId===p.id?null:p.id;
-    await saveSettings({...settings,activeProductId:nextId});
+    if(workingSaving)return;
+    setWorkingSaving(true);
+    try {
+      const nextValue=!p.isWorking;
+      const batch=writeBatch(db);
+      // Mismo campo isWorking que utiliza Winners; un solo producto activo.
+      if(nextValue){
+        products.filter(item=>item.id!==p.id && item.isWorking).forEach(item=>
+          batch.update(digitalDoc('digital_products',item.id),{isWorking:false,updatedAt:serverTimestamp()})
+        );
+      }
+      batch.update(digitalDoc('digital_products',p.id),{isWorking:nextValue,updatedAt:serverTimestamp()});
+      await batch.commit();
+      setNotice(nextValue?'Producto marcado EN PROCESO':'Producto desmarcado');
+    }catch(e){setNotice('No se pudo cambiar EN PROCESO: '+e.message);}
+    finally{setWorkingSaving(false);}
   };
   const updateState=(id,changes)=>saveSettings({...settings,states:stateOptions.map(st=>st.id===id?{...st,...changes}:st)});
   const addState=()=>{
@@ -954,12 +969,17 @@ function DigitalModule({user}) {
       <div className="text-[10px] font-black tracking-[.22em] text-cyan-300">TU PEDIDO COLOMBIA · AI WORKSPACE</div>
       <h2 className="mt-2 text-2xl font-black md:text-3xl">✦ Área Digital</h2>
       <p className="mt-1 text-sm text-slate-300">Producción de contenido y biblioteca independiente de prompts.</p>
-      <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">{[['Productos',products.length],['En proceso',products.filter(p=>p.id===settings.activeProductId).length],['Listos',products.filter(p=>p.status==='ready').length],['Prompts',prompts.length]].map(([n,v])=><div key={n} className="rounded-xl border border-white/15 bg-white/10 p-3"><div className="text-2xl font-black">{v}</div><div className="text-[11px] text-slate-300">{n}</div></div>)}</div>
+      <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">{[['Productos',products.length],['En proceso',products.filter(p=>p.isWorking).length],['Listos',products.filter(p=>p.status==='ready').length],['Prompts',prompts.length]].map(([n,v])=><div key={n} className="rounded-xl border border-white/15 bg-white/10 p-3"><div className="text-2xl font-black">{v}</div><div className="text-[11px] text-slate-300">{n}</div></div>)}</div>
     </div>
     <div className="flex flex-wrap gap-2"><button onClick={()=>{setTab('products');setSearch('');}} className={tab==='products'?action:'rounded-xl border px-4 py-2 text-sm dark:border-slate-600'}>📦 Productos</button><button onClick={()=>{setTab('prompts');setSearch('');}} className={tab==='prompts'?action:'rounded-xl border px-4 py-2 text-sm dark:border-slate-600'}>🧠 Biblioteca IA</button></div>
     {notice&&<div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{notice}<button className="ml-3 underline" onClick={()=>setNotice('')}>Cerrar</button></div>}
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><input aria-label="Buscar" className={field+' sm:max-w-md'} placeholder="🔍 Buscar productos o prompts..." value={search} onChange={e=>setSearch(e.target.value)}/>{tab==='products'?<div className="flex flex-wrap gap-2"><button className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold dark:border-slate-600" onClick={()=>setStateEditor(true)}>🎨 Configurar estados</button><button className={action} onClick={()=>setProductForm({name:'',description:'',image:'',status:'pending',driveFolderUrl:'',responsible:'',order:products.length})}>＋ Nuevo producto</button></div>:<div className="flex gap-2"><button className={action} onClick={()=>setCategoryForm({name:'',description:'',order:categories.length})}>＋ Categoría</button><button className={action} onClick={()=>setPromptForm({name:'',content:'',description:'',categoryId:category==='all'?'':category,order:prompts.length})}>＋ Prompt</button></div>}</div>
-    {tab==='products'?<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{filteredProducts.map(p=><article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800" style={{borderLeft:'5px solid '+(stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b')}}><div className="flex gap-3">{p.image?<img src={p.image} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover"/>:<div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-3xl dark:bg-slate-700">📦</div>}<div className="min-w-0 flex-1"><h3 className="break-words font-black">{p.name}</h3><p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-300">{p.description||'Sin descripción'}</p><p className="mt-2 text-xs">👤 {p.responsible||'Sin asignar'}</p><span className="mt-2 inline-block rounded-full px-2 py-1 text-[11px] font-bold text-white" style={{backgroundColor:stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b'}}>{stateOptions.find(st=>st.id===(p.status||'pending'))?.name||'Pendiente'}</span></div></div><div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 p-3 dark:border-slate-600"><span className="text-xs font-bold">{settings.activeProductId===p.id?'🟢 EN PROCESO':'⚪ Sin actividad'}</span><button type="button" role="switch" aria-checked={settings.activeProductId===p.id} aria-label={'Marcar en proceso '+p.name} onClick={()=>setWorking(p)} className={'relative h-7 w-12 rounded-full transition '+(settings.activeProductId===p.id?'bg-emerald-500':'bg-slate-300 dark:bg-slate-600')}><span className={'absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all '+(settings.activeProductId===p.id?'left-6':'left-1')}/></button></div><label className="mt-4 block text-[10px] font-black uppercase text-slate-500">Estado de producción</label><select className={field+' mt-1'} value={p.status||'pending'} onChange={e=>changeStatus(p,e.target.value)}>{stateOptions.map(st=><option key={st.id} value={st.id}>{st.name}</option>)}</select>
+    {tab==='products'?<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{filteredProducts.map(p=><article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800" style={{
+      borderLeft:'6px solid '+(stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b'),
+      borderTop:'2px solid '+(stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b'),
+      backgroundImage:'linear-gradient(115deg, '+(stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b')+'24, transparent 72%)',
+      boxShadow:p.isWorking?'0 0 0 2px #10b981, 0 8px 22px #10b98124':'0 4px 16px #0f172a12'
+    }}><div className="flex gap-3">{p.image?<img src={p.image} alt="" className="h-20 w-20 shrink-0 rounded-xl object-cover"/>:<div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-3xl dark:bg-slate-700">📦</div>}<div className="min-w-0 flex-1"><h3 className="break-words font-black">{p.name}</h3><p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-300">{p.description||'Sin descripción'}</p><p className="mt-2 text-xs">👤 {p.responsible||'Sin asignar'}</p><span className="mt-2 inline-block rounded-full px-2 py-1 text-[11px] font-bold text-white" style={{backgroundColor:stateOptions.find(st=>st.id===(p.status||'pending'))?.color||'#64748b'}}>{stateOptions.find(st=>st.id===(p.status||'pending'))?.name||'Pendiente'}</span></div></div><div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white/75 p-3 dark:border-slate-600 dark:bg-slate-900/50"><span className="text-xs font-bold">{p.isWorking?'🟢 EN PROCESO':'⚪ Sin actividad'}</span><button type="button" role="switch" aria-checked={!!p.isWorking} aria-label={'Marcar en proceso '+p.name} onClick={()=>setWorking(p)} disabled={workingSaving} className={'relative h-7 w-12 rounded-full transition '+(p.isWorking?'bg-emerald-500':'bg-slate-300 dark:bg-slate-600')}><span className={'absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all '+(p.isWorking?'left-6':'left-1')}/></button></div><label className="mt-4 block text-[10px] font-black uppercase text-slate-500">Estado de producción</label><select className={field+' mt-1'} value={p.status||'pending'} onChange={e=>changeStatus(p,e.target.value)}>{stateOptions.map(st=><option key={st.id} value={st.id}>{st.name}</option>)}</select>
       {driveFolderIsValid(p.driveFolderUrl)?<a className="transition hover:brightness-110 mt-4 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-cyan-600 px-4 py-4 text-center text-sm font-black text-white shadow-lg" href={p.driveFolderUrl} target="_blank" rel="noopener noreferrer">📂 MATERIAL DE TRABAJO ↗</a>:<div className="mt-4 rounded-xl border border-dashed border-amber-300 p-3 text-center text-xs text-amber-700 dark:text-amber-300">📂 Sin carpeta Drive vinculada</div>}
       <div className="mt-3 flex justify-end gap-3 text-xs"><button onClick={()=>setProductForm({...p})} className="font-bold text-blue-600 dark:text-cyan-300">✏️ Editar / Vincular Drive</button><button onClick={()=>remove('digital_products',p.id)} className="text-rose-500">Eliminar</button></div></article>)}{filteredProducts.length===0&&<div className="rounded-2xl border border-dashed p-8 text-center text-sm text-slate-500">No hay productos. Crea el primero.</div>}</div>:
     <div className="space-y-4"><div className="flex flex-wrap gap-2"><button className={category==='all'?action:'rounded-xl border px-3 py-2 text-xs dark:border-slate-600'} onClick={()=>setCategory('all')}>Todas ({prompts.length})</button>{sortedCats.map(c=><div key={c.id} className="flex items-center gap-1 rounded-xl border border-slate-200 p-1 dark:border-slate-600"><button onClick={()=>setCategory(c.id)} className={(category===c.id?'bg-blue-600 text-white ':'')+'rounded-lg px-3 py-2 text-xs font-bold'}>📁 {c.name} ({prompts.filter(p=>p.categoryId===c.id).length})</button><button title="Editar categoría" onClick={()=>setCategoryForm({...c})} className="px-1 text-xs">✏️</button><button title="Eliminar categoría" onClick={()=>{if(prompts.some(p=>p.categoryId===c.id)){setNotice('Mueve o elimina sus prompts antes de borrar la categoría');return;}remove('digital_prompt_categories',c.id);if(category===c.id)setCategory('all');}} className="px-1 text-xs text-rose-500">✕</button></div>)}</div>
